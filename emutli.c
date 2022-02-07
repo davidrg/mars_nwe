@@ -1,5 +1,4 @@
-#define DO_IPX_SEND_TEST 1
-/* emutli.c 04-Oct-96 */
+/* emutli.c 07-Jul-97 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -36,6 +35,24 @@
 #include <signal.h>
 #include <string.h>
 #include <errno.h>
+
+#ifndef DO_IPX_SEND_TEST 
+# define DO_IPX_SEND_TEST 2
+#endif
+
+/* DO_IPX_SEND_TEST is only needed if the ipx sendmsg() bug is not patched
+*
+*  In linux/net/ipx/af_ipx.c routine ipx_create one line is missing.
+*
+*  static int ipx_create(struct socket *sock, int protocol)
+*  {
+*  ...
+*	  sk->rcvbuf=SK_RMEM_MAX;
+*	  sk->sndbuf=SK_WMEM_MAX;
+*	  sk->allocation=GFP_KERNEL;
+*  .......^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*
+*/
 
 static int locipxdebug=0;
 
@@ -237,13 +254,13 @@ inline int t_sndudata(int fd, struct t_unitdata *ud)
     do {
       void (*old_sig)(int rsig) = signal(SIGALRM, sig_alarm);
       new_try  = 0;
-      alarm(1+anz_tries);
+      alarm(DO_IPX_SEND_TEST+anz_tries);
 #endif
+   
    memset(&ipxs, 0, sizeof(struct sockaddr_ipx));
    ipxs.sipx_family=AF_IPX;
    ipx2sockadr(&ipxs, (ipxAddr_t*) (ud->addr.buf));
    ipxs.sipx_type    = (ud->opt.len) ? (uint8) *((uint8*)(ud->opt.buf)) : 0;
-
    result = sendto(fd,(void *)ud->udata.buf,
           ud->udata.len, 0, (struct sockaddr *) &ipxs, sizeof(ipxs));
 

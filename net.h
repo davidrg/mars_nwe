@@ -1,4 +1,4 @@
-/* net.h 25-Oct-96 */
+/* net.h 02-Jun-97 */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -64,6 +64,10 @@ extern int errno;
 #endif
 #ifndef min
 #define min(a,b)        (((a) < (b)) ? (a) : (b))
+#endif
+
+#ifndef LINUX
+# define inline /**/
 #endif
 
 #ifdef SPARC
@@ -217,23 +221,6 @@ extern int errno;
 # define MAX_DIR_BASE_ENTRIES   10
 #endif
 
-#ifndef MAX_NW_ROUTES
-# define MAX_NW_ROUTES 50
-#endif
-
-#ifndef MAX_RIP_ENTRIES
-# define MAX_RIP_ENTRIES 50
-#endif
-
-#if MAX_RIP_ENTRIES < 50
-# undef MAX_RIP_ENTRIES
-# define MAX_RIP_ENTRIES 50
-#endif
-
-#ifndef MAX_NW_SERVERS
-# define MAX_NW_SERVERS MAX_NW_ROUTES
-#endif
-
 #ifndef HANDLE_ALL_SAP_TYPS
 # define HANDLE_ALL_SAP_TYPS 0
 #endif
@@ -252,6 +239,14 @@ extern int errno;
 #else
 #  define IPX_MAX_DATA         546
 #  define RW_BUFFERSIZE        512
+#endif
+
+#ifndef ENABLE_BURSTMODE
+#  define ENABLE_BURSTMODE        0  /* no Burst mode by default */
+#endif
+
+#ifndef PERSISTENT_SYMLINKS
+#  define PERSISTENT_SYMLINKS     0
 #endif
 
 #ifndef SOCK_EXTERN
@@ -373,7 +368,7 @@ typedef union {
     uint8   sequence;
     uint8   connection;      /* low connection */
     uint8   task;
-    uint8   reserved;        /* high connection */
+    uint8   high_connection; /* high connection */
     uint8   completition;    /* bzw. ERROR CODE */
     uint8   connect_status;
   } ncpresponse;
@@ -382,9 +377,27 @@ typedef union {
     uint8   sequence;
     uint8   connection;      /* low connection */
     uint8   task;
-    uint8   reserved;        /* high connection */
+    uint8   high_connection; /* high connection */
     uint8   function;        /* Function  */
   } ncprequest;
+  struct S_BURSTPACKET {        /* size = 36 */
+    uint8   type[2];            /* 0x7777 */
+    uint8   flags;              /* 0x10 = EOB (EndOfBurst) */
+                                /* 0x80 = SYS (Systemflag) */
+    uint8   streamtyp;          /* 2 = BIG_SEND_BURST stream typ */
+    uint8   source_conn[4];
+    uint8   dest_conn[4];
+    uint8   packet_sequence[4]; /* hi-lo, incr. by every packet */
+    uint8   delaytime[4];       /* hi-lo, statistik */
+    uint8   burst_seq[2];       /* akt_sequence ?   */
+    uint8   ack_seq[2];         /* next_sequnce ?   */
+
+    uint8   burstsize[4];       /* hi-lo, complete burstsize  */
+    uint8   burstoffset[4];     /* hi-lo */
+
+    uint8   datasize[2];        /* hi-lo, number of data byte's in this packet */
+    uint8   missing[2];         /* 0,0 ,  number of missing fragments, follows */
+  } burstpacket;
   struct S_OWN_DATA {
     struct {
       uint8   type[2];       /* 0xeeee  */
@@ -415,6 +428,7 @@ typedef struct S_CONFREQ       CONFREQ;
 typedef struct S_DIAGRESP      DIAGRESP;
 typedef struct S_NCPRESPONSE   NCPRESPONSE;
 typedef struct S_NCPREQUEST    NCPREQUEST;
+typedef struct S_BURSTPACKET   BURSTPACKET;
 typedef struct S_OWN_DATA      OWN_DATA;
 typedef struct S_OWN_REPLY     OWN_REPLY;
 

@@ -1,4 +1,4 @@
-/* nameos2.c 08-Aug-96 : NameSpace OS2 Services, mars_nwe */
+/* nameos2.c 14-May-97 : NameSpace OS2 Services, mars_nwe */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -23,6 +23,7 @@
 #include <errno.h>
 #endif
 
+#include "nwfname.h"
 #include "nwvolume.h"
 #include "connect.h"
 #include "nwfile.h"
@@ -64,8 +65,7 @@ static int my_match(uint8 *s, uint8 *p)
 {
   int len=0;
   for (; *s && *p; s++,p++) {
-    if (*s != *p && ((!isalpha(*p)) || (!isalpha(*s))
-      || (*p | 0x20) != (*s | 0x20)))
+    if (!ufn_imatch(*s, *p))
       return(0);
     ++len;
   }
@@ -163,6 +163,32 @@ void mangle_os2_name(NW_VOL *vol, uint8 *unixname, uint8 *pp)
 #endif
 }
 
+static inline int get_n_p(uint8 **p)
+{
+  int pc=**p;
+  (*p)++;
+  if (pc == '\\') {
+    pc=**p;
+    (*p)++;
+  } else if (pc == 255) {
+    pc=**p;
+    (*p)++;
+    switch (pc) {
+      case 0xaa :
+      case '*'  : return(3000); /* star  */
+
+      case 0xae :
+      case '.'  : return(1000); /* point */
+
+      case 0xbf :
+      case '?'  : return(2000); /*  ? */
+
+      default   : break;
+    }
+  } 
+  return(pc);
+}
+
 int fn_os2_match(uint8 *s, uint8 *p, int soptions)
 /* OS/2 name matching routine */
 {
@@ -171,7 +197,7 @@ int fn_os2_match(uint8 *s, uint8 *p, int soptions)
   int  anf, ende;
   int  not = 0;
   uint found = 0;
-  while ( (pc = *p++) != 0) {
+  while ( (pc = get_n_p(&p)) != 0) {
     if (!(soptions & VOL_OPTION_IGNCASE)) {
       if (soptions & VOL_OPTION_DOWNSHIFT){   /* only downshift chars */
         if (*s >= 'A' && *s <= 'Z') return(0);
@@ -181,21 +207,6 @@ int fn_os2_match(uint8 *s, uint8 *p, int soptions)
     }
     switch (state){
       case 0 :
-      if (pc == 255) {
-         switch (pc=*p++) {
-           case 0xaa :
-           case '*'  : pc=3000; break; /* star  */
-
-           case 0xae :
-           case '.'  : pc=1000; break; /* point */
-
-           case 0xbf :
-           case '?'  : pc=2000; break; /*  ? */
-
-           default   : break;
-         }
-      } else if (pc == '\\') continue;
-
       switch  (pc) {
         case '.' :
         case 1000:  if (*s && ('.' != *s++))
@@ -208,13 +219,26 @@ int fn_os2_match(uint8 *s, uint8 *p, int soptions)
                     break;
 
         case '*' :
-        case 3000:  if (!*p) return(1); /* last star */
-                    while (*s) {
-                      if (fn_os2_match(s, p, soptions) == 1) return(1);
-                      else if (*s=='.' && !*(p+1)) return(0);
-                      ++s;
+        case 3000:  {
+                      uint8 *pp;
+                      int   np;
+                      if (!*p) return(1); /* last star */
+                      while (*s) {
+                        if (fn_os2_match(s, p, soptions) == 1) return(1);
+                        else if (*s=='.') {  
+                          pp=p;
+                          if (!get_n_p(&p) || !get_n_p(&p)) 
+                            return(0);
+                          p=pp;
+                        }
+                        ++s;
+                      }
+                      pp=p;
+                      np=get_n_p(&p);
+                      p=pp;
+                      if (np == '.' || np == 1000) 
+                        return(fn_os2_match(s, p, soptions));
                     }
-                    if (*p == '.') return(fn_os2_match(s, p, soptions));
                     return(0);
 
         case '[' :  if ( (*p == '!') || (*p == '^') ){
@@ -225,10 +249,7 @@ int fn_os2_match(uint8 *s, uint8 *p, int soptions)
                      continue;
 
         default  :  if (soptions & VOL_OPTION_IGNCASE) {
-                      if ( pc != *s &&
-                       (    (!isalpha(pc))
-                         || (!isalpha(*s))
-                         || (pc | 0x20) != (*s | 0x20) ) )
+                      if (!dfn_imatch(*s, *p))
                            return(0);
                     } else if (pc != *s) return(0);
                     ++s;
@@ -267,6 +288,4 @@ int fn_os2_match(uint8 *s, uint8 *p, int soptions)
   if (*s=='.' && *(s+1)=='\0') return(1);
   return ( (*s) ? 0 : 1);
 }
-
-
 #endif

@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 16-Apr-97
+Aenderungen in mars_nwe bis zum : 07-Jul-97
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -291,4 +291,39 @@ Erste 'oeffentliche' Version
 - Result code von nw_lock_file() korrigiert (0x21 -> 0xfd).
   ( MS-Access meckerte unter Win3.xx fehlendes SHARE.EXE an )
 <----- ^^^^^^^^^^ pl10 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Workaround gegen 'fehlerhaftes' telldir()/seekdir() (NFS-FS) eingebaut.
+  Fehler bewirkte Endlosloop beim 'Dir-Listen'.
+  Hinweis von Thomas Behr.
+  Search Dir Routine in namespace.c umgeschrieben.
+- Syslogstuff nach Idee von Thomas Behr eingebaut.
+- Es bleibt nun nur noch max. 1 DIR* handle / connection geoeffnet.
+- erste Testimplementation des Burstmodus.
+- Cyrillic Filename Support von Victor Khimenko eingebaut.
+- Max. moegliche Connections auf > 255 erhoeht.
+  Muss aber noch richtig getestet werden.
+- Dateimatchroutine OS/2 namespace wiederum abgeaendert.
+  Es wurde bei Matchcode '0xff * 0xff 0xae 0xff *' keine Datei 
+  ohne '.' gefunden.
+- Attribute von 'Pipe Commands' ist nun Shareble.
+  Dadurch sollten Client Bufferungen verhindert werden.
+- einige Konstanten aus config.h sind nun auch zur Laufzeit
+  aenderbar. ab section 60 in ini/conf file.
+- Konstanten MAX_NW_ROUTES, MAX_NW_SERVERS, MAX_RIP_ENTRIES, 
+  MAX_NET_DEVICES werden nicht mehr benoetigt, da entsprechende 
+  Arrays nun bei Bedarf dynamisch wachsen.
+- nw_2_un_time Routine setzt nun auch die Sekunden korrekt.
+  Hinweis/Patch von Csoma Csaba.
+- Im lock call wird nun bei Locksize von MAX_U32 komplette Datei
+  ab Offset gelockt. ( von Peter Gerhard )
+- In connect.c, build_verz_name() Fehlerabfang fuer 'falsche Dateinamen'
+  korrigiert. (Victor Khimenko schickte patch)
+  Es war moeglich auf 9 stellige (ohne Punkt) Verzeichnissnamen 
+  zuzugreifen.
+- examples/unxcomm.c korrigiert.
+- es wird nun der Login Name oder '()' fuer attached unter ps
+  angezeigt.
+- in routine nw_2_un_time() wird nun tm_isdst korrekterweise
+  auf -1 gesetzt.
+- dynamisches Aktivieren/Deaktivieren von Interfaces verbessert. 
+<----- ^^^^^^^^^^ pl11 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

@@ -1,4 +1,4 @@
-/* nwroute1.c 08-Feb-96 */
+/* nwroute1.c 02-Jun-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -28,7 +28,8 @@ typedef struct {
 } NW_SERVERS;
 
 static int        anz_servers=0;
-static NW_SERVERS *nw_servers[MAX_NW_SERVERS];
+static int        max_nw_servers=0;
+static NW_SERVERS **nw_servers=NULL;
 
 void insert_delete_server(uint8  *name,                 /* Server Name */
                                  int        styp,       /* Server Typ  */
@@ -58,9 +59,15 @@ void insert_delete_server(uint8  *name,                 /* Server Name */
   if (k == anz_servers) {   /* server not found    */
     if (do_delete) return;  /* nothing to delete   */
     if (freeslot < 0) {
-      if (anz_servers == MAX_NW_SERVERS) {
-        XDPRINTF((1, 0, "too many servers=%d, increase MAX_NW_SERVERS in config.h", anz_servers));
-        return;
+      if (anz_servers == max_nw_servers) {
+        int new_max_nw = max_nw_servers+5;
+        NW_SERVERS **new_nws
+             =(NW_SERVERS**)xcmalloc(new_max_nw*sizeof(NW_SERVERS*));
+        if (max_nw_servers)
+          memcpy(new_nws, nw_servers, max_nw_servers*sizeof(NW_SERVERS*));
+        xfree(nw_servers);
+        nw_servers=new_nws;
+        max_nw_servers=new_max_nw;
       }
       nw_servers[k] = (NW_SERVERS*)xcmalloc(sizeof(NW_SERVERS));
       anz_servers++;
@@ -168,6 +175,11 @@ void send_sap_rip_broadcast(int mode)
     U16_TO_BE16(4,        ipx_data.sip.server_type);
     U16_TO_BE16(mode == 2 ? 16 : 0, ipx_data.sip.intermediate_networks);
   }
+}
+
+void realloc_net_devices(void)
+{
+/* dummy */
 }
 
 int dont_send_wdog(ipxAddr_t *addr)

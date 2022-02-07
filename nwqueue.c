@@ -307,6 +307,7 @@ int nw_creat_queue(int connection, uint8 *queue_id, uint8 *queue_job,
       memcpy(&(jo->q.o), queue_job, sizeof(QUEUE_JOB_OLD));
       jo->q.o.job_id[0]         = (uint8) jo_id;
       jo->q.o.client_connection = (uint8)connection;
+
       jo->q.o.client_task       = (uint8)0xfe; /* ?? */
       U32_TO_BE32(1, jo->q.o.client_id); /* SU */
       set_entry_time(jo->q.o.job_entry_time);
@@ -338,8 +339,10 @@ int nw_creat_queue(int connection, uint8 *queue_id, uint8 *queue_job,
       U16_TO_BE16(0xffff, jo->q.n.record_in_use);
       U32_TO_BE32(0x0,    jo->q.n.record_previous);
       U32_TO_BE32(0x0,    jo->q.n.record_next);
-      memset(jo->q.n.client_connection, 0, 4);
-      jo->q.n.client_connection[0] = (uint8)connection;
+      jo->q.n.client_connection[2] = 0;
+      jo->q.n.client_connection[3] = 0;
+      U16_TO_16(connection, jo->q.n.client_connection);
+
       memset(jo->q.n.client_task,  0, 4);
       jo->q.n.client_task[0]       = (uint8)0xfe; /* ?? */
       U32_TO_BE32(1, jo->q.n.client_id); /* SU */

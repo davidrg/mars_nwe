@@ -1,4 +1,4 @@
-/* nwconn.c 16-Apr-97       */
+/* nwconn.c 22-Jun-97       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -30,6 +30,10 @@
 #include "connect.h"
 #include "nwqueue.h"
 #include "namspace.h"
+#include "nwconn.h"
+
+IPX_IO_RW ipx_io;
+int       use_ipx_io=0;
 
 int act_connection = 0;
 int act_pid        = 0;
@@ -59,8 +63,49 @@ static uint8        *requestdata = readbuff + sizeof(NCPREQUEST);
 static int          ncp_type;
 static int          sock_nwbind=-1;
 static int          sock_echo  =-1;
+static char         *prog_title;
 
 static int req_printed=0;
+
+typedef struct {
+  BURSTPACKET *sendburst;   /* buffer for sending burstpacket
+                             * allocated and prefilled by response to
+                             * func 0x65
+                             * max. max_packet_size
+                             */
+
+  uint8   *send_buf;        /* we look from servers side
+                             * complete data buf of burst reply
+                             * file read status + file read buf
+                             */
+  int     max_send_size;    /* send_buf size, complete Burst DATA size */
+
+  uint32  packet_sequence;  /* -> packet_sequence
+                             * will be increased after every
+                             * packet
+                             */
+  int     burst_sequence;
+
+  struct t_unitdata ud;
+  ipxAddr_t to_addr;
+
+  uint8   *recv_buf;        /* complete data buf for burst read requests */
+  int     max_recv_size;    /* allocated size of recv_buf */
+
+  int     max_burst_data_size;  /* size of BURSTDATA, max. IPX_DATA - BURSTHEADER */
+  uint8   ipx_pack_typ;
+} BURST_W;
+
+static BURST_W *burst_w=NULL;
+
+static void set_program_title(char *s)
+{
+  memset(prog_title, 0, 49);
+  if (s&&*s) 
+    strmaxcpy(prog_title, s, 48);
+  else 
+    strcpy(prog_title, "()");
+}
 
 static int ncp_response(int sequence, int task,
                 int completition, int data_len)
@@ -68,12 +113,14 @@ static int ncp_response(int sequence, int task,
   ncpresponse->sequence       = (uint8) sequence;
   ncpresponse->task           = (uint8) task;
   ncpresponse->completition   = (uint8) completition;
-  ncpresponse->reserved       = (uint8) 0;
   last_sequence               = sequence;
 
   if (req_printed) {
     XDPRINTF((0,0, "NWCONN NCP_RESP seq:%d, conn:%d,  compl=0x%x task=%d TO %s",
-        (int)ncpresponse->sequence,  (int) ncpresponse->connection, (int)completition,
+        (int)ncpresponse->sequence,
+        (int)ncpresponse->connection
+          | (((int)ncpresponse->high_connection) << 8),
+        (int)completition,
         (int)ncpresponse->task, visable_ipx_adr((ipxAddr_t *) ud.addr.buf)));
   }
   ud.udata.len = ud.udata.maxlen = sizeof(NCPRESPONSE) + data_len;
@@ -114,16 +161,15 @@ static void pr_debug_request()
       case 0x57 : ufunc = (int) *(requestdata);   break;
       default   : break;
     } /* switch */
-    XDPRINTF((0, 0, "NCP REQUEST: func=0x%02x, ufunc=0x%02x, seq:%03d, task:%02d",
+    XDPRINTF((1, 0,  "NCP REQUEST: func=0x%02x, ufunc=0x%02x, seq:%03d, task:%02d",
                       (int)ncprequest->function, ufunc,
                       (int)ncprequest->sequence,
                       (int)ncprequest->task));
   } else {
-     XDPRINTF((0, 0, "Got NCP:type:0x%x, seq:%d, task:%d, reserved:0x%x, func=0x%x",
+     XDPRINTF((1, 0, "Got NCP:type:0x%x, seq:%d, task:%d, func=0x%x",
                       ncp_type,
                       (int)ncprequest->sequence,
                       (int)ncprequest->task,
-                      (int)ncprequest->reserved,
                       (int)ncprequest->function));
   }
   if (requestlen > 0){
@@ -138,8 +184,9 @@ static void pr_debug_request()
     XDPRINTF((0,1,NULL));
   }
 }
-
+#if TEST_FNAME
 static int test_handle = -1;
+#endif
 static int handle_ncp_serv(void)
 {
   int    function       = (int)ncprequest->function;
@@ -171,6 +218,34 @@ static int handle_ncp_serv(void)
 
   if (ncp_type == 0x2222) {
     switch (function) {
+
+#if 0
+         case 0x3 :  { /* Log File */
+NWCONN	1:UNKNOWN FUNCTION od. TYPE: 0x3
+NWCONN	1:NWCONN NCP_RESP seq:56, conn:1, compl=0xfb task=5 TO
+	net=0:0:0:22, node=0:0:1:22:59:52, sock=40:03
+NWCONN	1:NCP REQUEST: func=0x03, ufunc=0x00, seq:060, task:05
+NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
+	'9','7','.','Z','I','P'
+                     ;;
+                     } break;
+         case 0x4 :  { /* Lock File Set  */
+                     ;;
+                     } break;
+         case 0x5 :  { /* Release File  */
+                     ;;
+                     } break;
+         case 0x6 :  { /* Release File Set */
+                     ;;
+                     } break;
+         case 0x7 :  { /* Clear File */
+                     ;;
+                     } break;
+         case 0x8 :  { /* Clear File Set  */
+                     ;;
+                     } break;
+#endif
+
          case 0x12 : { /* Get Volume Info with Number */
                        int volume = (int)*requestdata;
                        struct XDATA {
@@ -865,6 +940,7 @@ static int handle_ncp_serv(void)
                      set_default_guid();
                      nw_setup_home_vol(-1, NULL);
                      set_act_obj_id(0);  /* NOT logged in */
+                     set_program_title(NULL);
                      return(-1); /* nwbind must do a little rest */
                      break;
 
@@ -878,11 +954,11 @@ static int handle_ncp_serv(void)
                          uint8   fhandle[4];     /* Filehandle    */
                          uint8   offset[4];
                          uint8   size[4];
-                         uint8   weisnicht[2];   /* lock timeout ??? */
+                         uint8   unknown[2];     /* lock timeout ??? */
                        } *input = (struct INPUT *)ncprequest;
                        int fhandle  = GET_32  (input->fhandle);
-                       int offset   = GET_BE32(input->offset);
-                       int size     = GET_BE32(input->size);
+                       uint32 offset= GET_BE32(input->offset);
+                       uint32 size  = GET_BE32(input->size);
                        completition = (uint8)(-nw_lock_file(fhandle,
                                                              offset, size,
                                                (int)(function == 0x1a)));
@@ -1074,23 +1150,6 @@ static int handle_ncp_serv(void)
                        uint32 fhandle = GET_32(input->fhandle);
                        completition = (uint8)(-nw_close_file(fhandle, 0));
 
-#if 0
-#ifdef SIOCIPXNCPCONN
-                          {
-                            struct {
-                              int fh;
-                              int fd;
-                              int mode;
-                            } ncp_1;
-                            ncp_1.fh   = 0;
-                            ncp_1.fd   = -1;
-                            ncp_1.mode = 0;
-                            ioctl(0, SIOCIPXNCPCONN+1, &ncp_1);
-                          }
-#endif
-#endif
-
-
 #if TEST_FNAME
                        if (!completition && fhandle == test_handle) {
                          do_druck++;
@@ -1211,7 +1270,7 @@ static int handle_ncp_serv(void)
                          uint8   size[4];    /* Position ??? */
                        } *xdata=(struct XDATA*)responsedata;
                        int    fhandle  = GET_32(input->fhandle);
-                       int    size     = nw_seek_datei(fhandle, 0);
+                       int    size     = nw_seek_file(fhandle, 0);
                        if (size > -1) {
                          data_len = sizeof(struct XDATA);
                          U32_TO_BE32(size, xdata->size);
@@ -1244,28 +1303,13 @@ static int handle_ncp_serv(void)
                            max_size, rw_buffer_size));
                          size = -0x88; /* we say wrong filehandle */
                        } else
-                        size = nw_read_datei(fhandle,
+                        size = nw_read_file(fhandle,
                                                  xdata->data+zusatz,
                                                  max_size,
                                                  offset);
                        if (size > -1) {
                          U16_TO_BE16(size, xdata->size);
                          data_len=size+zusatz+2;
-#if 0
-#ifdef SIOCIPXNCPCONN
-                          {
-                            struct {
-                              int fh;
-                              int fd;
-                              int mode;
-                            } ncp_1;
-                            ncp_1.fh   = fhandle;
-                            ncp_1.fd   = get_nwfd(fhandle);
-                            ncp_1.mode = 0;
-                            ioctl(0, SIOCIPXNCPCONN+1, &ncp_1);
-                          }
-#endif
-#endif
                        } else completition = (uint8) -size;
                      }
                      break;
@@ -1283,12 +1327,14 @@ static int handle_ncp_serv(void)
                        off_t  offset     = GET_BE32(input->offset);
                        int    fhandle    = GET_32  (input->fhandle);
                        int    input_size = GET_BE16(input->size);
-                       int size          = nw_write_datei(fhandle,
+                       int size          = nw_write_file(fhandle,
                                                  input->data,
                                                  input_size,
                                                  offset);
                        if (size < 0)
                           completition = (uint8) -size;
+                       else if (size < input_size)
+                          completition = (uint8)0xff;
                      }
                      break;
 
@@ -1418,58 +1464,135 @@ static int handle_ncp_serv(void)
 
 #endif
 
-#if 0
-         case 0x61 : { /* Negotiate Buffer Size,  Packetsize new ?  */
-                       /* > 3.11 */
+         case 0x61 :
+#if ENABLE_BURSTMODE
+                     if (tells_server_version > 1) { /* > 3.11 */
+                       /* Negotiate Buffer Size,  Packetsize new ?  */
                        int   wantsize = GET_BE16((uint8*)requestdata);
+                       /* wantsize is here max.
+                        * phys. packet size without MAC-header
+                        * e.g. 1500 if ethernet
+                        */
                        int   flags    = (int)   *(requestdata+2);
-                       /* wantsize is here normally 1500 */
+                      /**** flags ***********************
+                       * CHECKSUMMING_REQUESTED         1
+                       * SIGNATURE_REQUESTED            2
+                       * COMPLETE_SIGNATURES_REQUESTED  4
+                       * ENCRYPTION_REQUESTED           8
+                       * LIP_DISABLED                0x80
+                       **********************************/
                        struct XDATA {
                          uint8   getsize[2];
                          uint8   socket[2];      /* echo socket */
                          uint8   flags;          /* zero        */
                        } *xdata= (struct XDATA*)responsedata;
                        memset(xdata, 0, sizeof(*xdata));
-                       wantsize = min(1500, wantsize);
+                       wantsize = min(IPX_MAX_DATA+30,     wantsize);
+                       rw_buffer_size = min(RW_BUFFERSIZE, wantsize-64);
+
                        U16_TO_BE16(wantsize,  xdata->getsize);
                        U16_TO_BE16(sock_echo, xdata->socket);
                        data_len = sizeof(*xdata);
                        XDPRINTF((5,0, "Negotiate Buffer (new) =0x%04x,(%d), flags=0x%x",
                               (int) wantsize, (int) wantsize, flags));
+                     } else
+#endif
+                     {
+                       XDPRINTF((2,0, "Function '0x61' (Burst) not enabled"));
+                       completition = 0xfb; /* unknown request */
+                       nw_debug=0;
                      }
                      break;
 
-#else
-         case 0x61 : /* Negotiate Buffer Size,  Packetsize new ?  */
-                   XDPRINTF((2,0, "Function '0x61' not supportet"));
-                   completition = 0xfb; /* unknown request */
-                   nw_debug=0;
-                   break;
-#endif
-
-#if 0
          case 0x65 :  /* Packet Burst Connection Request */
+#if ENABLE_BURSTMODE
+                     if (tells_server_version > 1) { /* > 3.11 */
                        struct INPUT {
-                         uint8   header[7];          /* Requestheader */
-                         uint8   conn_id[4];         /* ??     */
-                         uint8   max_packet_size[4]; /* HI-LOW */
-                         uint8   target_socket[2];
-                         uint8   max_sent_size[4];   /* HI-LOW */
-                         uint8   max_recv_size[4];   /* HI-LOW */
+                         uint8   header[7];          /* Requestheader   */
+                         uint8   connid[4];          /* RANDOM ID       */
+                                                     /* build by time() */
+                         uint8   max_packet_size[4]; /* HI-LO */
+                         /* max_packet_size is here max.
+                          * phys. packet size without MAC-header
+                          * e.g. 1500 if ethernet
+                          */
+                         uint8   target_socket[2];   /* HI-LO */
+                         uint8   max_send_size[4];   /* HI-LO */
+                         uint8   max_recv_size[4];   /* HI-LO */
                        } *input = (struct INPUT *)ncprequest;
                        struct XDATA {
-                         uint8   result;
-                         uint8   target_id[4];
-                         uint8   max_packet_size[4];
+                         uint8   server_id[4];       /* RANDOM ID       */
+                                                     /* build by time() */
+                         uint8   max_packet_size[4]; /* HI-LO        */
+                         uint8   max_send_size[4];   /* HI-LO        */
+                         uint8   max_recv_size[4];   /* HI-LO        */
                        } *xdata= (struct XDATA*) responsedata;
-                     break;
-#else
-         case 0x65 :
-                   XDPRINTF((2,0, "Packet Burst Connection Request not yet supportet"));
-                   nw_debug=0;
-                   completition = 0xfb; /* unknown request */
-                   break;
+                       int client_socket=GET_BE16(input->target_socket);
+                       uint32 max_packet_size=min(sizeof(IPX_DATA),
+                                 GET_BE32(input->max_packet_size)-30);
+                       U32_TO_BE32(max_packet_size + 30,
+                           xdata->max_packet_size);
+                       if (!burst_w)
+                         burst_w=(BURST_W*)xcmalloc(sizeof(BURST_W));
+                       xfree(burst_w->sendburst);
+                       xfree(burst_w->send_buf);
+                       xfree(burst_w->recv_buf);
+
+                       burst_w->max_burst_data_size=
+                          max_packet_size-sizeof(BURSTPACKET);
+
+                       burst_w->sendburst=
+                         (BURSTPACKET*)xcmalloc(max_packet_size);
+
+  		       burst_w->ud.udata.buf = (char*)(burst_w->sendburst);
+
+                       burst_w->sendburst->type[0]=0x77;
+                       burst_w->sendburst->type[1]=0x77;
+                       burst_w->sendburst->streamtyp=2; /* BIG_SEND_BURST */
+
+                       U32_TO_BE32(time(NULL),   burst_w->sendburst->source_conn);
+                       U16_TO_16(act_connection, burst_w->sendburst->source_conn);
+                       /* we need to identify it */
+
+                       memcpy(xdata->server_id,
+                              burst_w->sendburst->source_conn, 4);
+                       memcpy(burst_w->sendburst->dest_conn,
+                              input->connid, 4);
+
+                       burst_w->max_send_size=
+                         min(max_burst_send_size,
+                           GET_BE32(input->max_recv_size));
+                       burst_w->send_buf=xcmalloc(burst_w->max_send_size);
+
+                       burst_w->max_recv_size=
+                         min(max_burst_recv_size,
+                           GET_BE32(input->max_send_size));
+                       burst_w->recv_buf=xcmalloc(burst_w->max_recv_size);
+#if 0
+                       U32_TO_BE32(0x1600, burst_w->sendburst->delaytime);
 #endif
+                       U32_TO_BE32(burst_w->max_recv_size,   xdata->max_recv_size);
+                       U32_TO_BE32(burst_w->max_send_size,   xdata->max_send_size);
+
+                       burst_w->ipx_pack_typ     = PACKT_CORE;
+                       burst_w->ud.opt.len       = sizeof(uint8);
+  		       burst_w->ud.opt.maxlen    = sizeof(uint8);
+  		       burst_w->ud.opt.buf       = (char*)&(burst_w->ipx_pack_typ);
+
+                       memcpy(&(burst_w->to_addr), &from_addr, sizeof(ipxAddr_t));
+                       U16_TO_BE16(client_socket, burst_w->to_addr.sock);
+  		       burst_w->ud.addr.len      = sizeof(ipxAddr_t);
+  		       burst_w->ud.addr.maxlen   = sizeof(ipxAddr_t);
+  		       burst_w->ud.addr.buf      = (char*)&(burst_w->to_addr);
+                       data_len = sizeof(*xdata);
+                     } else
+#endif
+                     {
+                       XDPRINTF((2,0, "Packet Burst Connection Request not enabled"));
+                       nw_debug=0;
+                       completition = 0xfb; /* unknown request */
+                     }
+                     break;
 
          case 0x68 :  /* NDS NCP,  NDS Fragger Protokoll ??  */
                    XDPRINTF((2,0, "NDS Fragger Protokoll not supportet"));
@@ -1485,7 +1608,7 @@ static int handle_ncp_serv(void)
     (void) nw_init_connect();
     last_sequence = -9999;
   } else {
-    printf("WRONG TYPE 0x%x IN NWCONN\n", ncp_type);
+    XDPRINTF((1,0, "WRONG TYPE:0x%x", ncp_type));
     completition = 0xfb;
   }
 
@@ -1602,10 +1725,17 @@ static void handle_after_bind()
          case 0x14:   /* Login Objekt, unencrypted passwords */
          case 0x18: { /* crypt_keyed LOGIN */
            int   fnlen = (int) *(bindresponse + 3 * sizeof(int));
+           uint8 objname[48];
            /* ncpserv have changed the structure */
            set_guid(*((int*)bindresponse), *((int*)(bindresponse+sizeof(int))));
            set_act_obj_id(*((uint32*)(bindresponse + 2 * sizeof(int))));
            nw_setup_home_vol(fnlen, bindresponse   + 3 * sizeof(int) +1);
+           if (ufunc==0x14) {
+             xstrmaxcpy(objname, requestdata+6, (int) *(requestdata+5));
+           } else if (ufunc==0x18){
+             xstrmaxcpy(objname, requestdata+14, (int) *(requestdata+13));
+           } else objname[0]='\0';
+           set_program_title(objname);
          }
          break;
 
@@ -1623,7 +1753,9 @@ static void handle_after_bind()
              uint8   dir_nam_len;        /* len of dirname */
              uint8   dir_name[1];
            } *rinput = (struct RINPUT *) (bindresponse);
-           int result = nw_creat_queue(ncpresponse->connection,
+           int result = nw_creat_queue(
+                             (int)ncpresponse->connection
+                         | (((int)ncpresponse->high_connection) << 8),
                                   input->queue_id,
                                   input->queue_job,
                                    rinput->dir_name,
@@ -1666,7 +1798,124 @@ static void handle_after_bind()
   ncp_response(ncprequest->sequence, ncprequest->task, completition, data_len);
 }
 
-extern int t_errno;
+#if ENABLE_BURSTMODE
+
+
+static int send_burst(int offset, int datasize, int flags)
+{
+  BURSTPACKET *sb=burst_w->sendburst;
+  U32_TO_BE32(burst_w->packet_sequence++, sb->packet_sequence);
+  U32_TO_BE32(offset,   sb->burstoffset);
+  U16_TO_BE16(datasize, sb->datasize);
+  U16_TO_BE16(0,        sb->missing);
+  sb->flags = (uint8)flags;
+  memcpy(sb+1, burst_w->send_buf+offset, datasize);
+  burst_w->ud.udata.len =
+     burst_w->ud.udata.maxlen = datasize+sizeof(BURSTPACKET);
+  if (t_sndudata(FD_NCP_OUT, &(burst_w->ud)) < 0){
+    if (nw_debug) t_error("t_sndudata in NWCONN !OK");
+    return(-1);
+  }
+  return(0);
+}
+
+static void handle_burst_response(uint32 offset, int size)
+{
+  BURSTPACKET *sb=burst_w->sendburst;
+  U16_TO_BE16(burst_w->burst_sequence,   sb->burst_seq);
+  U16_TO_BE16(burst_w->burst_sequence+1, sb->ack_seq);
+  U32_TO_BE32(size,  sb->burstsize);
+  while (size) {
+    int sendsize=min(size, burst_w->max_burst_data_size);
+    int flags=0;
+    size-=sendsize;
+    if (!size) flags|=0x10; /* EndOfBurst */
+    send_burst(offset, sendsize, flags);
+#if 0
+    sleep_mu(1);
+#endif
+    offset+=sendsize;
+  }
+}
+
+static void handle_burst(BURSTPACKET *bp, int len)
+{
+  if (burst_w) {
+    uint32 burstoffset   = GET_BE32(bp->burstoffset);
+    int    burstsequence = GET_BE16(bp->burst_seq);
+    int    datasize      = GET_BE16(bp->datasize);
+
+    if (datasize && !(bp->flags & 0x80))
+      memcpy(burst_w->recv_buf+burstoffset, bp+1, datasize);
+
+    if (bp->flags & 0x10) {  /* last packet, now action */
+      struct REQ {
+        uint8 function[4];           /* lo-hi    1=READ, 2=WRITE   */
+        uint8 fhandle[4];            /* from open file             */
+        uint8 reserved1[6];          /* all zero                   */
+        uint8 reserved2[2];          /* ??? c8,0 od. c9,f0         */
+        uint8 file_offset[4];        /* HI-LO  */
+        uint8 file_size  [4];        /* HI-LO  */
+        uint8 data[2];               /* only Write */
+      } *req=(struct REQ*)(burst_w->recv_buf);
+      int function=GET_32(req->function);
+
+      if (function == 1 || function == 2) {  /* Read or Write */
+        uint32 fhandle = GET_32(req->fhandle);
+        uint32 foffset = GET_BE32(req->file_offset);
+        uint32 fsize   = GET_BE32(req->file_size);
+        if (function == 1) {  /* Read Request */
+          struct XDATA {
+            uint8 resultcode[4];  /* lo-hi ,
+                             * 0=noerror=OK,
+                             * 1=init-err,
+                             * 2=IO-err,
+                             * 3=no data
+                             */
+            uint8 readbytes[4];   /* hi-lo */
+          } *xdata= (struct XDATA*)burst_w->send_buf;
+          int    size = nw_read_file(fhandle,
+                                   burst_w->send_buf+sizeof(struct XDATA),
+                                   fsize, foffset);
+          if (size > -1) {
+            U32_TO_32(0,      xdata->resultcode);
+            U32_TO_BE32(size, xdata->readbytes);
+          } else {
+            U32_TO_32(3,      xdata->resultcode);
+            U32_TO_BE32(0,    xdata->readbytes);
+            size=0;
+          }
+          burst_w->burst_sequence = burstsequence;
+          handle_burst_response(0, size+sizeof(struct XDATA));
+        } else { /* Write Request */
+          struct XDATA {
+            uint8 resultcode[4];  /* lo-hi ,
+                                   * 0=noerror=OK,
+                                   * 4=write error
+                                   */
+          } *xdata= (struct XDATA*)burst_w->send_buf;
+          int size = nw_write_file(fhandle, req->data, fsize, foffset);
+          U32_TO_32(size==fsize ? 0 : 4, xdata->resultcode);
+          burst_w->burst_sequence = burstsequence;
+          handle_burst_response(0, sizeof(struct XDATA));
+        }
+      }
+    } else if (bp->flags & 0x80) {
+      int missing=GET_BE16(bp->missing);
+      uint8 *p=(uint8*)(bp+1);
+      burst_w->burst_sequence = burstsequence;
+      while (missing--){
+        int offs=GET_BE32(p);
+        int size=GET_BE16(p+4);
+        handle_burst_response(offs, size);
+        p+=6;
+      }
+    }
+  } else {
+    XDPRINTF((1, 0, "burst_w not allocated"));
+  }
+}
+#endif
 
 static void close_all(void)
 {
@@ -1708,33 +1957,30 @@ static void set_sig(void)
   signal(SIGINT,   sig_quit);
   signal(SIGPIPE,  sig_pipe);
   signal(SIGHUP,   sig_hup);
-#if USE_MMAP
-  signal(SIGBUS,   sig_bus_mmap);  /* in nwfile.c */
-#endif
+  if (use_mmap)
+     signal(SIGBUS,   sig_bus_mmap);  /* in nwfile.c */
 }
 #include <sys/resource.h>
+
 int main(int argc, char **argv)
 {
-  if (argc != 6) {
-    fprintf(stderr, "usage nwconn PID FROM_ADDR Connection nwbindsock echosock\n");
+  if (argc != 4 || 3!=sscanf(argv[3], "()INIT-:%x,%x,%x-", 
+     &father_pid, &sock_nwbind, &sock_echo)) {
+    fprintf(stderr, "usage nwconn connid FROM_ADDR ()INIT-:pid,nwbindsock,echosock-\n");
     exit(1);
-  } else father_pid = atoi(*(argv+1));
+  } 
+  prog_title=argv[3];
   setuid(0);
   setgid(0);
-
-  init_tools(NWCONN, atoi(*(argv+3)));
+  act_connection = atoi(*(argv+1));
+  init_tools(NWCONN, act_connection);
   memset(saved_readbuff, 0, sizeof(saved_readbuff));
-
-  XDPRINTF((2, 0, "FATHER PID=%d, ADDR=%s CON:%s",
-                  father_pid, *(argv+2), *(argv+3)));
-
+  XDPRINTF((2, 0, "FATHER PID=%d, ADDR=%s CON:%d",
+                  father_pid, *(argv+2), act_connection));
   adr_to_ipx_addr(&from_addr,   *(argv+2));
-  act_connection = atoi(*(argv+3));
+  
   if (nw_init_connect()) exit(1);
   act_pid = getpid();
-
-  sscanf(argv[4], "%x", &sock_nwbind);
-  sscanf(argv[5], "%x", &sock_echo);
 
 #ifdef LINUX
   set_emu_tli();
@@ -1749,12 +1995,16 @@ int main(int argc, char **argv)
      int conn   = act_connection;
      int result = ioctl(0, SIOCIPXNCPCONN, &conn);
      XDPRINTF((2, 0, "ioctl:SIOCIPXNCPCONN result=%d", result));
+#if 0
+     if (result == 1) use_ipx_io++;
+#endif
    }
 #  endif
 # endif
 #endif
 
   set_default_guid();
+  set_program_title(NULL);
 
   ud.opt.len       = sizeof(uint8);
   ud.opt.maxlen    = sizeof(uint8);
@@ -1766,23 +2016,34 @@ int main(int argc, char **argv)
   ud.udata.buf     = (char*)&ipxdata;
 
   U16_TO_BE16(0x3333, ncpresponse->type);
-  ncpresponse->task           = (uint8) 1;    /* allways 1 */
-  ncpresponse->reserved       = (uint8) 0;    /* allways 0 */
-  ncpresponse->connection     = (uint8)act_connection;
+  ncpresponse->task            = (uint8) 1;    /* allways 1 */
+  ncpresponse->connection      = (uint8)act_connection;
+  ncpresponse->high_connection = (uint8)(act_connection >> 8);
+
+  ipx_io.ubuf     =  readbuff;
+  ipx_io.size     =  sizeof(readbuff);
+  ipx_io.ncp_resp =  (char*)&ipxdata;
+  ipx_io.resp_size=  sizeof(ipxdata);
+
+  ipx_io.fh_r     =  0;
+  ipx_io.fd_r     = -1;
+  ipx_io.fh_w     =  0;
+  ipx_io.fd_w     = -1;
 
   set_sig();
 
   while (fl_get_int >= 0) {
     int data_len ;
-/*    setpriority(PRIO_PROCESS, 0, 0);  */
-    data_len = read(0, readbuff, sizeof(readbuff));
+#ifdef SIOCIPXNCPCONN
+    if (use_ipx_io)
+      data_len = ioctl(0, SIOCIPXNCPCONN+1, &ipx_io);
+    else
+#endif
+      data_len = read(0, readbuff, sizeof(readbuff));
+
     /* this read is a pipe or a socket read,
      * depending on CALL_NWCONN_OVER_SOCKET
      */
-    ncpresponse->connect_status = (uint8) 0;
-
-    /* new: 01-Nov-96 */
-    ncpresponse->task           = ncprequest->task;
 
     if (fl_get_int) {
       if (fl_get_int == 1) get_new_debug();
@@ -1791,6 +2052,9 @@ int main(int argc, char **argv)
 
     if (data_len > 0) {
       XDPRINTF((99, 0,  "NWCONN GOT DATA len = %d",data_len));
+      ncpresponse->connect_status = (uint8) 0;
+      ncpresponse->task           = ncprequest->task;
+
       if ((ncp_type = (int)GET_BE16(ncprequest->type)) == 0x3333) {
         /* this is a response packet */
         data_len -= sizeof(NCPRESPONSE);
@@ -1811,6 +2075,11 @@ int main(int argc, char **argv)
                        ncprequest->function, data_len);
         }
         saved_sequence = -1;
+#if ENABLE_BURSTMODE
+      } else if (ncp_type == 0x7777) { /* BURST-MODE */
+        XDPRINTF((16, 0, "GOT BURSTPACKET"));
+        handle_burst((BURSTPACKET*)readbuff, data_len);
+#endif
       } else { /* this calls I must handle, it is a request */
         int result;
         requestlen  = data_len - sizeof(NCPREQUEST);

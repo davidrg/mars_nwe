@@ -1,7 +1,7 @@
 Begin3
 Title:          mars_nwe
-Version:        0.98.pl10
-Entered-date:   24-Apr-97
+Version:        0.98.pl11
+Entered-date:   07-Jul-97
 Description:    Full netware-emulator (src), beta.
                 Supports file-services, bindery-services,
                 printing-services, routing-services.
@@ -9,7 +9,7 @@ Keywords:       novell, netware, server, ipx, ncp, tli
 Author:         mstover@stover.f.eunet.de  (Martin Stover)
 Maintained-by:  mstover@stover.f.eunet.de  (Martin Stover)
 Primary-site:   ftp.gwdg.de:/pub/linux/misc/ncpfs
-                200kB mars_nwe-0.98.pl10.tgz
+                200kB mars_nwe-0.98.pl11.tgz
 Alternate-site: sunsite.unc.edu:/pub/Linux/system/filesystems/ncpfs
 Platforms:      Linux (1.2.xx, 1.3.xx, 2.xx), UnixWare (2.xx)
 Copying-policy: GNU

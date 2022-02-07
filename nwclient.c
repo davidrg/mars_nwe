@@ -73,7 +73,7 @@ static uint8       *requestdata=((uint8*)&ipxdata_out)+sizeof(NCPREQUEST);
 
 static void ncp_request(int type, int  sequence,
 	        int connection,   int  task,
-                int reserved,     int  function,
+                int  function,
                 int data_len,     char *komment)
 
 {
@@ -81,12 +81,12 @@ static void ncp_request(int type, int  sequence,
   ncprequest->sequence       = (uint8) sequence;
   ncprequest->connection     = (uint8) connection;
   ncprequest->task           = (uint8) task;
-  ncprequest->reserved       = (uint8) reserved;
+  ncprequest->high_connection= (uint8) (connection>>8);
   ncprequest->function       = (uint8) function;
   {
     int j = data_len;
-    XDPRINTF((1, 0, "NCP REQUEST: type:0x%x, seq:%d, conn:%d, task:%d, reserved:0x%x, func:0x%x",
-       type, sequence, connection, task, reserved, function));
+    XDPRINTF((1, 0, "NCP REQUEST: type:0x%x, seq:%d, conn:%d, task:%d, func:0x%x",
+       type, sequence, connection, task, function));
      if (j > 0){
       uint8  *p=requestdata;
       XDPRINTF((1, 2, "len %d, DATA:", j));
@@ -152,16 +152,16 @@ static int handle_event(void)
     int j = responselen;
 
     int    sequence          = (int)ncpresponse->sequence;
-    int    connection        = (int)ncpresponse->connection;
+    int    connection        = (int)ncpresponse->connection
+                               | (( (int)ncpresponse->high_connection) <<8);
     int    task              = (int)ncpresponse->task;
-    int    reserved          = (int)ncpresponse->reserved;
     int    completition      = (int)ncpresponse->completition;
     int    connect_status    = (int)ncpresponse->connect_status;
     int    type 	     = GET_BE16(ncpresponse->type);
 
     XDPRINTF((1,0, "Ptyp:%d von: %s, len=%d", (int)ipx_pack_typ, visable_ipx_adr(&source_adr), responselen));
-    XDPRINTF((1,0, "RESPONSE:t:0x%x, seq:%d, conn:%d, task:%d, res:0x%x, complet.:0x%x, connect:0x%x",
-       type, sequence, connection, task, reserved, completition, connect_status));
+    XDPRINTF((1,0, "RESPONSE:t:0x%x, seq:%d, conn:%d, task:%d, complet.:0x%x, connect:0x%x",
+       type, sequence, connection, task, completition, connect_status));
 
      if (j > 0){
       uint8  *p=responsedata;
@@ -187,25 +187,26 @@ static int connection=0;
 
 #define RDATA(xdata, xfunc, xcomment)  \
 memcpy(requestdata, (xdata), sizeof(xdata)); \
-ncp_request(0x2222, sequence, connection, 1, 0, \
+ncp_request(0x2222, sequence, connection, 1, \
                 (xfunc), sizeof(xdata), (xcomment))
 
 #define ODATA(xfunc, xcomment)  \
-ncp_request(0x2222, sequence, connection, 1, 0, \
+ncp_request(0x2222, sequence, connection, 1, \
                 (xfunc), 0, (xcomment))
 
 #define VDATA(xfunc, xsize, xcomment)  \
-ncp_request(0x2222, sequence, connection, 1, 0, \
+ncp_request(0x2222, sequence, connection, 1,  \
                 (xfunc), (xsize), (xcomment))
 
 
 static int get_conn_nr(void)
 {
-  ncp_request(0x1111, sequence, 2, 2, 0xff, 0,
+  ncp_request(0x1111, sequence, 0xff02, 2, 0,
                       0, "Get Connection Nr.");
 
   if (!handle_event()) {
-    connection = ncpresponse->connection;
+    connection = (int)ncpresponse->connection
+                 | (((int)ncpresponse->high_connection)<<8);
     XDPRINTF((1, 0, "NWCLIENT GOT CONNECTION NR:%d", connection));
     return(0);
   }

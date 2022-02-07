@@ -1,0 +1,17 @@
+This is an important kernel ipx patch for all known kernels. 
+
+In linux/net/ipx/af_ipx.c routine ipx_create one line is missing.
+
+static int ipx_create(struct socket *sock, int protocol)
+{
+...
+	sk->rcvbuf=SK_RMEM_MAX;
+	sk->sndbuf=SK_WMEM_MAX;
+	sk->allocation=GFP_KERNEL;
+.......^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+After applying this patch you can disable the sendmsg() workaround code
+in mars_nwe/emutli.c by setting DO_IPX_SEND_TEST to 0.
+
+#define DO_IPX_SEND_TEST 0

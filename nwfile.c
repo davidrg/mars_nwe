@@ -1,4 +1,4 @@
-/* nwfile.c  23-Apr-97 */
+/* nwfile.c  02-Jun-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -27,8 +27,9 @@
 #include "nwfile.h"
 #include "connect.h"
 #include "nwconn.h"
-#if USE_MMAP
+
 # include <sys/mman.h>
+
 static got_sig_bus=0;
 void sig_bus_mmap(int rsig)
 {
@@ -36,7 +37,6 @@ void sig_bus_mmap(int rsig)
   XDPRINTF((2,0, "Got sig_bus"));
   signal(SIGBUS, sig_bus_mmap);
 }
-#endif
 
 static FILE_HANDLE  file_handles[MAX_FILE_HANDLES_CONN];
 #define    HOFFS        0
@@ -44,19 +44,19 @@ static int anz_fhandles=0;
 
 static int new_file_handle(uint8 *unixname, int task)
 {
-  int rethandle = HOFFS -1;
+  int fhandle = HOFFS -1;
   FILE_HANDLE  *fh=NULL;
-  while (++rethandle < anz_fhandles) {
-    fh=&(file_handles[rethandle]);
+  while (++fhandle < anz_fhandles) {
+    fh=&(file_handles[fhandle]);
     if (fh->fd == -1 && !(fh->fh_flags & FH_DO_NOT_REUSE)) { /* empty slot */
-      rethandle++;
+      fhandle++;
       break;
     } else fh=NULL;
   }
   if (fh == NULL) {
     if (anz_fhandles < MAX_FILE_HANDLES_CONN) {
       fh=&(file_handles[anz_fhandles]);
-      rethandle = ++anz_fhandles;
+      fhandle = ++anz_fhandles;
     } else {
       XDPRINTF((1, 0, "No more free file handles"));
       return(0); /* no free handle anymore */
@@ -71,13 +71,32 @@ static int new_file_handle(uint8 *unixname, int task)
   fh->fh_flags   = 0;
   fh->f       = NULL;
   XDPRINTF((5, 0, "new_file_handle=%d, anz_fhandles=%d, fn=%s",
-       rethandle, anz_fhandles, unixname));
-  return(rethandle);
+       fhandle, anz_fhandles, unixname));
+
+  if (fhandle == ipx_io.fh_r){
+    ipx_io.fh_r= 0;
+    ipx_io.fd_r=-1;
+  }
+  if (fhandle == ipx_io.fh_w){
+    ipx_io.fh_w= 0;
+    ipx_io.fd_w=-1;
+  }
+  return(fhandle);
 }
 
 static int free_file_handle(int fhandle)
 {
   int result=-0x88;
+
+  if (fhandle == ipx_io.fh_r){
+    ipx_io.fh_r= 0;
+    ipx_io.fd_r=-1;
+  }
+  if (fhandle == ipx_io.fh_w){
+    ipx_io.fh_w= 0;
+    ipx_io.fd_w=-1;
+  }
+
   if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
@@ -85,13 +104,11 @@ static int free_file_handle(int fhandle)
         if (fh->f) ext_pclose(fh->f);
         fh->f = NULL;
       } else {
-#if USE_MMAP
-        if (fh->p_mmap) {
+        if (use_mmap && fh->p_mmap) {
           munmap(fh->p_mmap, fh->size_mmap);
           fh->p_mmap = NULL;
           fh->size_mmap = 0;
         }
-#endif
         close(fh->fd);
       }
       if (fh->tmodi > 0L && !(FH_IS_PIPE_COMMAND & fh->fh_flags)
@@ -138,6 +155,10 @@ void init_file_module(int task)
       }
     }
   }
+  ipx_io.fh_r= 0;
+  ipx_io.fd_r=-1;
+  ipx_io.fh_w= 0;
+  ipx_io.fd_w=-1;
 }
 
 static int xsetegid(gid_t gid)
@@ -378,8 +399,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                  completition=-0xfe;
                }
              }
-#if USE_MMAP
-             if (fh->fd > -1 && !dowrite) {
+             if (use_mmap && fh->fd > -1 && !dowrite) {
                fh->size_mmap = fh->offd=lseek(fh->fd, 0L, SEEK_END);
                if (fh->size_mmap > 0) {
                  fh->p_mmap = mmap(NULL,
@@ -393,7 +413,6 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                  }
                }
              }
-#endif
            }
          }
          if (fh->fd > -1) {
@@ -422,7 +441,7 @@ file_creat_open_ret:
      char fname[200];
      if (!fd_2_fname(fhandle, fname, sizeof(fname))){
        FILE_HANDLE *fh=fd_2_fh(fhandle);
-       dprintf("Open/creat fd=%d, fn=`%s`, openmode=%s",
+       xdprintf(1,0,"Open/creat fd=%d, fn=`%s`, openmode=%s",
           fhandle, fname, (fh && (fh->fh_flags &FH_OPENED_RO)) ? "RO" : "RW" );
      }
    })
@@ -451,7 +470,7 @@ int nw_close_file(int fhandle, int reset_reuse)
   MDEBUG(D_FH_OPEN, {
     char fname[200];
     int r=fd_2_fname(fhandle, fname, sizeof(fname));
-    dprintf("nw_close_file: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
+    xdprintf(1,0,"nw_close_file: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
   })
 
   if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
@@ -467,13 +486,11 @@ int nw_close_file(int fhandle, int reset_reuse)
         }
         fh->f = NULL;
       } else {
-#if USE_MMAP
-        if (fh->p_mmap) {
+        if (use_mmap && fh->p_mmap) {
           munmap(fh->p_mmap, fh->size_mmap);
           fh->p_mmap = NULL;
           fh->size_mmap = 0;
         }
-#endif
         result=close(fh->fd);
       }
       fh->fd = -1;
@@ -503,7 +520,7 @@ int nw_commit_file(int fhandle)
   MDEBUG(D_FH_FLUSH, {
     char fname[200];
     int r=fd_2_fname(fhandle, fname, sizeof(fname));
-    dprintf("nw_commit_file: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
+    xdprintf(1,0,"nw_commit_file: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
   })
   if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
@@ -556,7 +573,7 @@ static void open_pipe_command(FILE_HANDLE *fh, int dowrite)
   fh->fd = (fh->f) ? fileno(fh->f->fildes[dowrite ? 0 : 1]) : -3;
 }
 
-int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
+int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
 {
   if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
@@ -576,42 +593,40 @@ int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
           if (fh->f->flags & 1) return(-0x57);
           fh->f->flags |= 1;
         }
-      } else {
-#if USE_MMAP
-        if (fh->p_mmap) {
-          while (1) {
-            if (offset < fh->size_mmap) {
-              if (size + offset > fh->size_mmap)
-                   size =  fh->size_mmap - offset;
-              memcpy(data, fh->p_mmap+offset, size);
-              if (got_sig_bus) {
-                fh->size_mmap = lseek(fh->fd, 0L, SEEK_END);
-                got_sig_bus   = 0;
-              } else
-                break;
-            } else {
-              size=-1;
+      } else if (use_mmap && fh->p_mmap) {
+        while (1) {
+          if (offset < fh->size_mmap) {
+            if (size + offset > fh->size_mmap)
+                 size =  fh->size_mmap - offset;
+            memcpy(data, fh->p_mmap+offset, size);
+            if (got_sig_bus) {
+              fh->size_mmap = lseek(fh->fd, 0L, SEEK_END);
+              got_sig_bus   = 0;
+            } else
               break;
-            }
-          } /* while */
-        } else {
-#endif
-          if (fh->offd != (long)offset) {
-            fh->offd=lseek(fh->fd, offset, SEEK_SET);
-            if (fh->offd < 0) {
-              XDPRINTF((5,0,"read-file failed in lseek"));
-            }
+          } else {
+            size=-1;
+            break;
           }
-          if (fh->offd > -1L) {
-            if ((size = read(fh->fd, data, size)) > -1)
-              fh->offd+=(long)size;
-            else {
-              XDPRINTF((5,0,"read-file failed in read"));
-            }
-          } else size = -1;
-#if USE_MMAP
+        } /* while */
+      } else {
+        if (use_ipx_io || fh->offd != (long)offset) {
+          fh->offd=lseek(fh->fd, offset, SEEK_SET);
+          if (fh->offd < 0) {
+            XDPRINTF((5,0,"read-file failed in lseek"));
+          }
         }
-#endif
+        if (fh->offd > -1L) {
+          if ((size = read(fh->fd, data, size)) > -1) {
+            fh->offd+=(long)size;
+            if (use_ipx_io) {
+              ipx_io.fh_r=fhandle+1;
+              ipx_io.fd_r=fh->fd;
+            }
+          } else {
+            XDPRINTF((5,0,"read-file failed in read"));
+          }
+        } else size = -1;
       }
       if (size == -1) size=0;
       return(size);
@@ -620,7 +635,7 @@ int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
   return(-0x88); /* wrong filehandle */
 }
 
-int nw_seek_datei(int fhandle, int modus)
+int nw_seek_file(int fhandle, int modus)
 {
   if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
@@ -642,7 +657,7 @@ int nw_seek_datei(int fhandle, int modus)
 }
 
 
-int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
+int nw_write_file(int fhandle, uint8 *data, int size, uint32 offset)
 {
   if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
     FILE_HANDLE *fh=&(file_handles[fhandle]);
@@ -653,12 +668,16 @@ int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
         return(size ? write(fh->fd, data, size) : 0);
       } else {
-        if (fh->offd != (long)offset)
+        if (use_ipx_io || fh->offd != (long)offset)
             fh->offd = lseek(fh->fd, offset, SEEK_SET);
         if (size) {
           if (fh->offd > -1L) {
             size = write(fh->fd, data, size);
             fh->offd+=(long)size;
+            if (use_ipx_io&&size>0) {
+              ipx_io.fh_w=fhandle+1;
+              ipx_io.fd_w=fh->fd;
+            }
           } else size = -1;
           return(size);
         } else {  /* truncate FILE */
@@ -723,7 +742,7 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
   return(-0x88); /* wrong filehandle */
 }
 
-int nw_lock_file(int fhandle, int offset, int size, int do_lock)
+int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock)
 {
   int result=-0x88;  /* wrong filehandle */
   if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
@@ -748,7 +767,18 @@ int nw_lock_file(int fhandle, int offset, int size, int do_lock)
        */
       flockd.l_start  = (offset & 0x7fffffff);
 #endif
-      flockd.l_len    = size;
+      
+      if (size == MAX_U32) {
+       /*  This is only a guess, but a size of 0xffffffff means to lock
+        *  the rest of the file, starting from the offset, to do this with
+        *  linux, a size of 0 has to be passed to the fcntl function.
+        *  ( Peter Gerhard )
+        *
+        */
+        flockd.l_len  = 0;
+      } else
+        flockd.l_len  = (size & 0x7fffffff);
+      
       result = fcntl(fh->fd, F_SETLK, &flockd);
       XDPRINTF((2, 0,  "nw_%s_datei result=%d, fh=%d, offset=%d, size=%d",
         (do_lock) ? "lock" : "unlock", result, fhandle, offset, size));
@@ -760,7 +790,7 @@ leave:
   MDEBUG(D_FH_LOCK, {
     char fname[200];
     (void)fd_2_fname(fhandle, fname, sizeof(fname));
-    dprintf("nw_%s_datei: fd=%d, fn=`%s`,r=0x%x, offs=%d, len=%d",
+    xdprintf(1,0,"nw_%s_datei: fd=%d, fn=`%s`,r=0x%x, offs=%d, len=%d",
               (do_lock) ? "lock" : "unlock",
               fhandle, fname, -result, offset, size);
   })

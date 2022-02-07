@@ -1,4 +1,4 @@
-/* nwserv.c 12-Apr-97 */
+/* nwserv.c 02-Jun-97 */
 /* MAIN Prog for NWSERV + NWROUTED  */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -36,8 +36,9 @@ int        print_route_mode  = 0;    /* append                        */
 char       *pr_route_info_fn = NULL; /* filename                      */
 int        wdogs_till_tics   = 0;    /* send wdogs to all             */
 /* <========== DEVICES ==========> */
-int           anz_net_devices=0;
-NW_NET_DEVICE *net_devices[MAX_NET_DEVICES];
+int           count_net_devices=0;
+int           max_net_devices=0;
+NW_NET_DEVICE **net_devices=NULL;
 
 #if !IN_NWROUTED
   uint16  ipx_sock_nummern[]={  SOCK_AUTO    /* WDOG    */
@@ -102,7 +103,11 @@ static int           pid_ncpserv    = -1;
 static int           fd_ncpserv_in  = -1;  /* ctrl-pipe in from ncpserv */
 
 static int           pid_nwbind     = -1;
+
+#if !IN_NWROUTED
 static int           sock_nwbind    = -1;
+#endif
+
 static int           fd_nwbind_in   = -1;  /* ctrl-pipe in from nnwbind */
 
 static  time_t       akttime_stamp             =  0;
@@ -111,7 +116,7 @@ static  time_t       server_down_stamp         =  0;
 static  int          server_goes_down_secs     = 10;
 static  int          server_broadcast_secs     = 60;
 static  int          ipx_flags                 =  0;
-
+static  int          handle_all_sap_typs=HANDLE_ALL_SAP_TYPS;
 static  int          nearest_request_flag=0;
 
 #if IN_NWROUTED
@@ -410,20 +415,21 @@ typedef struct {
   ipxAddr_t  addr;        /* address of client             */
   time_t     last_time;   /* time of last wdog packet sent */
   int        counter;     /* max. 11 packets               */
-} CONN;
+} CONNECTION;
 
-static CONN conns[MAX_CONNECTIONS];
+static int max_connections=MAX_CONNECTIONS;
+static CONNECTION *connections=NULL;
 static int hi_conn=0;     /* highest connection nr in use */
 
 static void insert_wdog_conn(int conn, ipxAddr_t *adr)
 {
-  if (conn > 0 && conn <= MAX_CONNECTIONS) {
-    CONN *c;
+  if (conn > 0 && conn <= max_connections) {
+    CONNECTION *c;
     while (hi_conn < conn) {
-      c=&(conns[hi_conn++]);
-      memset(c, 0, sizeof(CONN));
+      c=&(connections[hi_conn++]);
+      memset(c, 0, sizeof(CONNECTION));
     }
-    c=&(conns[conn-1]);
+    c=&(connections[conn-1]);
     c->last_time = akttime_stamp;
     c->counter   = 0;
     if (NULL != adr) memcpy(&(c->addr), adr, sizeof(ipxAddr_t));
@@ -436,7 +442,7 @@ static void modify_wdog_conn(int conn, int mode)
 /* mode = 99  : remove wdog  */
 {
   if (conn > 0 && --conn < hi_conn) {
-    CONN *c=&(conns[conn]);
+    CONNECTION *c=&(connections[conn]);
     if (mode < 99) {
       switch (mode) {
         case 1  : /* activate Wdog */
@@ -450,10 +456,10 @@ static void modify_wdog_conn(int conn, int mode)
                   break;
       } /* switch */
     } else if (mode == 99) {  /* remove */
-      memset(c, 0, sizeof(CONN));
+      memset(c, 0, sizeof(CONNECTION));
       if (conn + 1 == hi_conn) {
         while (hi_conn) {
-          c=&(conns[hi_conn-1]);
+          c=&(connections[hi_conn-1]);
           if (!c->last_time) hi_conn--;
           else break;
         }
@@ -466,7 +472,7 @@ static void send_wdogs()
 {
   int  k  = hi_conn;
   while (k--) {
-    CONN  *c = &(conns[k]);
+    CONNECTION  *c = &(connections[k]);
     if (c->last_time) {
       time_t t_diff = akttime_stamp - c->last_time;
       if (   (c->counter && t_diff > 50)
@@ -491,7 +497,7 @@ static void send_wdogs()
 static void send_bcasts(int conn)
 {
   if (conn > 0 && --conn < hi_conn) {
-    CONN  *c = &(conns[conn]);
+    CONNECTION  *c = &(connections[conn]);
     ipxAddr_t adr;
     memcpy(&adr, &(c->addr), sizeof(ipxAddr_t));
     U16_TO_BE16(GET_BE16(adr.sock)+2, adr.sock);
@@ -563,9 +569,7 @@ static void handle_sap(int fd,
      /* if (hops < 16)  hops++; */
       XDPRINTF((2,0, "TYP=%2d,hops=%2d, Addr=%s, Name=%s", type, hops,
           visable_ipx_adr(ad), name));
-#if !HANDLE_ALL_SAP_TYPS
-      if (type == 4) {  /* from Fileserver */
-#endif
+      if (handle_all_sap_typs || type == 4) {  /* from Fileserver */
         if (16 == hops) {
           /* shutdown */
           XDPRINTF((2,0, "SERVER %s IS GOING DOWN", name));
@@ -574,9 +578,7 @@ static void handle_sap(int fd,
           get_server_data((char*)name, ad, from_addr);
           insert_delete_server(name, type, ad, from_addr, hops, 0, 0);
         }
-#if !HANDLE_ALL_SAP_TYPS
       }
-#endif
       p+=sizeof(SAPS);
     } /* while */
   } else {
@@ -761,14 +763,34 @@ static void handle_event(int fd, uint16 socknr, int slot)
                        XDPRINTF((2,0, "WDOG Packet len=%d connid=%d, status=%d",
                           (int)ud.udata.len, (int) ipx_data_buff.wdog.connid,
                         (int)ipx_data_buff.wdog.status));
-                        if ('Y' == ipx_data_buff.wdog.status)
-                           modify_wdog_conn(ipx_data_buff.wdog.connid, 0);
+                        if ('Y' == ipx_data_buff.wdog.status) {
+                          if (max_connections < 256)
+                            modify_wdog_conn(ipx_data_buff.wdog.connid, 0);
+                          else {
+                            int k=-1;
+                            while (++k < hi_conn) {
+                              CONNECTION *c=&(connections[k]);
+                              if (IPXCMPNODE(c->addr.node, source_adr.node)){
+                                modify_wdog_conn(k+1, 0);
+                                break;
+                              }
+                            }
+                          }
+                        }
                      } else if ( 2 < ud.udata.len
                              && ipx_data_buff.data[0] == 0x11
                              && ipx_data_buff.data[1] == 0x11 ) {
                        /* now we make an echo of this data */
                        send_ipx_data(sockfd[WDOG_SLOT],
                         17, ud.udata.len, ud.udata.buf, &source_adr, "ECHO");
+                     } else {
+                       uint8 *p = (uint8*)&ipx_data_buff;
+                       int    k = 0;
+                       XDPRINTF((1, 2, "UNKNOWN from WDOG sock"));
+                       while (k++ < ud.udata.len){
+                          XDPRINTF((1, 3, " %x", (int) *p++));
+                       }
+                       XDPRINTF((1, 1, NULL));
                      }
                      break;
 #endif
@@ -866,48 +888,49 @@ static void get_ini(int full)
                      }
                      break;
 
-           case 4 :
-                     if (full) {
-                       if (anz_net_devices < MAX_NET_DEVICES &&
-                         (!anz_net_devices || anz > 2) ) {
-                         NW_NET_DEVICE **pnd=&(net_devices[anz_net_devices++]);
-                         NW_NET_DEVICE *nd=*pnd=
-                                (NW_NET_DEVICE*)xmalloc(sizeof(NW_NET_DEVICE));
-                         memset(nd, 0, sizeof(NW_NET_DEVICE));
-                         nd->ticks  = 1;
-                         nd->frame  = IPX_FRAME_8023;
-                         new_str(nd->devname, "eth0");
+           case 4 :  if (full && ( (!count_net_devices) || anz > 2) ) {
+                       NW_NET_DEVICE **pnd;
+                       NW_NET_DEVICE *nd;
 
-                         if (sscanf(inhalt, "%ld%c", &nd->net, &dummy) != 1)
-                             sscanf(inhalt, "%lx", &nd->net);
+                       if (count_net_devices >= max_net_devices)
+                          realloc_net_devices();
 
-                         if (nd->net && (nd->net == internal_net)) {
-                           errorp(11, "Get_ini", "device net 0x%lx = internal net", nd->net);
-                           exit(1);
-                         }
+                       pnd=&(net_devices[count_net_devices++]);
+                       nd=*pnd=(NW_NET_DEVICE*)
+                                xcmalloc(sizeof(NW_NET_DEVICE));
+                       nd->ticks  = 1;
+                       nd->frame  = IPX_FRAME_8023;
+                       new_str(nd->devname, "eth0");
 
-                         if (anz > 1)
-                           new_str(nd->devname, inhalt2);
+                       if (sscanf(inhalt, "%ld%c", &nd->net, &dummy) != 1)
+                           sscanf(inhalt, "%lx", &nd->net);
 
-                         if (anz > 2) {
-                           upstr(inhalt3);
-                           if (!strcmp(inhalt3, "AUTO"))
-                              nd->frame=-1;
-                           if (!strcmp(inhalt3, "802.3"))
-                              nd->frame=IPX_FRAME_8023;
-                           else if (!strcmp(inhalt3, "802.2"))
-                              nd->frame=IPX_FRAME_8022;
-                           else if (!strcmp(inhalt3, "SNAP"))
-                              nd->frame=IPX_FRAME_SNAP;
-                           else if (!strcmp(inhalt3, "ETHERNET_II"))
-                              nd->frame=IPX_FRAME_ETHERII;
-# ifdef IPX_FRAME_TR_8022
-                           else if (!strcmp(inhalt3, "TOKEN"))
-                              nd->frame=IPX_FRAME_TR_8022;
-# endif
-                         }
-                         if (anz > 3) nd->ticks = atoi(inhalt4);
+                       if (nd->net && (nd->net == internal_net)) {
+                         errorp(11, "Get_ini", "device net 0x%lx = internal net", nd->net);
+                         exit(1);
                        }
+
+                       if (anz > 1)
+                         new_str(nd->devname, inhalt2);
+
+                       if (anz > 2) {
+                         upstr(inhalt3);
+                         if (!strcmp(inhalt3, "AUTO"))
+                            nd->frame=-1;
+                         if (!strcmp(inhalt3, "802.3"))
+                            nd->frame=IPX_FRAME_8023;
+                         else if (!strcmp(inhalt3, "802.2"))
+                            nd->frame=IPX_FRAME_8022;
+                         else if (!strcmp(inhalt3, "SNAP"))
+                            nd->frame=IPX_FRAME_SNAP;
+                         else if (!strcmp(inhalt3, "ETHERNET_II"))
+                            nd->frame=IPX_FRAME_ETHERII;
+# ifdef IPX_FRAME_TR_8022
+                         else if (!strcmp(inhalt3, "TOKEN"))
+                            nd->frame=IPX_FRAME_TR_8022;
+# endif
+                       }
+                       if (anz > 3) nd->ticks = atoi(inhalt4);
                      }
                      break;
 
@@ -915,7 +938,17 @@ static void get_ini(int full)
                       break;
 #endif
 
+           case  69 : handle_all_sap_typs=atoi(inhalt);
+                      break;
+
 #if !IN_NWROUTED
+           case  60 : if (full) { /* connections */
+                        max_connections=atoi(inhalt);
+                        if (max_connections < 5)
+                          max_connections=MAX_CONNECTIONS;
+                      }
+                      break;
+
            case 104 : /* nwclient */
                       if (client_mode && atoi(inhalt))
                           client_mode++;
@@ -972,12 +1005,12 @@ static void get_ini(int full)
 #ifdef LINUX
 # if INTERNAL_RIP_SAP
     no_internal = !internal_net;
-    if (no_internal && anz_net_devices > 1) {
+    if (no_internal && count_net_devices > 1) {
       errorp(11, "Get_ini", "No internal net, but more than 1 Device specified");
       exit(1);
     }
     init_ipx(internal_net, node, ipxdebug, ipx_flags);
-    for (k=0; k < anz_net_devices; k++){
+    for (k=0; k < count_net_devices; k++){
       NW_NET_DEVICE *nd=net_devices[k];
       int  result;
       uint8 frname[30];
@@ -1012,7 +1045,7 @@ static void get_ini(int full)
 #if INTERNAL_RIP_SAP
     if (no_internal) {
       errorp(10, "WARNING:No use of internal net", NULL);
-    } else if (!anz_net_devices) {
+    } else if (!count_net_devices) {
       errorp(10, "WARNING:No external devices specified", NULL);
     }
     print_routing_info(1);
@@ -1074,7 +1107,7 @@ static void close_all(void)
 # if INTERNAL_RIP_SAP
 #if 0
   if (!(ipx_flags&1)) {
-    for (j=0; j<anz_net_devices;j++) {
+    for (j=0; j<count_net_devices;j++) {
       NW_NET_DEVICE *nd=net_devices[j];
       if (nd->is_up) {
         XDPRINTF((1, 0, "Close Device=%s, frame=%d",
@@ -1231,6 +1264,9 @@ int main(int argc, char **argv)
   init_tools(IN_PROG, init_mode);
   set_sigs(0);
   get_ini(1);
+#if !IN_NWROUTED
+  connections=(CONNECTION*)xcmalloc(max_connections*sizeof(CONNECTION));
+#endif
   j=-1;
   while (++j < NEEDED_POLLS) {
     polls[j].events  = POLLIN|POLLPRI;
@@ -1286,7 +1322,9 @@ int main(int argc, char **argv)
 #endif
     while (!server_is_down) {
       int anz_poll = poll(polls, NEEDED_POLLS, broadmillisecs);
+#if !IN_NWROUTED
       int call_wdog=0;
+#endif      
       time(&akttime_stamp);
 #if !IN_NWROUTED
       if (fl_got_sigchld) {
@@ -1299,8 +1337,10 @@ int main(int argc, char **argv)
           if (WIFSIGNALED(stat_loc)) status=-99;
         }
         if (pid == pid_nwbind || pid == pid_ncpserv) {
-          errorp(1, "CHILD died", "Child=%s, result=%d",
-              (pid==pid_nwbind) ? "NWBIND" : "NCPSERV", status);
+          errorp(1, "CHILD died", "Child=%s, %s=%d",
+              (pid==pid_nwbind) ? "NWBIND" : "NCPSERV",
+               (status==-99) ? "got signal" : "result" ,
+               (status==-99) ? WTERMSIG(stat_loc) : status);
           down_server();
         } else
           errorp(1, "unknown CHILD died", NULL);
@@ -1441,6 +1481,10 @@ int main(int argc, char **argv)
   close_all();
   fprintf(stderr, "\nNWE-%s is down now !!\n", prog_name_typ);
   exit_tools();
+
+#if !IN_NWROUTED
+  xfree(connections);
+#endif
   return(0);
 }
 

@@ -1,0 +1,31 @@
+Now MASR_NWE contains ALPHA code for support NLS.
+
+This support is not based on standard libc definitions for some reasons
+(the most important is that libc cannot handle two encodings). This complex
+scheme was designed especially for support of ex-USSR (where for historical
+reasons in DOS world cyrillic letters has other codes then in Linux world ;)
+
+Really now this code was tested only on one comp (sch57.mccme.ru ;) with
+following combination of codepages: external (DOS) encoding -- cp866,
+internal (Linux) encoding -- KOI8-R. With this option enabled all NAMES of
+files (not contents yet) will be converted before storing on disk from external
+encoding (cp866 in our case) to internal encoding and converted backword when
+directory will be scanned... Also filenames will be converted to lowercase if
+you set the 'k' options and converted to uppercase if you not set both 'k'
+options and 'i' options in section 1 (volumes).
+
+For support all this transformations you must create four tables (in one file,
+one after one): first -- for converting from extenal encoding to internal,
+second -- reversed table, third -- for doing UPCASE in external encoding and
+tha last -- for doing lowercase in external encoding. There are now three good
+start point:
+  1. nw.ini.cnv.min -- only ASCII table supported (good starting point)
+  2. nw.ini.cnv.437 -- for default linux and charset
+  3. nw.ini.cnv.cyr -- external encoding -- cp866, internal -- koi8-r
+You can edit this files with any editor, which can handle BINARY file (I know
+that joe and mcedit do so).
+
+P.S. I think about converting CONTENTS of files automatically, but I think that
+this MUST be option in section 1 for such conversion...
+
+                                                            khim@sch57.mccme.ru

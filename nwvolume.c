@@ -1,4 +1,4 @@
-/* nwvolume.c  01-Feb-97 */
+/* nwvolume.c  17-Jun-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,10 +29,15 @@
 
 #include <utime.h>
 
+#include "nwfname.h"
 #include "nwvolume.h"
 
-NW_VOL    nw_volumes[MAX_NW_VOLS];
-int       used_nw_volumes=0;
+NW_VOL     *nw_volumes=NULL;
+int        used_nw_volumes=0;
+uint8      *home_dir=NULL;
+int        home_dir_len=0;
+
+static int max_nw_vols=MAX_NW_VOLS;
 
 static void volume_to_namespace_map(int volume, NW_VOL *vol)
 {
@@ -56,9 +61,15 @@ void nw_init_volumes(FILE *f)
   int    k = -1;
   if (!volumes_is_init) {
     volumes_is_init++;
-    while (++k < MAX_NW_VOLS) memset(&(nw_volumes[k]), 0, sizeof(NW_VOL));
+    rewind(f);
+    if (get_ini_entry(f, 61, buff, sizeof(buff))) {
+      max_nw_vols=atoi(buff);
+      if (max_nw_vols < 2)
+        max_nw_vols=MAX_NW_VOLS;
+    }
+    nw_volumes=(NW_VOL*)xcmalloc(max_nw_vols*sizeof(NW_VOL));
   } else {
-    while (++k < MAX_NW_VOLS) {
+    while (++k < max_nw_vols) {
       int i = -1;
       while (++i < nw_volumes[k].maps_count)
         xfree(nw_volumes[k].dev_namespace_maps[i]);
@@ -68,7 +79,7 @@ void nw_init_volumes(FILE *f)
   rewind(f);
   used_nw_volumes = 0;
   while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))) {
-    if ( what == 1 && used_nw_volumes < MAX_NW_VOLS && strlen((char*)buff) > 3){
+    if ( what == 1 && used_nw_volumes < max_nw_vols && strlen((char*)buff) > 3){
       uint8 sysname[256];
       uint8 unixname[256];
       char  optionstr[256];
@@ -78,7 +89,7 @@ void nw_init_volumes(FILE *f)
       if (founds > 1) {
         NW_VOL *vol=&(nw_volumes[used_nw_volumes]);
         vol->options    = VOL_NAMESPACE_DOS;
-        upstr(sysname);
+        up_fn(sysname);
         new_str(vol->sysname, sysname);
         if (1 == (len = strlen((char*)unixname)) && unixname[0] == '~') {
           vol->options  |= VOL_OPTION_IS_HOME;
@@ -149,12 +160,16 @@ void nw_setup_home_vol(int len, uint8 *fn)
   int k=used_nw_volumes;
   uint8 unixname[258];
   unixname[0] = '\0';
+  xfree(home_dir);
+  home_dir_len=0;
   if (len > 0) {
     strmaxcpy(unixname, fn, len);
     if (unixname[len-1] != '/') {
       unixname[len++] = '/';
       unixname[len]   = '\0';
     }
+    new_str(home_dir, unixname);
+    home_dir_len=len;
   }
   while (k--) { /* now set all HOME volumes */
     if (nw_volumes[k].options & VOL_OPTION_IS_HOME)  {
@@ -243,7 +258,7 @@ int nw_get_volume_number(uint8 *volname, int namelen)
   uint8   vname[255];
   int j = used_nw_volumes;
   strmaxcpy(vname, volname, namelen);
-  upstr(vname);
+  up_fn(vname);
   while (j--) {
     if (!strcmp((char*)nw_volumes[j].sysname, (char*)vname)) {
       result = j;
@@ -265,7 +280,7 @@ int nw_get_volume_name(int volnr, uint8 *volname)
     } else result= strlen((char*)nw_volumes[volnr].sysname);
   } else {
     if (NULL != volname) *volname = '\0';
-    if (volnr < MAX_NW_VOLS) result=0;
+    if (volnr < max_nw_vols) result=0;
   }
   if (nw_debug > 4) {
     uint8 xvolname[10];

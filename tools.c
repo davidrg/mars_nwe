@@ -1,4 +1,4 @@
-/* tools.c  10-Apr-97 */
+/* tools.c  08-Jun-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -16,8 +16,10 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+
 #include "net.h"
 #include <stdarg.h>
+#include <syslog.h>
 
 #ifndef LINUX
 extern int   _sys_nerr;
@@ -28,7 +30,10 @@ extern char *_sys_errlist[];
 int    nw_debug=0;
 uint32 debug_mask=0; /* special debug masks */
 
-FILE *logfile=stderr;
+static FILE *logfile=stderr;
+static int   use_syslog=0; /* 1 = use syslog for all loggings
+                            * 2 = only for errors
+                            */
 
 static int   in_module=0;  /* in which process i am ?   */
 static int   connection=0; /* which connection (nwconn) */
@@ -42,6 +47,7 @@ static char  *modnames[] =
   "NWCLIENT",
   "NWBIND",
   "NWROUTED" };
+
 
 static char *get_modstr(void)
 {
@@ -97,20 +103,6 @@ int x_x_xnewstr(uint8 **p,  uint8 *s)
   return (len);
 }
 
-void dprintf(char *p, ...)
-{
-  va_list ap;
-  if (nw_debug){
-    fprintf(logfile, "%-8s %d:", get_modstr(), connection);
-    va_start(ap, p);
-    vfprintf(logfile, p, ap);
-    va_end(ap);
-    fprintf(logfile, "\n");
-    fflush(logfile);
-    fflush(logfile);
-  }
-}
-
 void xdprintf(int dlevel, int mode, char *p, ...)
 /* mode flags
  * 0x01 : no 'begin line'
@@ -119,23 +111,58 @@ void xdprintf(int dlevel, int mode, char *p, ...)
  */
 {
   va_list ap;
+static char *buffered=NULL;
   int errnum      = errno;
   if (nw_debug >= dlevel) {
-    if (!(mode & 1))
-      fprintf(logfile, "%-8s %d:", get_modstr(), connection);
-    if (p) {
-      va_start(ap, p);
-      vfprintf(logfile, p, ap);
-      va_end(ap);
+    if (use_syslog==1) {
+      char buf[2048];  /* should be ever big enough */
+      char *pb=buf;
+      if (buffered) {
+        strcpy(buf, buffered);
+        xfree(buffered);
+        pb+=strlen(buf);
+      }
+      if (p) {
+        int l;
+        va_start(ap, p);
+        l=vsprintf(pb, p, ap);
+        va_end(ap);
+        pb+=l;
+      }
+      if (mode & 0x10) {
+        int l=sprintf(pb, ", errno=%d", errnum);
+        pb+=l;
+        if (errnum > 0 && errnum < _sys_nerr)
+          l=sprintf(pb, " (%s)",  _sys_errlist[errnum]);
+      }
+      if (!(mode & 2)) {
+        char identstr[200];
+        sprintf(identstr, "%-8s %d", get_modstr(), connection);
+        openlog(identstr, LOG_CONS, LOG_DAEMON);
+        syslog(LOG_DEBUG, buf);
+        closelog();
+      } else {
+        int l=strlen(buf);
+        buffered=xmalloc(l+1);
+        strcpy(buffered, buf);
+      }
+    } else {
+      if (!(mode & 1))
+        fprintf(logfile, "%-8s %d:", get_modstr(), connection);
+      if (p) {
+        va_start(ap, p);
+        vfprintf(logfile, p, ap);
+        va_end(ap);
+      }
+      if (mode & 0x10) {
+        fprintf(logfile, ", errno=%d", errnum);
+        if (errnum > 0 && errnum < _sys_nerr)
+          fprintf(logfile, " (%s)",  _sys_errlist[errnum]);
+      }
+      if (!(mode & 2))
+        fprintf(logfile, "\n");
+      fflush(logfile);
     }
-    if (mode & 0x10) {
-      fprintf(logfile, ", errno=%d", errnum);
-      if (errnum > 0 && errnum < _sys_nerr)
-        fprintf(logfile, " (%s)",  _sys_errlist[errnum]);
-    }
-    if (!(mode & 2))
-      fprintf(logfile, "\n");
-    fflush(logfile);
   }
 }
 
@@ -155,6 +182,24 @@ void errorp(int mode, char *what, char *p, ...)
     sprintf(errbuf, "errno=%d", errnum);
   else
     errbuf[0] = '\0';
+
+  if (use_syslog) {
+    int prio=(mode) ? LOG_CRIT : LOG_ERR;
+    char identstr[200];
+    char buf[2048];
+    int l=sprintf(buf, "%s:%s ", what, errstr);
+    if (p) {
+      va_start(ap, p);
+      vsprintf(buf+l, p, ap);
+      va_end(ap);
+    }
+    sprintf(identstr, "%-8s %d", get_modstr(), connection);
+    openlog(identstr, LOG_CONS, LOG_DAEMON);
+    syslog(prio, buf);
+    closelog();
+    if (!mode) return;
+    lologfile=stderr;
+  }
   while (1) {
     if (mode==1) fprintf(lologfile, "\n!! %-8s %d:PANIC !!\n", get_modstr(), connection);
     fprintf(lologfile, "%-8s %d:%s:%s\n", get_modstr(), connection,  what, errstr);
@@ -268,7 +313,7 @@ int get_ini_int(int what)
   uint8 buff[30];
   int  i;
   if (get_ini_entry(NULL, what, buff, sizeof(buff))
-     && 1==sscanf((char*)buff, "%d", &i) ) return(i);
+     && 1==sscanf((char*)buff, "%i", &i) ) return(i);
   return(-1);
 }
 
@@ -288,10 +333,7 @@ void get_ini_debug(int module)
 
 static void sig_segv(int isig)
 {
-  char *s= "!!!! PANIC signal SIGSEGV at pid=%d !!!!!\n" ;
-  XDPRINTF((0, 0, s, my_pid));
-  fprintf(stderr, "\n");
-  fprintf(stderr, s, my_pid);
+  errorp(11, "!!! SIG_SEGV !!!", "at pid=%d", my_pid);
 #if 0
   (*sigsegv_func)(isig);
 #endif
@@ -369,14 +411,20 @@ void init_tools(int module, int options)
         sig = SIGHUP;
       } else if (options == 2) { /* kill prog */
         sig = SIGTERM;
-      } else if (options == 3) { /* kill prog */
+      } else if (options == 3) { /* update tables */
         sig = SIGUSR1;
       } else {
         errorp(11, "INIT", "Program pid=%d already running and pidfn=%s exists" ,
                kill_pid, pidfn);
         exit(1);
       }
-      if (kill_pid > 1) kill(kill_pid, sig);
+      if (kill_pid > 1) {
+        kill(kill_pid, sig);
+        if (sig == SIGUSR1) {  /* we try twice */
+          sleep(2);
+          kill(kill_pid, sig);
+        }
+      }
       exit(0);
     } else if (options == 1 || options == 2 || options == 3) {
       errorp(11, "INIT", "Program not running yet" );
@@ -391,7 +439,9 @@ void init_tools(int module, int options)
         strmaxcpy((uint8*)logfilename, (uint8*)buf, sizeof(logfilename)-1);
         withlog++;
       } else if (202 == what) {
-        new_log = atoi((char*)buf);
+        int flags = hextoi((char*)buf);
+        new_log=flags&1;
+        use_syslog=(flags&2) ? 2 : 0;
       } else if (100+module == what) {
         get_debug_level(buf);
       }
@@ -400,18 +450,22 @@ void init_tools(int module, int options)
   }
   if (dodaemon) {
     if (!withlog) strcpy(logfilename, "./nw.log");
+    if (!strcmp(logfilename, "syslog"))
+       use_syslog=1;
+
     if (NWSERV == module || NWROUTED == module) { /* now make daemon */
       int fd=fork();
       if (fd) exit((fd > 0) ? 0 : 1);
       my_pid=getpid();
     }
-    if (new_log && (NWSERV == module || NWROUTED == module))
-      unlink(logfilename);
-
-    if (NULL == (logfile = fopen(logfilename, "a"))) {
-      logfile = stderr;
-      errorp(1, "INIT", "Cannot open logfile='%s'",logfilename);
-      exit(1);
+    if (use_syslog != 1){
+      if (new_log && (NWSERV == module || NWROUTED == module))
+        unlink(logfilename);
+      if (NULL == (logfile = fopen(logfilename, "a"))) {
+        logfile = stderr;
+        errorp(1, "INIT", "Cannot open logfile='%s'",logfilename);
+        exit(1);
+      }
     }
     if (NWSERV == module || NWROUTED == module) {
       creat_pidfile();
@@ -482,6 +536,14 @@ int hextoi(char *buf)
   return(i);
 }
 
+unsigned int atou(char *buf)
+{
+  unsigned int u;
+  if (!buf || (1 != sscanf(buf, "%i", &u)))
+    u=0;
+  return(u);
+}
+
 char *hex_str(char *buf, uint8 *s, int len)
 {
   char *pp=buf;
@@ -549,5 +611,4 @@ int find_station_match(int entry, ipxAddr_t *addr)
           entry, matched, visable_ipx_adr(addr)));
   return(matched);
 }
-
 

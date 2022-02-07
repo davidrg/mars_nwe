@@ -1,4 +1,4 @@
-/* nwfile.h 23-Apr-97 */
+/* nwfile.h 02-Jun-97 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
 #include "nwqueue.h"
@@ -7,10 +7,8 @@ typedef struct {
   int    task;          /* for which task		     */
   int      fd;          /* filehandle from system open/creat */
   long   offd;          /* actual file offset                */
-#if USE_MMAP
   uint8  *p_mmap;       /* for use with mmap                 */
   int    size_mmap;
-#endif
   time_t tmodi;         /* modification TIME                 */
   FILE_PIPE *f;         /* for PIPE                          */
   int fh_flags;         /* 2 = PIPE                          */
@@ -42,14 +40,14 @@ extern int nw_commit_file(int fhandle);
 
 extern uint8 *file_get_unix_name(int fhandle);
 
-extern int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset);
-extern int nw_seek_datei(int fhandle, int modus);
-extern int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset);
+extern int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset);
+extern int nw_seek_file(int fhandle, int modus);
+extern int nw_write_file(int fhandle, uint8 *data, int size, uint32 offset);
 extern int nw_server_copy(int qfhandle, uint32 qoffset,
                    int zfhandle, uint32 zoffset,
                    uint32 size);
 
-extern int nw_lock_file(int fhandle, int offset, int size, int do_lock);
+extern int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock);
 
 extern int fd_2_fname(int fhandle, char *buf, int bufsize);
 extern FILE_HANDLE *fd_2_fh(int fhandle);

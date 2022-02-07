@@ -1,4 +1,4 @@
-/* nwdbm.c  17-Apr-97  data base for mars_nwe */
+/* nwdbm.c  08-Jun-97  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,7 +42,9 @@
 #define DBM_REMAINS_OPEN  1
 
 int tells_server_version=1; /* default 1 since 12-Jan-97 */
-int password_scheme=0; /* PW_SCHEME_CHANGE_PW; */
+int password_scheme=0; 
+uint32 network_serial_nmbr=(uint32)NETWORK_SERIAL_NMBR;
+uint16 network_appl_nmbr=(uint16)NETWORK_APPL_NMBR;
 
 static int entry8_flags = 0;
 
@@ -1790,6 +1792,10 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
         if (auto_ins_user) auto_ins_user = atoi(buf);
       } else if (16 == what) {
         make_tests = atoi(buff);
+      } else if (70 == what) {
+        network_serial_nmbr=atou(buff);
+      } else if (71 == what) {
+        network_appl_nmbr=(uint16)atou(buff);
       }
     } /* while */
     fclose(f);
@@ -1930,7 +1936,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
 int nw_init_dbm(char *servername, ipxAddr_t *adr)
 /*
  * routine inits bindery
- * all dynamic objects and properties will be deletet.
+ * all dynamic objects and properties will be deleted.
  * and the always needed properties will be created
  * if not exist.
  */

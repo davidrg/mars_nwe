@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "20-Apr-97"
+#define REVISION_DATE "07-Jul-97"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -76,7 +76,9 @@ typedef struct {
    int        pid_nwconn;      /* pid of user process nwconn */
 } CONNECTION;
 
-static CONNECTION connections[MAX_CONNECTIONS];
+static int        max_nw_vols=MAX_NW_VOLS;
+static int        max_connections=MAX_CONNECTIONS;
+static CONNECTION *connections=NULL;
 static CONNECTION *act_c=(CONNECTION*)NULL;
 static int        act_connection;
 static int        internal_act=0;
@@ -145,7 +147,7 @@ static void sent_down_message(void)
 {
   int k = -1;
   server_goes_down++;
-  while (++k < MAX_CONNECTIONS) {
+  while (++k < max_connections) {
     CONNECTION *cn=&connections[k];
     if (cn->active) {
       strmaxcpy(cn->message, "SERVER IS GOING DOWN", 58);
@@ -156,7 +158,7 @@ static void sent_down_message(void)
 
 static void open_clear_connection(int conn, int activate, uint8 *addr)
 {
-  if (conn > 0 && --conn < MAX_CONNECTIONS) {
+  if (conn > 0 && --conn < max_connections) {
     CONNECTION *c = &connections[conn];
     c->active     = activate;
     c->message[0] = '\0';
@@ -254,7 +256,7 @@ static void handle_fxx(int gelen, int func)
           int connr   =  (int) (*conns++);
           int result  =  0xff; /* target not ok */
           CONNECTION *cn;
-          if (connr > 0 && --connr < MAX_CONNECTIONS
+          if (connr > 0 && --connr < max_connections
             && ((cn = &connections[connr]))->active ) {
             if (!cn->message[0]) {
               strmaxcpy(cn->message, msg, min(58, msglen));
@@ -391,16 +393,16 @@ static void handle_fxx(int gelen, int func)
 
                      i=0;
                      h=0;
-                     for (k=0; k < MAX_CONNECTIONS; k++) {
+                     for (k=0; k < max_connections; k++) {
                        if (connections[k].active) {
                          i++;
                          h = k+1;
                        }
                      }
                      U16_TO_BE16(i, xdata->connection_in_use);
-                     U16_TO_BE16(MAX_CONNECTIONS, xdata->maxconnections);
+                     U16_TO_BE16(max_connections, xdata->maxconnections);
                      U16_TO_BE16(h,               xdata->peak_connection);
-                     U16_TO_BE16(MAX_NW_VOLS,     xdata->max_volumes);
+                     U16_TO_BE16(max_nw_vols,     xdata->max_volumes);
                      xdata->security_level=1;
                        /*
                         * if this level is 0
@@ -427,9 +429,9 @@ static void handle_fxx(int gelen, int func)
                        uint8 appl_number[2];
                      } *xdata = (struct XDATA*) responsedata;
                      /* serial-number 4-Byte */
-                     U32_TO_BE32(NETWORK_SERIAL_NMBR, xdata->serial_number);
-                     /* applikation-number 2-Byte */
-                     U16_TO_BE16(NETWORK_APPL_NMBR,  xdata->appl_number);
+                     U32_TO_BE32(network_serial_nmbr, xdata->serial_number);
+                     /* application-number 2-Byte */
+                     U16_TO_BE16(network_appl_nmbr,  xdata->appl_number);
                      data_len = sizeof(struct XDATA);
                     }
                   break;
@@ -437,9 +439,11 @@ static void handle_fxx(int gelen, int func)
      case 0x13 :    /* Get Connection Internet Address, old */
      case 0x1a :  { /* Get Connection Internet Address, new */
                     int conn  = (ufunc == 0x13)
-                                 ? (int) *rdata
-                                 : GET_32(rdata);
-                    if (conn && --conn < MAX_CONNECTIONS
+                          ? ((max_connections < 256) 
+                              ? (int) *rdata
+                              : act_connection)
+                          : GET_32(rdata);
+                    if (conn && --conn < max_connections
                       && connections[conn].active ) {
                       CONNECTION *cx=&(connections[conn]);
                       data_len = sizeof(ipxAddr_t);
@@ -505,7 +509,7 @@ static void handle_fxx(int gelen, int func)
                       int k=-1;
                       int anz  = 0;
                       p = responsedata+1;
-                      while (++k < MAX_CONNECTIONS && anz < 255) {
+                      while (++k < max_connections && anz < 255) {
                         CONNECTION *cn= &connections[k];
                         if (cn->active && cn->object_id == obj.id) {
                           *p++=(uint8)k+1;
@@ -518,8 +522,8 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
-     case 0x16 :    /* Get Connection Info, old */
-     case 0x1c :  { /* Get Connection Info, new */
+     case 0x16 :    /* Get Connection Info, old  */
+     case 0x1c :  { /* Get Connection Info, new ( > 255 connections) */
                     struct XDATA {
                       uint8 object_id[4];
                       uint8 object_type[2];
@@ -527,14 +531,15 @@ static void handle_fxx(int gelen, int func)
                       uint8 login_time[7];
                       uint8 reserved;
                     } *xdata = (struct XDATA*) responsedata;
-                    int conn = (ufunc == 0x16)
-                                 ? (int) *rdata
-                                 : GET_32(rdata);
-
+                    int conn  = (ufunc == 0x16)
+                          ? ((max_connections < 256) 
+                              ? (int) *rdata
+                              : act_connection)
+                          : GET_32(rdata);
                     memset(xdata, 0, sizeof(struct XDATA));
                     data_len = sizeof(struct XDATA);
-                    if (conn && conn <= MAX_CONNECTIONS
-                             && connections[conn-1].active ) {
+                    if (conn && conn <= max_connections
+                           && connections[conn-1].active ) {
                       CONNECTION *cx=&(connections[conn-1]);
                       NETOBJ    obj;
                       int       result;
@@ -547,7 +552,7 @@ static void handle_fxx(int gelen, int func)
                         strncpy(xdata->object_name, obj.name, 48);
                         get_login_time(xdata->login_time, cx);
                       } /*  else completition = (uint8)(-result); */
-                    } else if (!conn || conn > MAX_CONNECTIONS) {
+                    } else if (!conn || conn > max_connections) {
                       data_len     = 0;
                       completition = 0xfd;
                     }
@@ -1147,13 +1152,22 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
-
      case 0x7d :  { /* Read Queue Current Status, new */
                    NETOBJ    obj;
+                   struct XDATA {
+                     uint8  id[4];     /* queue id */
+                     uint8  status[4]; /* &1 no station allowed */
+                                       /* &2 no other queue server allowed */
+                                       /* &4 no queue server allowed get entries */
+                     uint8 entries[4]; /* current entries */
+                     uint8 servers[4]; /* current servers */ 
+                   } *xdata = (struct XDATA*) responsedata;
                    obj.id =  GET_BE32(rdata);
                    XDPRINTF((1, 0, "TODO:READ QUEUE STATUS NEW of Q=0x%lx", obj.id));
-                   completition=0xd5; /* no Queue Job */
-                  }break;
+                   memset(xdata, 0, sizeof(*xdata));
+                   U32_TO_BE32(obj.id, xdata->id);
+                   data_len=sizeof(struct XDATA);
+                  } break;
 
      case 0x81 :  { /* Get Queue Job List */
                    NETOBJ    obj;
@@ -1219,10 +1233,10 @@ static void handle_fxx(int gelen, int func)
                     if (anz_conns) {
                       while (++k < anz_conns) {
                         int conn= (int) *co++;
-                        if (conn == ncprequest->connection) {
+                        if (conn == act_connection) {
                           strmaxcpy(act_c->message, msg, min(58, msglen));
                           connect_status = 0x40;  /* don't know why */
-                        } else if (conn && --conn < MAX_CONNECTIONS) {
+                        } else if (conn && --conn < max_connections) {
                           CONNECTION *cc= &(connections[conn]);
                           if (cc->object_id) {  /* if logged */
                             strmaxcpy(cc->message, msg, min(58, msglen));
@@ -1262,7 +1276,7 @@ static void handle_fxx(int gelen, int func)
   ncpresponse->sequence       = ncprequest->sequence;
   ncpresponse->task           = ncprequest->task;
   ncpresponse->connection     = ncprequest->connection;
-  ncpresponse->reserved       = 0;
+  ncpresponse->high_connection= ncprequest->high_connection;
   ncpresponse->completition   = completition;
 
   if (act_c->message[0]) connect_status |= 0x40;
@@ -1426,8 +1440,6 @@ int main(int argc, char *argv[])
 
   init_tools(NWBIND, 0);
 
-  memset(connections, 0, sizeof(connections));
-
   strmaxcpy(my_nwname, argv[1], 47);
   adr_to_ipx_addr(&my_addr, argv[2]);
 
@@ -1439,6 +1451,13 @@ int main(int argc, char *argv[])
     exit(1);
   }
   internal_act = 0;
+  max_connections=get_ini_int(60); /* max_connections */
+  if (max_connections < 5)
+    max_connections=MAX_CONNECTIONS;
+  connections=(CONNECTION*)xcmalloc(max_connections*sizeof(CONNECTION));
+  max_nw_vols=get_ini_int(61); /* max. volumes */
+  if (max_nw_vols < 1)
+    max_nw_vols = MAX_NW_VOLS;
 
 #ifdef LINUX
   set_emu_tli();
@@ -1470,16 +1489,18 @@ int main(int argc, char *argv[])
       XDPRINTF((10, 0, "NWBIND-LOOP from %s", visable_ipx_adr(&from_addr)));
       if ( ncprequest->type[0] == 0x22
         && ncprequest->type[1] == 0x22) {
-        act_connection = ((int)ncprequest->connection);
-        if (act_connection > 0  && act_connection <= MAX_CONNECTIONS) {
+        act_connection  = (int)ncprequest->connection
+                         | (((int)ncprequest->high_connection) << 8);
+
+        if (act_connection > 0  && act_connection <= max_connections) {
           act_c = &(connections[act_connection-1]);
           internal_act = 0;
           if (act_c->active && IPXCMPNODE(from_addr.node, my_addr.node)
                         && IPXCMPNET (from_addr.net,  my_addr.net)) {
             handle_fxx(ud.udata.len, (int)ncprequest->function);
           } else {
-            XDPRINTF((1, 0, "NWBIND-LOOP addr of connection=%d is wrong",
-              act_connection));
+            XDPRINTF((1, 0, "NWBIND-LOOP addr=%s of connection=%d is wrong",
+             visable_ipx_adr(&from_addr), act_connection));
           }
         } else {
           XDPRINTF((1, 0, "NWBIND-LOOP connection=%d is wrong",
@@ -1513,5 +1534,6 @@ int main(int argc, char *argv[])
     }
   }
   sync_dbm();
+  xfree(connections);
   return(0);
 }

@@ -1,4 +1,4 @@
-/* nwvolume.h  17-Jan-97 */
+/* nwvolume.h  17-Jun-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -67,8 +67,10 @@ struct fs_usage {
   long fsu_ffree;		/* Free file nodes. */
 };
 
-extern NW_VOL    nw_volumes[MAX_NW_VOLS];
+extern NW_VOL    *nw_volumes;
 extern int       used_nw_volumes;
+extern uint8     *home_dir;
+extern int       home_dir_len;
 
 extern void nw_init_volumes(FILE *f);
 extern void nw_setup_home_vol(int len, uint8 *fn);

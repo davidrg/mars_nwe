@@ -1,4 +1,4 @@
-/* nwroute.c 15-Apr-97 */
+/* nwroute.c 02-Jun-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -28,7 +28,8 @@ typedef struct {
 } NW_ROUTES;
 
 static int        anz_routes=0;
-static NW_ROUTES *nw_routes[MAX_NW_ROUTES];
+static int        max_nw_routes=0;
+static NW_ROUTES **nw_routes=NULL;
 
 typedef struct {
   uint8     *name; /* Server Name      */
@@ -40,7 +41,8 @@ typedef struct {
 } NW_SERVERS;
 
 static int        anz_servers=0;
-static NW_SERVERS *nw_servers[MAX_NW_SERVERS];
+static int        max_nw_servers=0;
+static NW_SERVERS **nw_servers=NULL;
 
 static void insert_delete_net(uint32 destnet,
                               uint32 rnet,      /* routernet  */
@@ -62,7 +64,7 @@ static void insert_delete_net(uint32 destnet,
 
   if (!destnet || destnet == internal_net) return;
 
-  while (++k < anz_net_devices) {
+  while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
     if  (nd->is_up) {
       if (nd->net == destnet) {
@@ -82,9 +84,15 @@ static void insert_delete_net(uint32 destnet,
   if (k == anz_routes) {    /* no route slot found */
     if (do_delete) return;  /* nothing to delete   */
     if (freeslot < 0) {
-      if (anz_routes == MAX_NW_ROUTES) {
-        XDPRINTF((1, 0, "too many routes > %d, increase MAX_NW_ROUTES in config.h", anz_routes));
-        return;
+      if (anz_routes == max_nw_routes) {
+        int new_max_nw = max_nw_routes+5;
+        NW_ROUTES **new_nwr
+             =(NW_ROUTES**)xcmalloc(new_max_nw*sizeof(NW_ROUTES*));
+        if (max_nw_servers)
+          memcpy(new_nwr, nw_routes, max_nw_routes*sizeof(NW_ROUTES*));
+        xfree(nw_routes);
+        nw_routes=new_nwr;
+        max_nw_routes=new_max_nw;
       }
       nw_routes[k] = (NW_ROUTES*)xmalloc(sizeof(NW_ROUTES));
       anz_routes++;
@@ -142,7 +150,7 @@ NW_NET_DEVICE *find_netdevice(uint32 network)
   int l=2;
   while (l--) {
     int  k=-1;
-    while (++k < anz_net_devices) {
+    while (++k < count_net_devices) {
       NW_NET_DEVICE *nd=net_devices[k];
       if (nd->is_up && nd->net == net) {
         XDPRINTF((3, 0, "found netdevive %s, frame=%d, ticks=%d",
@@ -163,7 +171,7 @@ static NW_NET_DEVICE *find_device_by_net(uint32 net)
 /* return the device of this net I hope */
 {
   int    k=-1;
-  while (++k < anz_net_devices) {
+  while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
     if (nd->is_up && nd->net == net) return(nd);
   }
@@ -205,9 +213,15 @@ void insert_delete_server(uint8  *name,                 /* Server Name */
     if (do_delete) return;  /* nothing to delete   */
 
     if (freeslot < 0) {
-      if (anz_servers == MAX_NW_SERVERS) {
-        XDPRINTF((1, 0, "too many servers > %d, increase MAX_NW_SERVERS in config.h", anz_servers));
-        return;
+      if (anz_servers == max_nw_servers) {
+        int new_max_nw = max_nw_servers+5;
+        NW_SERVERS **new_nws
+             =(NW_SERVERS**)xcmalloc(new_max_nw*sizeof(NW_SERVERS*));
+        if (max_nw_servers)
+          memcpy(new_nws, nw_servers, max_nw_servers*sizeof(NW_SERVERS*));
+        xfree(nw_servers);
+        nw_servers=new_nws;
+        max_nw_servers=new_max_nw;
       }
       nw_servers[k] = (NW_SERVERS*)xcmalloc(sizeof(NW_SERVERS));
       anz_servers++;
@@ -262,14 +276,18 @@ static int       rmode;        /* 0=normal, 1=shutdown response    */
                                /* 10=request                       */
 
 static int       rentries=0;
-static uint8     rip_buff[2 + MAX_RIP_ENTRIES * 8];
-                     /* operation + max. 50 RIPS */
+static int       max_rip_entries=0;
+static uint8     *rip_buff=NULL;
 
 static void init_rip_buff(uint32 net, int mode)
 {
   rnet     = net;
   rentries = 0;
   rmode    = mode;
+  if (!rip_buff) {
+    max_rip_entries=10;
+    rip_buff=xcmalloc(2+max_rip_entries*8);
+  }
   U16_TO_BE16((mode > 9) ? 1 : 2, rip_buff);  /* rip request or response */
 }
 
@@ -277,15 +295,21 @@ static void ins_rip_buff(uint32 net, uint16 hops, uint16 ticks)
 {
   if (!net) return;
   if (net != rnet || (!rentries && net == internal_net)) {
-    if (rentries < MAX_RIP_ENTRIES) {
-      uint8  *p=rip_buff+2+(rentries*8);
-      U32_TO_BE32(net,   p);
-      U16_TO_BE16(hops,  p+4);
-      U16_TO_BE16(ticks, p+6);
-      rentries++;
-    } else {
-      XDPRINTF((1, 0, "too many rips > %d, increase MAX_RIP_ENTRIES in config.h", MAX_RIP_ENTRIES));
+    uint8 *p;
+    if (rentries >= max_rip_entries) {
+      int    new_rip_entries=max_rip_entries+5;
+      uint8 *new_ripbuf=xcmalloc(2 + new_rip_entries*8);
+      if (max_rip_entries) 
+        memcpy(new_ripbuf, rip_buff, 2 + max_rip_entries*8);
+      xfree(rip_buff);
+      rip_buff=new_ripbuf;
+      max_rip_entries=new_rip_entries;
     }
+    p=rip_buff+2+(rentries*8);
+    U32_TO_BE32(net,   p);
+    U16_TO_BE16(hops,  p+4);
+    U16_TO_BE16(ticks, p+6);
+    rentries++;
   }
 }
 
@@ -303,7 +327,7 @@ static void build_rip_buff(uint32 destnet)
     }
 
     k=-1;
-    while (++k < anz_net_devices) {
+    while (++k < count_net_devices) {
       NW_NET_DEVICE *nd=net_devices[k];
       if (nd->is_up && (is_wild || nd->net == destnet))
         ins_rip_buff(nd->net, (rmode==1) ? 16 : 1, nd->ticks+1);
@@ -368,9 +392,10 @@ static void send_rip_broadcast(int mode)
 /* mode=2, shutdown           */
 {
   int k=-1;
-  while (++k < anz_net_devices) {
+  while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
-    if (nd->is_up && nd->ticks < 7) { /* isdn devices should not get RIP broadcasts everytime */
+    if (nd->is_up && (nd->ticks < 7 || mode)) { 
+      /* isdn devices should not get RIP broadcasts everytime */
       init_rip_buff(nd->net, (mode == 2) ? 1 : 0);
       build_rip_buff(MAX_U32);
       send_rip_buff(NULL);
@@ -381,7 +406,7 @@ static void send_rip_broadcast(int mode)
 void rip_for_net(uint32 net)
 {
   int k=-1;
-  while (++k < anz_net_devices) {
+  while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
     if (nd->is_up && nd->ticks < 7) { /* isdn devices should not get RIP broadcasts everytime */
       init_rip_buff(nd->net, 10);
@@ -527,7 +552,7 @@ static void send_sap_broadcast(int mode)
 /* mode=2, shutdown           */
 {
   int k=-1;
-  while (++k < anz_net_devices) {
+  while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
     if (nd->is_up && (nd->ticks < 7 || mode)) {
     /* isdn devices should not get SAP broadcasts everytime */
@@ -578,9 +603,9 @@ void print_routing_info(int force)
     time_t xtime;
     time(&xtime);
     fprintf(f, "%s", ctime(&xtime) );
-    fprintf(f, "<--------- %d Devices ---------------->\n", anz_net_devices);
+    fprintf(f, "<--------- %d Devices ---------------->\n", count_net_devices);
     fprintf(f, "%-15s %-15s %5s  Network Status\n", "DevName", "Frame", "Ticks");
-    while (++k < anz_net_devices) {
+    while (++k < count_net_devices) {
       uint8 frname[30];
       NW_NET_DEVICE *nd=net_devices[k];
       (void) get_frame_name(frname, nd->frame);
@@ -648,7 +673,7 @@ void send_sap_rip_broadcast(int mode)
 /* mode=3, update routes      */
 {
 static int flipflop=1;
-  int force_print_routes=(mode == 1);
+  int force_print_routes=(mode == 1) ? 1 : 0;
   if (auto_detect_interfaces)
     force_print_routes += look_for_interfaces();
   if (mode) {
@@ -692,12 +717,12 @@ static void query_sap_on_net(uint32 net)
 void get_servers(void)
 {
   int k=-1;
-  while (++k < anz_net_devices) {
+  while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
     if (nd->is_up && nd->ticks < 7)
         query_sap_on_net(nd->net); /* only fast routes */
   }
-  if (!anz_net_devices) query_sap_on_net(internal_net);
+  if (!count_net_devices) query_sap_on_net(internal_net);
 }
 
 
@@ -712,6 +737,18 @@ int dont_send_wdog(ipxAddr_t *addr)
   return(0);
 }
 
+void realloc_net_devices(void)
+{
+  int new_max_netd=max_net_devices+2;
+  NW_NET_DEVICE **new_nd=(NW_NET_DEVICE**)
+         xcmalloc(new_max_netd*sizeof(NW_NET_DEVICE*));
+  if (max_net_devices) 
+    memcpy(new_nd, net_devices, max_net_devices*sizeof(NW_NET_DEVICE*));
+  xfree(net_devices);
+  net_devices=new_nd;
+  max_net_devices=new_max_netd;
+}
+
 /* ---------------------------------------------------- */
 int test_ins_device_net(uint32 rnet)
 {
@@ -721,7 +758,7 @@ int test_ins_device_net(uint32 rnet)
   int   foundfree=-1; /* first matching/free entry */
   NW_NET_DEVICE *nd;
   if (!rnet || rnet == internal_net) return(0);
-  while (++k < anz_net_devices) {
+  while (++k < count_net_devices) {
     nd=net_devices[k];
     if (!nd->is_up) {
       if (nd->net == rnet) {
@@ -740,7 +777,7 @@ int test_ins_device_net(uint32 rnet)
     int framefound = -1;
     k = foundfree - 1;
     foundfree      = -1;
-    while (++k < anz_net_devices) {
+    while (++k < count_net_devices) {
       nd = net_devices[k];
       if (!nd->is_up && !nd->net) {
         int dfound = !strcmp(nd->devname, rnetdevname);
@@ -768,32 +805,31 @@ int test_ins_device_net(uint32 rnet)
   }
 
   if ( foundfree < 0 ) {
-    if (anz_net_devices < MAX_NET_DEVICES) {
-      NW_NET_DEVICE **pnd;
-      int matched=0;
-      k=-1;
-      while (++k < anz_net_devices) {
-        nd = net_devices[k];
-        if (nd->wildmask&3) {
-          int dfound = !strcmp(nd->devname, rnetdevname);
-          int ffound = nd->frame == rnetframe;
-          if ( (dfound && ffound) || (dfound && (nd->wildmask&2) )
-              || (ffound && (nd->wildmask&1))) {
-            pnd=&(net_devices[anz_net_devices++]);
-            *pnd= (NW_NET_DEVICE*)xcmalloc(sizeof(NW_NET_DEVICE));
-            (*pnd)->wildmask = nd->wildmask;
-            (*pnd)->ticks    = nd->ticks;
-            matched++;
-            nd=*pnd;
-            break;
-          }
+    NW_NET_DEVICE **pnd;
+    int matched=0;
+    k=-1;
+
+    if (count_net_devices >= max_net_devices) 
+      realloc_net_devices();
+
+    while (++k < count_net_devices) {
+      nd = net_devices[k];
+      if (nd->wildmask&3) {
+        int dfound = !strcmp(nd->devname, rnetdevname);
+        int ffound = nd->frame == rnetframe;
+        if ( (dfound && ffound) || (dfound && (nd->wildmask&2) )
+            || (ffound && (nd->wildmask&1))) {
+          pnd=&(net_devices[count_net_devices++]);
+          *pnd= (NW_NET_DEVICE*)xcmalloc(sizeof(NW_NET_DEVICE));
+          (*pnd)->wildmask = nd->wildmask;
+          (*pnd)->ticks    = nd->ticks;
+          matched++;
+          nd=*pnd;
+          break;
         }
       }
-      if (!matched) return(0);
-    } else {
-      XDPRINTF((1, 0, "too many devices > %d, increase MAX_NET_DEVICES in config.h", anz_net_devices));
-      return(0);
     }
+    if (!matched) return(0);
   } else {
     nd = net_devices[foundfree];
   }
@@ -830,7 +866,7 @@ static int look_for_interfaces(void)
     NW_NET_DEVICE *nd;
     int  k = -1;
 
-    while (++k < anz_net_devices) {
+    while (++k < count_net_devices) {
       nd=net_devices[k];
       if (nd->is_up == 2) nd->is_up = -2; /* this will be put DOWN */
     }
@@ -844,7 +880,7 @@ static int look_for_interfaces(void)
       if (rnet > 0L && !(flags & 2)) { /* not internal */
         int found=0;
         k=-1;
-        while (++k < anz_net_devices) {
+        while (++k < count_net_devices) {
           nd=net_devices[k];
           if (nd->net == rnet) {
             found++;
@@ -859,7 +895,7 @@ static int look_for_interfaces(void)
     fclose(f);
 
     k = -1;
-    while (++k < anz_net_devices) {
+    while (++k < count_net_devices) {
       nd=net_devices[k];
       if (nd->is_up < 0) {
         int j;

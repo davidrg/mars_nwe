@@ -1,4 +1,4 @@
-/* connect.h 06-Nov-96 */
+/* connect.h 02-Jun-97 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
 
@@ -24,36 +24,12 @@
 #define FILE_ATTR_A         0x00000020
 #define FILE_ATTR_SHARE     0x00000080
 
-
-typedef struct {
-  DIR    *f;
-  char   unixname[256]; /* kompletter unixname       */
-  ino_t  inode;         /* Unix Inode                */
-  time_t timestamp;     /* fÅr letzte Allocierung    */
-  char   *kpath;        /* Ein Zeichen nach unixname */
-  int    vol_options;   /* searchoptions             */
-  int    volume;        /* Volume Number	     */
-
-  int    sequence;      /* Search sequence           */
-  off_t  dirpos;        /* Current pos in unix dir   */
-} DIR_HANDLE;
-
 typedef struct {
   uint8 path[256];      /* directory        */
   uint8 fn[256];        /* file             */
   int   volume;         /* Volume Number    */
   int   has_wild;       /* fn has wildcards */
 } NW_PATH;
-
-typedef struct {
-   ino_t  inode;        /* Unix Inode dieses Verzeichnisses */
-   time_t timestamp;    /* Zeitmarke          */
-   uint8  *path;        /* path ab Volume     */
-   uint8  volume;       /* Welches Volume     */
-   uint8  is_temp;      /* 0:perm. 1:temp 2: spez. temp */
-   uint8  drive;        /* driveletter        */
-   uint8  task;         /* actual task        */
-} NW_DIR;
 
 typedef struct {
   uint8   name[14];              /* filename in DOS format */
@@ -130,6 +106,11 @@ typedef struct {
   } u;
 } NW_SCAN_DIR_INFO;
 
+extern int use_mmap;
+extern int tells_server_version;
+extern int max_burst_send_size;
+extern int max_burst_recv_size;
+
 extern int nw_init_connect(void);
 extern void nw_exit_connect(void);
 
@@ -156,6 +137,8 @@ extern int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode);
 extern int nw_search(uint8 *info, uint32 *fileowner,
               int dirhandle, int searchsequence,
               int search_attrib, uint8 *data, int len);
+
+extern int nw_dir_get_vol_path(int dirhandle, uint8 *path);
 
 extern int nw_dir_search(uint8 *info,
               int dirhandle, int searchsequence,
@@ -220,8 +203,6 @@ void get_dos_dir_attrib(NW_DOS_DIR_INFO *f,
 
 
 #define MAX_NW_DIRS    255
-extern NW_DIR  dirs[MAX_NW_DIRS];
-extern int     used_dirs;
 extern int     act_uid;
 extern int     act_gid;
 extern int     act_obj_id;   /* not login == 0             */
@@ -264,8 +245,6 @@ extern int    un_nw_rights(struct stat *stb);
 
 extern void   un_time_2_nw(time_t time, uint8 *d, int high_low);
 
-
 extern void mangle_dos_name(NW_VOL *vol, uint8 *unixname, uint8 *pp);
-
 
 #endif

@@ -1,3 +1,14 @@
+------07-Jul-97--- 0.98.pl11 ---------
+- section 201 enhanced -> syslogd
+- new section 50: filenametranslation by Victor Khimenko.
+- some new sections >= 60 to runtime modify some compiled in options.
+  MAX_NW_SERVERS, MAX_NW_ROUTES, MAX_RIP_ENTRIES, MAX_NET_DEVICES are 
+  not used/needed anymore (dynamic allocation now).
+- a 'ps' now shows logged in user like
+  .... nwconn 1 0.0.0.10:0.80.48.83.14.3f:40.4 MAR               
+  and a 'attached only' session like
+  .... nwconn 1 0.0.0.10:0.80.48.83.14.3f:40.4 ()               
+- now mars_nwe can handle more than 255 connections ( I hope ;-) )
 ------17-Apr-97--- 0.98.pl9 ----------
 - Section 4: IPX-Devices, syntax of automatic creation of interfaces and
 - Section 5: save flag -> device flags CHANGED !!

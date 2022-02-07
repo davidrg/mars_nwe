@@ -1,4 +1,4 @@
-/* ncpserv.c 01-Nov-96 */
+/* ncpserv.c 02-Jun-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -36,22 +36,29 @@ static  int        tells_server_version=1;
 #endif
 static  int        sock_nwbind=-1;
 static  int        sock_echo  =-1;
+static  int        highest_fd = 10;
 
 static  int        station_restrictions=0;
+static int         max_connections=MAX_CONNECTIONS;
 
-static int get_ini(void)
+static void set_highest_fd(int fd)
+{
+  if (fd > highest_fd)
+    highest_fd=fd;
+}
+
+static int get_ini(int full)
 {
   FILE *f  = open_nw_ini();
   if (f){
     uint8 buff[256];
     int   what;
     while (0 != (what =get_ini_entry(f, 0, buff, sizeof(buff)))) {
-#if 0
-      if (6 == what) {  /* Server Version */
-        tells_server_version = atoi((char*)buff);
-      } else
-#endif
-      if (400 == what) {   /* station file */
+      if (60 == what && full) {   /* max_connections */
+        max_connections=atoi((char*)buff);
+        if (max_connections < 5)
+          max_connections=MAX_CONNECTIONS;
+      } else if (400 == what) {   /* station file */
         new_str(station_fn, buff);
       } else if (402 == what) {  /* station connect restrictions */
         station_restrictions=atoi((char*)buff);
@@ -139,28 +146,37 @@ typedef struct {
    time_t     last_access;  /* time of last 0x2222 request */
 } CONNECTION;
 
-static CONNECTION connections[MAX_CONNECTIONS];
-static int 	  anz_connect=0;   /* actual count connections */
+static CONNECTION *connections=NULL;
+static int 	  count_connections=0;   /* actual count connections */
 
-#define L_MAX_CONNECTIONS  MAX_CONNECTIONS
+#define TEST_HIGH_CONN  0
 
 static int new_conn_nr(void)
 {
   int  j = -1;
-  if (!anz_connect){ /* init all */
-    j = L_MAX_CONNECTIONS;
+  if (!count_connections){ /* init all */
+    j = max_connections;
     while (j--) {
       connections[j].fd       	= -1;
       connections[j].pid       	= -1;
     }
-    anz_connect++;
+    count_connections++;
+
+#if TEST_HIGH_CONN    
+    return(count_connections=301);   /* TESTS ONLY */
+#endif
     return(1);
   }
   j = -1;
-  while (++j < L_MAX_CONNECTIONS) {
+
+#if TEST_HIGH_CONN    
+  j=300-1;   /* TESTS ONLY */
+#endif  
+  
+  while (++j < max_connections) {
     CONNECTION *c=&(connections[j]);
     if (c->fd < 0 && c->pid < 0) {
-      if (++j > anz_connect) anz_connect=j;
+      if (++j > count_connections) count_connections=j;
       return(j);
     }
   }
@@ -171,7 +187,7 @@ static int new_conn_nr(void)
 
 static int free_conn_nr(int nr)
 {
-  if (nr && --nr < anz_connect) {
+  if (nr && --nr < count_connections) {
     connections[nr].fd  = -1;
     connections[nr].pid = -1;
     return(0);
@@ -182,7 +198,7 @@ static int free_conn_nr(int nr)
 static int find_conn_nr(ipxAddr_t *addr)
 {
   int j = -1;
-  while (++j < anz_connect) {
+  while (++j < count_connections) {
     if (connections[j].fd > -1 &&
       !memcmp((char*)&(connections[j].client_adr),
 	      (char*)addr, sizeof(ipxAddr_t))) return(++j);
@@ -193,7 +209,7 @@ static int find_conn_nr(ipxAddr_t *addr)
 static void clear_connection(int conn)
 {
   nwserv_close_conn(conn);
-  if (conn > 0 && --conn < anz_connect) {
+  if (conn > 0 && --conn < count_connections) {
     CONNECTION *c = &connections[conn];
     if (c->fd > -1) {
 #if !CALL_NWCONN_OVER_SOCKET
@@ -212,12 +228,12 @@ static void kill_connections(void)
   int stat_loc;
   int pid;
   while ((pid=waitpid(-1, &stat_loc, WNOHANG)) > 0) {
-    conn =  anz_connect;
+    conn =  count_connections;
     while (conn--) {
       if (connections[conn].pid == pid) clear_connection(conn+1);
     }
   }
-  conn = anz_connect;
+  conn = count_connections;
   while (conn--) {
     CONNECTION *c = &connections[conn];
     if (c->fd < 0 && c->pid > -1) {
@@ -225,10 +241,10 @@ static void kill_connections(void)
       c->pid = -1;
     }
   }
-  conn  = anz_connect;
+  conn  = count_connections;
   while (conn--) {
     CONNECTION *c = &connections[conn];
-    if (c->fd < 0 && c->pid < 0) anz_connect--;
+    if (c->fd < 0 && c->pid < 0) count_connections--;
     else break;
   }
 }
@@ -243,8 +259,13 @@ static int find_get_conn_nr(ipxAddr_t *addr)
 
 #if !CALL_NWCONN_OVER_SOCKET
       int fds[2];
+      int res=pipe(fds);
       memcpy((char*) &(c->client_adr), (char *)addr, sizeof(ipxAddr_t));
-      if (pipe(fds) < 0) {
+      if (res > -1) {
+        set_highest_fd(fds[0]);
+        set_highest_fd(fds[1]);
+      }
+      if (res < 0) {
 	errorp(0, "find_get_conn_nr, pipe", NULL);
 	free_conn_nr(connection);
 	return(0);
@@ -264,6 +285,8 @@ static int find_get_conn_nr(ipxAddr_t *addr)
           if (nw_debug) t_error("t_bind !OK");
           t_close(ipx_fd);
           ipx_fd = -1;
+        } else { 
+          set_highest_fd(ipx_fd);
         }
       } else {
         if (nw_debug) t_error("t_open !Ok");
@@ -292,12 +315,11 @@ static int find_get_conn_nr(ipxAddr_t *addr)
          /* new process */
 	  char *progname="nwconn";
 	  char pathname[300];
-	  char pidstr[20];
+	  char pidstr[20]; 
 	  char connstr[20];
 	  char addrstr[100];
-	  char nwbindsock[20];
-	  char echosock[20];
-
+          char divstr[50];
+	  int  l;
 	  int j = 3;
 #if !CALL_NWCONN_OVER_SOCKET
 	  close(fds[1]);   /* no writing    */
@@ -309,15 +331,21 @@ static int find_get_conn_nr(ipxAddr_t *addr)
 #endif
 
           dup2(ncp_fd, 3); /* becomes 3 */
-	  while (j++ < 100) close(j);  /* close all > 3 */
+	  while (j++ < highest_fd) close(j);  /* close all > 3 */
 
 	  sprintf(pidstr, "%d", akt_pid);
 	  sprintf(connstr, "%d", connection);
 	  ipx_addr_to_adr(addrstr, addr);
-	  sprintf(nwbindsock, "%04x", sock_nwbind);
-	  sprintf(echosock,   "%04x", sock_echo);
+
+	  l=sprintf(divstr, "()INIT-:%08x,%04x,%04x-", 
+	         akt_pid, sock_nwbind, sock_echo);
+          
+          if (l < 48) {
+            memset(divstr+l, '-', 48-l);
+            *(divstr+48)='\0';
+          }
 	  execl(get_exec_path(pathname, progname), progname,
-	          pidstr, addrstr, connstr, nwbindsock, echosock, NULL);
+	          connstr, addrstr, divstr, NULL);
 
 	  exit(1);  /* normaly not reached */
         }
@@ -373,7 +401,7 @@ static void ncp_response(int type, int sequence,
   ncpresponse->sequence       = (uint8) sequence;
   ncpresponse->connection     = (uint8) connection;
   ncpresponse->task           = (uint8) task;
-  ncpresponse->reserved       = 0;
+  ncpresponse->high_connection= (connection >> 8) & 0xff;
   ncpresponse->completition   = (uint8)completition;
   ncpresponse->connect_status = (uint8)connect_status;
   if (nw_debug){
@@ -392,7 +420,7 @@ static void ncp_response(int type, int sequence,
 static void close_all(void)
 {
   int k=0;
-  while (k++ < anz_connect) clear_connection(k);
+  while (k++ < count_connections) clear_connection(k);
   if (ncp_fd > -1) {
     t_unbind(ncp_fd);
     t_close(ncp_fd);
@@ -468,7 +496,7 @@ static int handle_ctrl(void)
 
       case 0xeeee:
         get_ini_debug(NCPSERV);
-        get_ini();
+        get_ini(0);
         break;
 
       case 0xffff : /* server down */
@@ -497,15 +525,16 @@ static void handle_ncp_request(void)
     XDPRINTF((20, 0, "NCPSERV-LOOP von %s", visable_ipx_adr(&from_addr)));
     if ((type = GET_BE16(ncprequest->type)) == 0x2222
                                     || type == 0x5555) {
+      int connection     = (int)ncprequest->connection
+                         | (((int)ncprequest->high_connection) << 8);
 
-      int connection = (int)ncprequest->connection;
       XDPRINTF((10,0, "GOT 0x%x in NCPSERV connection=%d", type, connection));
 #if 0
       ncp_response(0x9999, ncprequest->sequence,
     	                    connection, ncprequest->task,
     	                    0x0, 0, 0);
 #endif
-      if ( connection > 0 && connection <= anz_connect) {
+      if ( connection > 0 && connection <= count_connections) {
         CONNECTION *c = &(connections[connection-1]);
 
         if (!memcmp(&from_addr, &(c->client_adr), sizeof(ipxAddr_t))) {
@@ -565,13 +594,14 @@ static void handle_ncp_request(void)
              type,
              visable_ipx_adr(&from_addr),
              c->fd,
-             ncprequest->connection,
-             anz_connect));
+             (int)ncprequest->connection
+               | (((int)ncprequest->high_connection) << 8),
+             count_connections));
       } else {
         /* here the connection number is wrong */
         XDPRINTF((1,0, "Not ok:0x%x conn=%d of %d conns",
           type, ncprequest->connection,
-          anz_connect));
+          count_connections));
       }
 
       if (type == 0x5555 || (type == 0x2222 && ncprequest->function == 0x19)) {
@@ -582,20 +612,35 @@ static void handle_ncp_request(void)
         cstat = 1;
       }
       ncp_response(0x3333, ncprequest->sequence,
-    	               ncprequest->connection,
+    	               (int)ncprequest->connection
+                         | (((int)ncprequest->high_connection) << 8),
     	               (type== 0x5555) ? 0 : ncprequest->task,     /* task  */
     	               compl, /* completition */
     	               cstat, /* conn status  */
-    	               0);
+	               0);
+
+#if ENABLE_BURSTMODE
+    } else if (type == 0x7777) { /* BURST-mode */
+      int connection = (int) GET_16(((BURSTPACKET*)ncprequest)->dest_conn);
+      if ( connection > 0 && connection <= count_connections) {
+        CONNECTION *c = &(connections[connection-1]);
+#if CALL_NWCONN_OVER_SOCKET
+        send_to_nwconn(c->fd, (char*)ncprequest, in_len);
+#else
+        write(c->fd, (char*)ncprequest, in_len);
+#endif
+      }
+#endif
 
 #if !CALL_NWCONN_OVER_SOCKET
     /* here comes a call from nwbind */
     } else if (type == 0x3333
        && IPXCMPNODE(from_addr.node, my_addr.node)
        && IPXCMPNET (from_addr.net,  my_addr.net)) {
-      int connection = (int)ncprequest->connection;
+      int connection = (int)ncprequest->connection
+                    | (((int)ncprequest->high_connection) << 8);
       XDPRINTF((6,0, "GOT 0x3333 in NCPSERV connection=%d", connection));
-      if ( connection > 0 && connection <= anz_connect) {
+      if ( connection > 0 && connection <= count_connections) {
         CONNECTION *c = &(connections[connection-1]);
         if (c->fd > -1) write(c->fd, (char*)ncprequest, in_len);
       }
@@ -643,12 +688,14 @@ static void handle_ncp_request(void)
 #ifdef _MAR_TESTS_xx
     } else if (type == 0xc000) {
       /* rprinter */
-      int connection     = (int)ncprequest->connection;
+      int connection     = (int)ncprequest->connection
+                         | (((int)ncprequest->high_connection) << 8);
       int sequence       = (int)ncprequest->sequence;
       ncp_response(0x3333, sequence, connection, 1, 0x0, 0, 0);
 #endif
     } else {
-      int connection     = (int)ncprequest->connection;
+      int connection     = (int)ncprequest->connection
+                         | (((int)ncprequest->high_connection) << 8);
       int sequence       = (int)ncprequest->sequence;
       XDPRINTF((1,0, "Got UNKNOWN TYPE: 0x%x", type));
       ncp_response(0x3333, sequence, connection, 1, 0xfb, 0, 0);
@@ -663,7 +710,8 @@ int main(int argc, char *argv[])
     errorp(1, "Usage:", "%s: nwname address nwbindsock echosocket", argv[0]);
     return(1);
   }
-  get_ini();
+  get_ini(1);
+  connections=(CONNECTION*)xcmalloc(max_connections*sizeof(CONNECTION));
   strncpy(my_nwname, argv[1], 48);
   my_nwname[47] = '\0';
   adr_to_ipx_addr(&my_addr, argv[2]);
@@ -705,6 +753,7 @@ int main(int argc, char *argv[])
     }
   }
   close_all();
+  xfree(connections);
   return(0);
 }
 

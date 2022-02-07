@@ -37,8 +37,9 @@ typedef struct {
 } NW_NET_DEVICE;
 
 /* <========== DEVICES ==========> */
-extern  int anz_net_devices;
-extern  NW_NET_DEVICE *net_devices[];
+extern  int count_net_devices;
+extern  int max_net_devices;
+extern  NW_NET_DEVICE **net_devices;
 
 /* <======== SOCKETS =========> */
 #if !IN_NWROUTED
@@ -99,5 +100,6 @@ extern  void insert_delete_server(uint8  *name,
                                  int        flags);
 
 extern int dont_send_wdog(ipxAddr_t *addr);
+extern void realloc_net_devices(void);
 extern int test_ins_device_net(uint32 rnet);
 #endif

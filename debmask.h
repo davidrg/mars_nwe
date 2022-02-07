@@ -1,4 +1,4 @@
-/* debmask.h: 15-Feb-97 */
+/* debmask.h: 18-Jun-97 */
 #ifndef _DEBMASK_H_
 #define _DEBMASK_H_
 /*
@@ -12,6 +12,7 @@
 #define D_FH_LOCK    2   /* file lock/unlock */
 #define D_FH_FLUSH   4   /* file flushes     */
 
+#define D_FN_NAMES   8   
 
 #endif
 

@@ -70,6 +70,8 @@ typedef struct {
 
 extern int tells_server_version;
 extern int password_scheme;
+extern uint32 network_serial_nmbr;
+extern uint16 network_appl_nmbr;
 
 #define PW_SCHEME_CHANGE_PW       1
 #define PW_SCHEME_LOGIN		  2

@@ -3,6 +3,9 @@ Sorry, but this list will *never* be complete.
 Michael Beddow <m.beddow@servelan.co.uk>
         translated doc for PIPE-FS
 
+Thomas Behr <Thomas.Behr@uvw.uni-bayreuth.de>
+        testings, wrote syslog stuff
+
 Guntram Blohm  <gbl%th7csun1@str.daimler-benz.com>
         testing router code on token ring
         wrote the 'crypted change password' routines !
@@ -10,17 +13,26 @@ Guntram Blohm  <gbl%th7csun1@str.daimler-benz.com>
 Uwe Bonnes <bon@elektron.ikp.physik.th-darmstadt.de>
         many testings+notes
 
-Arne de Bruijn <arne@arne.bilt>
+Arne de Bruijn <arne@knoware.nl>
         testings, exploring ncp mysterius (netx), notes
 
 Hardy Buchholz <hardy@kool.f.eunet.de>
         wrote HOWTO.ger
+
+Csoma Csaba <csoma@usa.net>
+        testings+bugfixes
 
 Ales Dryak <A.Dryak@sh.cvut.cz>
         his linware gave the kick
 
 Fritz Elfert <fritz@wuemaus.franken.de>
         gives bugreport and patches
+
+Peter Gerhard <pgerhard@jpn.tuv.com>
+        testings, bugreport, patches.
+
+Victor Khimenko <khim@mccme.ru>
+        cyrillic filename patches
 
 Ruedi Kneubuehler <pingu@satu.baboon.ch>
         helping and testing for linux/sparc
