@@ -1,0 +1,69 @@
+/* PIPE- Filesystem */
+das 'PIPE Filesystem' entstand urspruenglich aus der Frage heraus:
+Wie kann ich ein Linux System oder Teile davon ueber/auf einen
+DOS-Rechner oder Novell Fileserver sichern.
+Ein schneller Loesungsansatz ergab das 'PIPE Filesystem'.
+
+In dem Pipe Filesystem koennen Shell Scripte oder
+Linux Programme hinterlegt werden.
+Diese Programme werden bei dem Client (z.B. DOS) wie einfache
+Dateien behandelt.
+Ein Oeffnen dieser Dateien ueber den Client bewirkt
+einen popen dieser Programme. Der Server uebergibt
+als 1. Parameter entweder 'CREAT', 'READ' oder 'WRITE'
+je nach Modus der jeweiligen Openfile Operation.
+Das 'PIPE-Filesystem' bietet damit eine direkte Schnittstelle
+zwischen Client Anwendungen und Linux Programmen.
+
+Die Loesung des obigen Problems ergab sich dann mit folgendem einfachen
+Shell Script, welches im PIPE-Filesystem hinterlegt wurde.
+
+#!/bin/sh
+case "$1" in
+'CREAT')
+        ;;
+'WRITE')
+        cd /u3 && tar -xf -  2>> /tmp/tar.in
+        # restore directory /u3/mar
+        ;;
+'READ')
+        cd /u3 && tar -cf -  mar  2> /dev/null
+        # save directory /u3/mar
+        ;;
+*)
+	;;
+esac
+
+Unter DOS kann nun diese 'Pipe Datei' mit dem Copy Befehl in eine
+lokale Datei 'kopiert' werden ( -> Sichern ) bzw. es
+kann die lokale Datei auf diese 'Pipe Datei' kopiert werden.
+( -> Ruecksichern )
+
+Ein einfaches Drucken kann z.B. mit folgendem Script realisiert werden.
+#!/bin/sh
+case "$1" in
+'WRITE')
+        /usr/bin/lpr
+        ;;
+*)
+	;;
+esac
+
+Der Aufruf diverser Unix Programme kann mit folgenden Script
+erfolgen das auf die entsprechenden Programmnamen gelinkt wurde.
+
+#!/bin/sh
+case "$1" in
+'READ')
+        /usr/bin/`basename $0`
+        ;;
+*)
+	;;
+esac
+
+
+Ueber weitere dokumentierte Anwendungen bzw. Anregungen zu dem
+PIPE-Filesystem wuerde ich mich freuen.
+
+Martin
+

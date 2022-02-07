@@ -1,4 +1,4 @@
-/* net.h 20-Mar-96 */
+/* net.h 03-May-96 */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -26,26 +26,33 @@
 
 #ifndef LINUX
 /*  z.B. USL */
-#  include "sys/tiuser.h"
+#  include <sys/tiuser.h>
 #endif
 
-#include "sys/fcntl.h"
-#include "sys/types.h"
-#include "unistd.h"
+#include <sys/fcntl.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <sys/wait.h>
+#include <utmp.h>
+
+#include <sys/errno.h>
+extern int errno;
 
 #ifndef LINUX
-#  include "stropts.h"
-#  include "poll.h"
-#  include "sys/nwctypes.h"
-#  include "sys/stream.h"
+#  include <stropts.h>
+#  include <poll.h>
+#  include <sys/nwctypes.h>
+#  include <sys/stream.h>
 /* #  include "common.h" */
 /* #  include "portable.h" , needed ???   */
-#  include "sys/ipx_app.h"
+#  include <sys/ipx_app.h>
+
 #else
+#  include <sys/ioctl.h>
 #  include "emutli.h"      /* TLI-EMULATION */
+#  include "emutli1.h"     /* TLI-EMULATION */
 #endif
 
 #include <pwd.h>
@@ -125,12 +132,17 @@
 #endif
 
 #ifndef MAX_CONNECTIONS
-# define MAX_CONNECTIONS  5 /* maximum Number of Connections */
+# define MAX_CONNECTIONS  5 /* maximum Number of connections */
 #endif
 
 #ifndef MAX_NW_VOLS
-# define MAX_NW_VOLS     10
+# define MAX_NW_VOLS     10 /* maximum Number of volumes */
 #endif
+
+#ifndef MAX_FILE_HANDLES_CONN
+# define MAX_FILE_HANDLES_CONN 80
+#endif
+
 
 #ifndef MAX_NET_DEVICES
 # define MAX_NET_DEVICES  5
@@ -145,6 +157,18 @@
 # define PATHNAME_BINDERY "."  /* location of bindery files */
 #endif
 
+#ifndef PATHNAME_PIDFILES
+# define PATHNAME_PIDFILES "/var/run"  /* location of pidfiles */
+#endif
+
+#ifndef FILENAME_UTMP
+# define FILENAME_UTMP UTMP_FILE
+#endif
+
+#ifndef FILENAME_WTMP
+# define FILENAME_WTMP WTMP_FILE
+#endif
+
 #ifndef NETWORK_SERIAL_NMBR
 # define NETWORK_SERIAL_NMBR  0x44444444L /* Serial Number 4 Byte      */
 #endif
@@ -157,11 +181,24 @@
 #endif
 
 #ifndef WITH_NAME_SPACE_CALLS
-# define WITH_NAME_SPACE_CALLS 0
+# define WITH_NAME_SPACE_CALLS 1
+#endif
+
+#ifndef MAX_DIR_BASE_ENTRIES
+# define MAX_DIR_BASE_ENTRIES   50
 #endif
 
 #ifndef MAX_NW_ROUTES
 # define MAX_NW_ROUTES 50
+#endif
+
+#ifndef MAX_RIP_ENTRIES
+# define MAX_RIP_ENTRIES 50
+#endif
+
+#if MAX_RIP_ENTRIES < 50
+# undef MAX_RIP_ENTRIES
+# define MAX_RIP_ENTRIES 50
 #endif
 
 #ifndef MAX_NW_SERVERS
@@ -175,25 +212,18 @@
 #endif
 
 #ifdef LINUX
-# ifndef  INTERNAL_RIP_SAP
+# ifdef IN_NWROUTED
+#  undef   INTERNAL_RIP_SAP
 #  define  INTERNAL_RIP_SAP    1
 # endif
-# if INTERNAL_RIP_SAP
-#   ifndef FILE_SERVER_INACTIV
-#     define FILE_SERVER_INACTIV 0
-#   endif
-# else
-#   undef  FILE_SERVER_INACTIV
-#   define FILE_SERVER_INACTIV  0
+# ifndef   INTERNAL_RIP_SAP
+#  define  INTERNAL_RIP_SAP    1
 # endif
 #else
-/* USL has good rip/sap router */
+/* USL has rip/sap router builtin */
 # undef  INTERNAL_RIP_SAP
 # define INTERNAL_RIP_SAP      0
-# undef  FILE_SERVER_INACTIV
-# define FILE_SERVER_INACTIV   0
 #endif
-
 
 #define MAX_SERVER_NAME   48
 

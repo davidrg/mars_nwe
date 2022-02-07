@@ -1,4 +1,4 @@
-/* nwfile.c  23-Jan-96 */
+/* nwfile.c  01-May-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -27,11 +27,8 @@
 #include "nwfile.h"
 #include "connect.h"
 
-
-#define MAX_FILEHANDLES   80
-static FILE_HANDLE  file_handles[MAX_FILEHANDLES];
+static FILE_HANDLE  file_handles[MAX_FILE_HANDLES_CONN];
 static int anz_fhandles=0;
-
 
 static int new_file_handle(uint8 *unixname)
 {
@@ -45,7 +42,7 @@ static int new_file_handle(uint8 *unixname)
     } else fh=NULL;
   }
   if (fh == NULL) {
-    if (anz_fhandles < MAX_FILEHANDLES) {
+    if (anz_fhandles < MAX_FILE_HANDLES_CONN) {
       fh=&(file_handles[anz_fhandles]);
       rethandle = ++anz_fhandles;
     } else return(0); /* no free handle anymore */
@@ -69,7 +66,7 @@ static int free_file_handle(int fhandle)
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
       if (fh->flags & 2) {
-        if (fh->f) pclose(fh->f);
+        if (fh->f) ext_pclose(fh->f);
         fh->f = NULL;
       } else close(fh->fd);
       if (fh->tmodi > 0L && !(fh->flags & 2)) {
@@ -107,7 +104,8 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
 /*
  * creatmode: 0 = open | 1 = creat | 2 = creatnew  & 4 == save handle
  * attrib ??
- * access: 0x1=read, 0x2=write
+ * access: 0x1=readonly, 0x2=writeonly, 0x4=deny read, 0x5=deny write
+ *
  */
 {
    int fhandle=new_file_handle(unixname);
@@ -115,19 +113,20 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
      FILE_HANDLE *fh=&(file_handles[fhandle-1]);
      int completition = -0xff;  /* no File  Found */
      if (get_volume_options(volume, 1) & VOL_OPTION_IS_PIPE) {
-       /* this is a PIPE Dir */
+       /* this is a PIPE Volume */
        int statr = stat(fh->fname, stbuff);
        if (!statr && (stbuff->st_mode & S_IFMT) != S_IFDIR) {
+         int  dowrite= (access & 2) || creatmode ;
          char pipecommand[300];
-         char *pipeopen = (creatmode || (access & 2)) ? "w" : "r";
-         char *topipe   = "READ";
-         if (creatmode) topipe = "CREAT";
-         else if (access & 2) topipe = "WRITE";
+         char *topipe             = "READ";
+         if (creatmode) topipe    = "CREAT";
+         else if (dowrite) topipe = "WRITE";
          sprintf(pipecommand, "%s %s", fh->fname, topipe);
-         fh->f  = popen(pipecommand, pipeopen);
-         fh->fd = (fh->f) ? fileno(fh->f) : -1;
+         fh->f  = ext_popen(pipecommand, geteuid(), getegid());
+         fh->fd = (fh->f) ? fileno(fh->f->fildes[1]) : -1;
          if (fh->fd > -1) {
            fh->flags |= 2;
+           if (!dowrite) stbuff->st_size = 0x7fffffff;
            if (creatmode & 4) fh->flags |= 4;
            return(fhandle);
          }
@@ -158,7 +157,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          }
        } else {
          int statr = stat(fh->fname, stbuff);
-         int acm  = (access & 2) ? (int) O_RDWR /*|O_CREAT*/ : (int)O_RDONLY;
+         int acm  = (access & 2) ? (int) O_RDWR : (int)O_RDONLY;
          if ( (!statr && (stbuff->st_mode & S_IFMT) != S_IFDIR)
               || (statr && (acm & O_CREAT))){
             XDPRINTF((5,0,"OPEN FILE with attrib:0x%x, access:0x%x, fh->fname:%s: fhandle=%d",attrib,access, fh->fname, fhandle));
@@ -203,8 +202,8 @@ int nw_close_datei(int fhandle, int reset_reuse)
       int result2;
       if (fh->flags & 2) {
         if (fh->f) {
-          result=pclose(fh->f);
-          if (result) result = -1;
+          result=ext_pclose(fh->f);
+          if (result > 0) result = 0;
         }
         fh->f = NULL;
       } else result=close(fh->fd);
@@ -241,12 +240,23 @@ int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
   if (fhandle > 0 && (--fhandle < anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
-      if (fh->offd != (long)offset)
-        fh->offd=lseek(fh->fd, offset, SEEK_SET);
-      if (fh->offd > -1L) {
-         size = read(fh->fd, data, size);
-         fh->offd+=(long)size;
-      } else size = -1;
+      if (fh->flags & 2) { /* PIPE */
+        size = fread(data, 1, size, fh->f->fildes[1]);
+      } else {
+        if (fh->offd != (long)offset) {
+          fh->offd=lseek(fh->fd, offset, SEEK_SET);
+          if (fh->offd < 0) {
+            XDPRINTF((5,0,"read-file failed in lseek"));
+          }
+        }
+        if (fh->offd > -1L) {
+          if ((size = read(fh->fd, data, size)) > -1)
+            fh->offd+=(long)size;
+          else {
+            XDPRINTF((5,0,"read-file failed in read"));
+          }
+        } else size = -1;
+      }
       return(size);
     }
   }
@@ -258,12 +268,16 @@ int nw_seek_datei(int fhandle, int modus)
   if (fhandle > 0 && (--fhandle < anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
-      int size=-0xfb;
-      if (!modus) {
-        if ( (size=fh->offd=lseek(fh->fd, 0L, SEEK_END)) < 0L)
-            size = -1;
+      if (fh->flags & 2) { /* PIPE */
+        return(0x7fffffff);
+      } else {
+        int size=-0xfb;
+        if (!modus) {
+          if ( (size=fh->offd=lseek(fh->fd, 0L, SEEK_END)) < 0L)
+              size = -1;
+        }
+        return(size);
       }
-      return(size);
     }
   }
   return(-0x88); /* wrong filehandle */
@@ -275,27 +289,35 @@ int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
   if (fhandle > 0 && (--fhandle < anz_fhandles)) {
     FILE_HANDLE *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
-      if (fh->offd != (long)offset)
-          fh->offd = lseek(fh->fd, offset, SEEK_SET);
-      if (size) {
-        if (fh->offd > -1L) {
-          size = write(fh->fd, data, size);
-          fh->offd+=(long)size;
-        } else size = -1;
-        return(size);
-      } else {  /* strip FILE */
-      /* TODO: for LINUX */
-        struct flock flockd;
-        int result=  /* -1 */        0;
-        flockd.l_type   = 0;
-        flockd.l_whence = SEEK_SET;
-        flockd.l_start  = offset;
-        flockd.l_len    = 0;
-#if HAVE_TLI
-        result = fcntl(fh->fd, F_FREESP, &flockd);
-        XDPRINTF((5,0,"File %s is stripped, result=%d", fh->fname, result));
+      if (fh->flags & 2) { /* PIPE */
+        if (size)
+          return(fwrite(data, 1, size, fh->f->fildes[0]));
+        return(0);
+      } else {
+        if (fh->offd != (long)offset)
+            fh->offd = lseek(fh->fd, offset, SEEK_SET);
+        if (size) {
+          if (fh->offd > -1L) {
+            size = write(fh->fd, data, size);
+            fh->offd+=(long)size;
+          } else size = -1;
+          return(size);
+        } else {  /* truncate FILE */
+          int result;
+#ifdef LINUX
+          result = ftruncate(fh->fd, offset);
+#else
+          struct flock flockd;
+          flockd.l_type   = 0;
+          flockd.l_whence = SEEK_SET;
+          flockd.l_start  = offset;
+          flockd.l_len    = 0;
+          result = fcntl(fh->fd, F_FREESP, &flockd);
 #endif
-        return(result);
+          XDPRINTF((5,0,"File %s is truncated, result=%d", fh->fname, result));
+          fh->offd = -1L;
+          return(result);
+        }
       }
     }
   }
@@ -321,7 +343,7 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
           int xsize = read(fhq->fd, buff, min(size, (uint32)sizeof(buff)));
           if (xsize > 0){
             if ((wsize =write(fhz->fd, buff, xsize)) != xsize) {
-              retsize = -0x1;  /* out of Disk SPace */
+              retsize = -0x1;  /* out of Disk Space */
               break;
             } else {
               size -= (uint32)xsize;
@@ -352,6 +374,7 @@ int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
     if (fh->fd > -1) {
       struct flock flockd;
       int result;
+      if (fh->flags & 2) return(0);
       flockd.l_type   = (do_lock) ? F_WRLCK : F_UNLCK;
       flockd.l_whence = SEEK_SET;
       flockd.l_start  = offset;

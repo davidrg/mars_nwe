@@ -1,4 +1,6 @@
-/* nwserv.c 20-Mar-96 */
+/* nwserv.c 03-May-96 */
+/* MAIN Prog for NWSERV + NWROUTED  */
+
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -20,6 +22,9 @@
 #include "nwserv.h"
 
 uint32     internal_net  = 0x0L;     /* NETWORKNUMMER INTERN (SERVER) */
+int        no_internal   =   0;      /* no use of internal net	      */
+int        auto_creat_interfaces=0;
+
 ipxAddr_t  my_server_adr;            /* Address of this server        */
 char       my_nwname[50];            /* Name of this server           */
 int        print_route_tac   = 0;    /* every x broadcasts print it   */
@@ -57,7 +62,7 @@ uint16  ipx_sock_nummern[]={ SOCK_AUTO    /* WDOG */
                              };
 
 #define NEEDED_SOCKETS  (sizeof(ipx_sock_nummern) / sizeof(uint16))
-#if FILE_SERVER_INACTIV
+#if IN_NWROUTED
 #  define NEEDED_POLLS    (NEEDED_SOCKETS+1)
 #else
 #  define NEEDED_POLLS    (NEEDED_SOCKETS+2)
@@ -90,6 +95,14 @@ static  int          save_ipx_routes           =  0;
 
 static  uint8        *station_fn=NULL;
 static  int          nearest_request_flag=0;
+
+#if IN_NWROUTED
+static  char         *prog_name_typ="ROUTER";
+#define   IN_PROG        NWROUTED
+#else
+static  char         *prog_name_typ="SERVER";
+#define   IN_PROG        NWSERV
+#endif
 
 static void add_wdata(IPX_DATA *d, char *data, int size)
 {
@@ -149,7 +162,7 @@ static void write_to_sons(int what, int connection,
   write_wdata(&ipxd, what, sock);
 }
 
-#if !FILE_SERVER_INACTIV
+#if !IN_NWROUTED
 # define write_to_ncpserv(what, connection, data, data_size) \
    write_to_sons((what), (connection), (data), (data_size), SOCK_NCP)
 #else
@@ -215,7 +228,7 @@ static int open_ipx_socket(uint16 sock_nr, int nr, int open_mode)
 
 static int start_ncpserv(char *nwname, ipxAddr_t *addr)
 {
-#if !FILE_SERVER_INACTIV
+#if !IN_NWROUTED
   int fds_in[2];
   int pid;
   if (pipe(fds_in) < 0)  return(-1);
@@ -255,7 +268,7 @@ static int start_ncpserv(char *nwname, ipxAddr_t *addr)
 
 static int start_nwbind(char *nwname, ipxAddr_t *addr)
 {
-#if !FILE_SERVER_INACTIV
+#if !IN_NWROUTED
   int    fds_in[2];
   int    pid;
   struct t_bind bind;
@@ -322,7 +335,7 @@ static int start_nwbind(char *nwname, ipxAddr_t *addr)
   return(0); /*  OK */
 }
 
-
+#if !IN_NWROUTED
 static int start_nwclient(void)
 {
   switch (fork()){
@@ -342,6 +355,7 @@ static int start_nwclient(void)
   }
   return(0);       /*  OK */
 }
+#endif
 
 /* ===========================  WDOG =============================== */
 #ifndef _WDOG_TESTING_
@@ -481,6 +495,7 @@ void get_server_data(char *name,
                 ipxAddr_t *adr,
                 ipxAddr_t *from_addr)
 {
+#if !IN_NWROUTED
    if (!nw386_found && strcmp(name, my_nwname)) {
      memcpy(&nw386_adr, adr, sizeof(ipxAddr_t));
      nw386_found++;
@@ -489,6 +504,7 @@ void get_server_data(char *name,
        client_mode = 0;  /* only start once */
      }
    }
+#endif
    XDPRINTF((2,0,"NW386 %s found at:%s", name, visable_ipx_adr(adr)));
 }
 
@@ -588,7 +604,8 @@ static void handle_sap(int fd,
       uint8 *name    = p+2;
       ipxAddr_t *ad  = (ipxAddr_t*) (p+50);
       int   hops     = GET_BE16(p+ sizeof(SAPS) -2);
-      if (hops < 16)   U16_TO_BE16(hops+1, p+ sizeof(SAPS) -2);
+     /*  if (hops < 16)   U16_TO_BE16(hops+1, p+ sizeof(SAPS) -2); */
+     /* if (hops < 16)  hops++; */
       XDPRINTF((2,0, "TYP=%2d,hops=%2d, Addr=%s, Name=%s", type, hops,
           visable_ipx_adr(ad), name));
 
@@ -752,6 +769,8 @@ static void handle_event(int fd, uint16 socknr, int slot)
     /* it also can be Packets from DOSEMU OR ncpfs on this machine */
     XDPRINTF((2,0,"Packet from OWN maschine:sock=0x%x", source_sock));
   }
+  if (auto_creat_interfaces && test_ins_device_net(GET_BE32(source_adr.net)))
+     broadmillisecs = 3000;  /* now faster rip/sap to new devices */
 #endif
 
   switch (slot) {
@@ -844,11 +863,19 @@ static void get_ini(int full)
 
                          if (sscanf(inhalt, "%ld%c", &nd->net, &dummy) != 1)
                              sscanf(inhalt, "%lx", &nd->net);
+
+                         if (nd->net == internal_net) {
+                           errorp(11, "Get_ini", "device net 0x%lx = internal net", nd->net);
+                           exit(1);
+                         }
+
                          if (anz > 1)
                            new_str(nd->devname, inhalt2);
 
                          if (anz > 2) {
                            upstr(inhalt3);
+                           if (!strcmp(inhalt3, "AUTO"))
+                              nd->frame=-1;
                            if (!strcmp(inhalt3, "802.3"))
                               nd->frame=IPX_FRAME_8023;
                            else if (!strcmp(inhalt3, "802.2"))
@@ -857,6 +884,10 @@ static void get_ini(int full)
                               nd->frame=IPX_FRAME_SNAP;
                            else if (!strcmp(inhalt3, "ETHERNET_II"))
                               nd->frame=IPX_FRAME_ETHERII;
+# ifdef IPX_FRAME_TR_8022
+                           else if (!strcmp(inhalt3, "TOKEN"))
+                              nd->frame=IPX_FRAME_TR_8022;
+# endif
                          }
                          if (anz > 3) nd->ticks = atoi(inhalt4);
                        }
@@ -866,11 +897,13 @@ static void get_ini(int full)
            case   5 : save_ipx_routes=atoi(inhalt);
                       break;
 #endif
+
+#if !IN_NWROUTED
            case 104 : /* nwclient */
                       if (client_mode && atoi(inhalt))
                           client_mode++;
                       break;
-
+#endif
            case 210 : server_goes_down_secs=atoi(inhalt);
                       if (server_goes_down_secs < 1 ||
                         server_goes_down_secs > 600)
@@ -919,29 +952,47 @@ static void get_ini(int full)
   if (full) {
 #ifdef LINUX
 # if INTERNAL_RIP_SAP
+    no_internal = !internal_net;
+    if (no_internal && anz_net_devices > 1) {
+      errorp(11, "Get_ini", "No internal net, but more than 1 Device specified");
+      exit(1);
+    }
     init_ipx(internal_net, node, ipxdebug);
+
     for (k=0; k < anz_net_devices; k++){
       NW_NET_DEVICE *nd=net_devices[k];
-      char *frname=NULL;
-      switch (nd->frame) {
-        case IPX_FRAME_8022    : frname = "802.2";      break;
-        case IPX_FRAME_8023    : frname = "802.3";      break;
-        case IPX_FRAME_SNAP    : frname = "SNAP";       break;
-        case IPX_FRAME_ETHERII : frname = "ETHERNET_II";break;
-        default : break;
-      } /* switch */
-      XDPRINTF((1, 0, "DEVICE=%s, FRAME=%s, NETWORK=0x%lx",
-               nd->devname, frname, nd->net));
-      init_dev(nd->devname, nd->frame, nd->net);
+      int  result;
+      uint8 frname[30];
+      char *sp     = "DEVICE=%s, FRAME=%s, NETWORK=0x%lx";
+      (void) get_frame_name(frname, nd->frame);
+      XDPRINTF((1, 0, sp, nd->devname, frname, nd->net));
+      if ((result= init_dev(nd->devname, nd->frame, nd->net)) < 0) {
+        if (result == -99) {
+          errorp(11, "init_dev", "AUTO device is only in combination with internal net allowed");
+          exit(1);
+        } else
+          errorp(1, "init_dev", sp, nd->devname, frname, nd->net);
+      } else if (!result)
+        nd->is_up = 1;
+      else auto_creat_interfaces=1;
     }
 # endif
 #endif
-
     if (!get_ipx_addr(&my_server_adr)) {
       internal_net = GET_BE32(my_server_adr.net);
     } else exit(1);
-    XDPRINTF((1, 0, "Servername='%s', INTERNAL NET=0x%lx, NODE=0x%02x:%02x:%02x:%02x:%02x:%02x",
-        my_nwname, internal_net,
+
+#if LINUX && INTERNAL_RIP_SAP
+    if (no_internal) {
+      errorp(10, "WARNING:No use of internal net", NULL);
+    } else if (!anz_net_devices) {
+      errorp(10, "WARNING:No external devices specified", NULL);
+    }
+    print_routing_info();
+#endif
+
+    XDPRINTF((1, 0, "%s name='%s', INTERNAL NET=0x%lx, NODE=0x%02x:%02x:%02x:%02x:%02x:%02x",
+        prog_name_typ, my_nwname, internal_net,
         (int)my_server_adr.node[0],
         (int)my_server_adr.node[1],
         (int)my_server_adr.node[2],
@@ -982,9 +1033,9 @@ static void close_all(void)
       close(fd_nwbind_in);
       fd_nwbind_in = -1;
     }
-    kill(pid_nwbind, SIGQUIT);  /* terminate ncpserv */
+    kill(pid_nwbind, SIGQUIT);  /* terminate nwbind */
     waitpid(pid_nwbind, &status, 0);
-    kill(pid_nwbind, SIGKILL);  /* kill ncpserv */
+    kill(pid_nwbind, SIGKILL);  /* kill nwbind */
   }
 
 #ifdef LINUX
@@ -992,9 +1043,11 @@ static void close_all(void)
   if (!save_ipx_routes) {
     for (j=0; j<anz_net_devices;j++) {
       NW_NET_DEVICE *nd=net_devices[j];
-      XDPRINTF((1, 0, "Close Device=%s, frame=%d",
+      if (nd->is_up) {
+        XDPRINTF((1, 0, "Close Device=%s, frame=%d",
                 nd->devname, nd->frame));
-      exit_dev(nd->devname, nd->frame);
+        exit_dev(nd->devname, nd->frame);
+      }
     }
   }
   exit_ipx(!save_ipx_routes);
@@ -1011,8 +1064,8 @@ static void down_server(void)
     signal(SIGPIPE,  SIG_IGN);
     fprintf(stderr, "\007");
     fprintf(stderr, "\n*********************************************\n");
-    fprintf(stderr, "\nWARNING: NWE-SERVER shuts down in %3d sec !!!\n",
-                     server_goes_down_secs);
+    fprintf(stderr, "\nWARNING: NWE-%s shuts down in %3d sec !!!\n",
+                     prog_name_typ, server_goes_down_secs);
     fprintf(stderr, "\n*********************************************\n");
     sleep(1);
     fprintf(stderr, "\007\n");
@@ -1033,7 +1086,7 @@ static void sig_quit(int rsig)
 
 static void handle_hup_reqest(void)
 {
-  get_ini_debug(NWSERV);
+  get_ini_debug(IN_PROG);
   XDPRINTF((2,0, "Got HUP, reading ini."));
   get_ini(0);
   write_to_ncpserv(0xeeee, 0, NULL, 0); /* inform ncpserv */
@@ -1060,14 +1113,25 @@ static int server_is_down=0;
 
 int main(int argc, char **argv)
 {
-  int j = -1;
+  int j = 0;
+  int init_mode=0;
   tzset();
-  if (argc > 1) client_mode=1;
+  while (++j < argc)  {
+    char *a=argv[j];
+    if (*a == '-') {
+      while (*(++a)) {
+        switch (*a)  {
+          case 'h' : init_mode = 1; break;
+          case 'k' : init_mode = 2; break;
+          default  : break;
+        }
+      }
+    } else if (*a == 'y') client_mode=1;
      /* in client mode the testprog 'nwclient' will be startet. */
-
-  init_tools(NWSERV, 0);
+  }
+  init_tools(IN_PROG, init_mode);
   get_ini(1);
-
+  j=-1;
   while (++j < NEEDED_POLLS) {
     polls[j].events  = POLLIN|POLLPRI;
     polls[j].revents = 0;
@@ -1092,10 +1156,13 @@ int main(int argc, char **argv)
     /* now do polling */
     time_t broadtime;
     time(&broadtime);
+
     set_sigs();
+    creat_pidfile();
+
     polls[NEEDED_SOCKETS].fd = fd_nwbind_in;
 
-#if !FILE_SERVER_INACTIV
+#if !IN_NWROUTED
     {
       ipxAddr_t server_adr_sap;
       polls[NEEDED_SOCKETS+1].fd = fd_ncpserv_in;
@@ -1106,6 +1173,7 @@ int main(int argc, char **argv)
                      &my_server_adr, &server_adr_sap, 0, 0, 0);
     }
 #endif
+
     while (!server_is_down) {
       int anz_poll = poll(polls, NEEDED_POLLS, broadmillisecs);
       int call_wdog=0;
@@ -1144,7 +1212,7 @@ int main(int argc, char **argv)
                                  (char*)&conn, sizeof(int))
                             &&   sizeof(int) == read(p->fd,
                                  (char*)&size, sizeof(int))
-                            &&   sizeof(ipxAddr_t) + sizeof(uint16)
+                            &&   sizeof(ipxAddr_t) + sizeof(uint16) + sizeof(uint32)
                                   == read(p->fd,
                                  (char*)buf, size)) {
                                 insert_wdog_conn(conn, (ipxAddr_t*)buf);
@@ -1228,7 +1296,8 @@ int main(int argc, char **argv)
     send_down_broadcast();
   }
   close_all();
-  fprintf(stderr, "\nNWE-SERVER is down now !!\n");
+  fprintf(stderr, "\nNWE-%s is down now !!\n", prog_name_typ);
+  exit_tools();
   return(0);
 }
 

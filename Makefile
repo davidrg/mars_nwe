@@ -7,7 +7,7 @@ VPATH=
 V_VPATH=..
 OBJDIR=obj
 
-all:    rmeflag mk.li config.h nw.ini
+all:   rmeflag mk.li config.h nw.ini
 	@if [ -r .eflag ] ; then \
 	echo ""; \
 	echo "********************************************************"; \
@@ -25,6 +25,9 @@ all:    rmeflag mk.li config.h nw.ini
 	echo ""; \
 	echo "********************************************************" ; \
 	echo "";  echo "" ; fi ) fi
+
+routed:
+	./mk.li $@
 
 install:
 	./mk.li $@

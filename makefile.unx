@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 15-Mar-96
+#makefile.unx 22-Mar-96
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=97
-P_L=2
+P_L=3
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -26,6 +26,9 @@ STERN=*
 #if 0
 DESTMAKEFILE=Makefile.o
 all:    $(DESTMAKEFILE)
+	$(MAKE) -f $(DESTMAKEFILE) n_$@
+
+routed: $(DESTMAKEFILE)
 	$(MAKE) -f $(DESTMAKEFILE) n_$@
 
 clean:  $(DESTMAKEFILE)
@@ -63,6 +66,7 @@ PROG3=nwconn
 PROG4=ncpserv
 PROG5=nwclient
 PROG6=nwbind
+PROG7=nwrouted
 
 #include "config.h"
 #ifdef FILENAME_NW_INI
@@ -83,29 +87,37 @@ M_PATHNAME_PROGS="."
 
 #ifdef  LINUX
 EMUTLIOBJ=emutli$(O)
+EMUTLIOBJ1=emutli1$(O)
 # if INTERNAL_RIP_SAP
 NWROUTE_O=nwroute$(O)
 # else
 NWROUTE_O=nwroute1$(O)
+NWROUTED=$(PROG7)
 # endif
 #else
 NWROUTE_O=nwroute1$(O)
 #endif
 
-PROGS=$(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5) $(PROG6)
+PROGS=$(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5) $(PROG6) $(NWROUTED)
 
 OBJ1= $(EMUTLIOBJ) net1$(O) tools$(O)
-OBJ2= $(OBJ1) $(NWROUTE_O)
-OBJ3= $(OBJ1) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O)
+OBJ2= $(OBJ1) $(EMUTLIOBJ1) $(NWROUTE_O)
+OBJ3= $(OBJ1) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) unxfile$(O) \
+nwqueue$(O)
 OBJ4= $(OBJ1)
 OBJ5= $(OBJ1)
-OBJ6= $(OBJ1) nwdbm$(O) nwcrypt$(O)
+OBJ6= $(OBJ1) nwdbm$(O) nwcrypt$(O) unxlog$(O)
+OBJ7= $(OBJ1) $(EMUTLIOBJ1)
 
-OBJS= net1$(O) tools$(O) connect$(O) nwdbm$(O) $(NWROUTE_O) \
-      namspace$(O) nwvolume$(O) \
-      $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O) $(PROG6)$(O)
+OBJS= $(EMUTLIOBJ) net1$(O) tools$(O) \
+      $(EMUTLIOBJ1) $(NWROUTE_O) \
+      connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) unxfile$(O)\
+      nwdbm$(O) nwcrypt$(O) unxlog$(O)  \
+      $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O) $(PROG6)$(O) \
+      $(PROG7)$(O)
 
-HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O)
+HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) \
+       unxfile$(O)
 
 #if 0
 #$(PROG1):  $(PROG1)$(O) $(OBJ1)
@@ -114,6 +126,7 @@ HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O)
 
 $(PROG2):  $(PROG2)$(O) $(OBJ2)
 	   $(CC) -o $(VPATH)/$(PROG2) $(PROG2)$(O) $(OBJ2) $(NSLLIB)
+
 #if 0
 #$(CC) -o $(VPATH)/$(PROG2) $(PROG2)$(O) $(OBJ2) $(NDBMLIB) $(NSLLIB)
 #endif
@@ -130,6 +143,8 @@ $(PROG5):  $(PROG5)$(O) $(OBJ5)
 $(PROG6):  $(PROG6)$(O) $(OBJ6)
 	   $(CC) -o $(VPATH)/$(PROG6) $(PROG6)$(O) $(OBJ6) $(NDBMLIB) $(CRYPTLIB) $(NSLLIB)
 
+$(PROG7):  $(PROG7)$(O) $(OBJ7) nwserv.c nwroute.c
+	   $(CC) -o $(VPATH)/$(PROG7) $(PROG7)$(O) $(OBJ7) $(NSLLIB)
 
 $(HOBJ3):  namspace.h connect.h nwvolume.h nwfile.h
 $(OBJS):   net.h config.h
@@ -140,6 +155,8 @@ $(C)$(O):
 
 n_all:   $(PROGS)
 	 @echo "don't forget to do a 'make install' as root !" >> $(VPATH)/.mk.notes
+
+n_routed: $(PROG7)
 
 n_install_ini:
 	 cd $(VPATH) && $(INSTALL) -m 664 nw.ini $(M_FILENAME_NW_INI) && cd $(OBJDIR)
@@ -175,7 +192,7 @@ clean_d:
 
 n_clean:
 	rm -f *.o
-	cd $(VPATH) && (rm -f $(PROGS); cd $(OBJDIR) )
+	cd $(VPATH) && (rm -f $(PROGS) $(PROG7); cd $(OBJDIR) )
 
 n_distclean: n_clean clean_d
 	cd $(VPATH) && (rm -f *.dir *.pag; cd $(OBJDIR))

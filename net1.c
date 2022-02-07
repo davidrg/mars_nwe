@@ -53,6 +53,10 @@ static char str[200];
          (int)p->net[0],  (int)p->net[1],  (int)p->net[2],  (int)p->net[3],
          (int)p->node[0], (int)p->node[1], (int)p->node[2], (int)p->node[3],
          (int)p->node[4], (int)p->node[5], (int)p->sock[0], (int)p->sock[1]);
+    } else if (modus== 2) {
+      sprintf(str,"%02x%02x%02x%02x%02x%02x",
+         (int)p->node[0], (int)p->node[1], (int)p->node[2], (int)p->node[3],
+         (int)p->node[4], (int)p->node[5]);
     } else strcpy(str, "??");
   } else
     strcpy(str, "net=UNKOWN(NULLPOINTER)");

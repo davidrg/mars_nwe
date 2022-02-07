@@ -1,5 +1,5 @@
-/* nwvolume.c  20-Mar-96 */
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* nwvolume.c  22-Apr-96 */
+/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,44 +62,79 @@ void nw_init_volumes(FILE *f)
       int   len;
       int   founds = sscanf((char*)buff, "%s %s %s",sysname, unixname, optionstr);
       if (founds > 1) {
-        new_str(nw_volumes[used_nw_volumes].sysname, sysname);
-        len = strlen((char*)unixname);
-        if (unixname[len-1] != '/') {
+        NW_VOL *vol=&(nw_volumes[used_nw_volumes]);
+        vol->options    = 0;
+        new_str(vol->sysname, sysname);
+        if (1 == (len = strlen((char*)unixname)) && unixname[0] == '~') {
+          vol->options  |= VOL_OPTION_IS_HOME;
+          unixname[0] = '\0';
+          len = 0;
+        } else if (unixname[len-1] != '/') {
           unixname[len++] = '/';
           unixname[len]   = '\0';
         }
-        nw_volumes[used_nw_volumes].unixnamlen = len;
-        nw_volumes[used_nw_volumes].options    = 0;
-        new_str(nw_volumes[used_nw_volumes].unixname, unixname);
+        vol->unixnamlen = len;
+        new_str(vol->unixname, unixname);
         if (founds > 2) {
           for (p=optionstr; *p; p++) {
             switch (*p) {
-              case 'k' : nw_volumes[used_nw_volumes].options
-                         |= VOL_OPTION_DOWNSHIFT; break;
+              case 'k' : vol->options
+                         |= VOL_OPTION_DOWNSHIFT;
+                         break;
 
-              case 'p' : nw_volumes[used_nw_volumes].options
-                         |= VOL_OPTION_IS_PIPE;   break;
+              case 'm' : vol->options
+                         |= VOL_OPTION_REMOUNT;
+                         break;
 
-              case 'm' : nw_volumes[used_nw_volumes].options
-                         |= VOL_OPTION_REMOUNT;   break;
+              case 'o' : vol->options
+                         |= VOL_OPTION_ONE_DEV;
+                         break;
+
+              case 'p' : vol->options
+                         |= VOL_OPTION_IS_PIPE;
+                         break;
 
               default : break;
             }
           }
         }
         used_nw_volumes++;
+        if (vol->options & VOL_OPTION_ONE_DEV) {
+          vol->max_maps_count = 1;
+          vol->high_inode     = 0xffffffff;
+        } else {
+          vol->max_maps_count = MAX_DEV_NAMESPACE_MAPS;
+          vol->high_inode     = 0xfffffff;
+        }
+
       }
     }
   } /* while */
 }
 
+void nw_setup_home_vol(int len, uint8 *fn)
+{
+  int k=used_nw_volumes;
+  uint8 unixname[258];
+  unixname[0] = '\0';
+  if (len > 0) {
+    strmaxcpy(unixname, fn, len);
+    if (unixname[len-1] != '/') {
+      unixname[len++] = '/';
+      unixname[len]   = '\0';
+    }
+  }
+  while (k--) {
+    if (nw_volumes[k].options & VOL_OPTION_IS_HOME)  {
+      nw_volumes[k].unixnamlen = len;
+      new_str(nw_volumes[k].unixname, unixname);
+    }
+  }
+}
 
-static int look_name_space_map(int volume, DEV_NAMESPACE_MAP *dnm,
+static int look_name_space_map(NW_VOL *v, DEV_NAMESPACE_MAP *dnm,
                                int  do_insert)
 {
-  int result=-1;
-  if (volume > -1 && volume < used_nw_volumes) {
-    NW_VOL *v= &(nw_volumes[volume]);
     DEV_NAMESPACE_MAP *mp;
     int k=-1;
     while (++k < v->maps_count) {
@@ -107,31 +142,35 @@ static int look_name_space_map(int volume, DEV_NAMESPACE_MAP *dnm,
       if (mp->dev == dnm->dev && mp->namespace == dnm->namespace)
         return(k);
     }
-    if (do_insert && v->maps_count < MAX_DEV_NAMESPACE_MAPS) {
+    if (do_insert && v->maps_count < v->max_maps_count) {
       /* now do insert the new map */
       mp = v->dev_namespace_maps[v->maps_count++] =
          (DEV_NAMESPACE_MAP*) xmalloc(sizeof(DEV_NAMESPACE_MAP));
       memcpy(mp, dnm, sizeof(DEV_NAMESPACE_MAP));
       return(k);
     }
-  }
-  return(result);
+  return(-1);
 }
 
 uint32 nw_vol_inode_to_handle(int volume, ino_t inode,
                              DEV_NAMESPACE_MAP *dnm)
 {
-  if (inode > 0 && inode < 0x1000000) {
-    int result = look_name_space_map(volume, dnm, 1);
-    if (result > -1) {
-      uint32 handle = (((uint32)result) << 28) | (uint32) inode;
-      XDPRINTF((3,0, "Handle map inode=%d, dev=%d, namespace=%d to handle 0x%x",
-            inode, dnm->dev, dnm->namespace, handle));
-      return(handle);
+  if (volume > -1 && volume < used_nw_volumes) {
+    NW_VOL *v= &(nw_volumes[volume]);
+    if (inode > 0 && inode <= v->high_inode) {
+      int result = look_name_space_map(v, dnm, 1);
+      if (result > -1) {
+        uint32 handle = (v->options & VOL_OPTION_ONE_DEV)
+                          ? (uint32)inode
+                          :  (((uint32)result) << 28) | (uint32) inode;
+        XDPRINTF((3,0, "Handle map inode=%d, dev=%d, namespace=%d to handle 0x%x",
+              inode, dnm->dev, dnm->namespace, handle));
+        return(handle);
+      }
     }
   }
-  XDPRINTF((1,0, "Cannot map inode=%d, dev=%d, namespace=%d to handle",
-              inode, dnm->dev, dnm->namespace));
+  XDPRINTF((1,0, "Cannot map inode=%d, dev=%d, namespace=%d to vol=%d handle",
+              inode, dnm->dev, dnm->namespace, volume));
   return(0L);
 }
 
@@ -141,16 +180,17 @@ ino_t nw_vol_handle_to_inode(int volume, uint32 handle,
 {
   if (handle > 0 && volume > -1 && volume < used_nw_volumes) {
     NW_VOL *v= &(nw_volumes[volume]);
-    int entry = (int) ((handle >> 28) & 0xFF);
+    int entry = (v->options & VOL_OPTION_ONE_DEV)
+                      ? 0
+                      : (int) ((handle >> 28) & 0xF);
     if (entry > -1 && entry < v->maps_count) {
       if (dnm) memcpy(dnm, v->dev_namespace_maps[entry],
                             sizeof(DEV_NAMESPACE_MAP));
-
-      XDPRINTF((1, 0, "vol=%d, handle=0x%x to ino=%d, dev=%d, namespace=%d",
-                 volume, handle, (int)(handle & 0xFFFFFF),
+      XDPRINTF((3, 0, "vol=%d, handle=0x%x to ino=%d, dev=%d, namespace=%d",
+                 volume, handle, (int)(handle & v->high_inode),
                  v->dev_namespace_maps[entry]->dev,
                  v->dev_namespace_maps[entry]->namespace));
-      return((ino_t) (handle & 0xFFFFFF));
+      return((ino_t) (handle & v->high_inode));
     }
   }
   XDPRINTF((1, 0, "Can't vol=%d, handle=0x%x to inode", volume, handle));

@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 10-Feb-96 ###
+# mk.li 27-Apr-96 ###
 # please edit this file !
 
 mk()
@@ -11,7 +11,7 @@ mk()
       if [ ! -d $OBJDIR ] ; then mkdir $OBJDIR; fi
       cd    $OBJDIR;
     fi
-    $MAKE -f $V_VPATH/makefile.unx $@ 2>&1 | tee $ERRFILE;
+    if $MAKE -f $V_VPATH/makefile.unx $@ 2>&1;then true;else kill -HUP $MK_PPID;fi | tee $ERRFILE
     if [ $V_VPATH = '..' ] ; then
       cd ..;
     fi
@@ -20,6 +20,9 @@ mk()
 
 TOLOWER='tr "[A-Z]" "[a-z]"'
 UNX=`uname -s | $TOLOWER`
+MK_PPID=$$
+export MK_PPID
+trap 'echo "Error: Try again :)" && exit 1'  1
 
 case $UNX in
    linux)

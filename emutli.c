@@ -1,4 +1,4 @@
-/* emutli.c 07-Feb-96 */
+/* emutli.c 28-Apr-96 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -20,13 +20,6 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-/*
- * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- * Some of the Code in this module is stolen from the following
- * Programms: ipx_interface, ipx_route, ipx_configure, which were
- * written by Greg Page, Caldera, Inc.
- * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -42,32 +35,27 @@
 #include <string.h>
 #include <errno.h>
 
+static int locipxdebug=0;
 
-#ifndef max
-#define max(a,b)        (((a) > (b)) ? (a) : (b))
-#endif
-#ifndef min
-#define min(a,b)        (((a) < (b)) ? (a) : (b))
-#endif
+void set_locipxdebug(int debug)
+{
+  locipxdebug = debug;
+}
 
-static int    locipxdebug=0;
-static int    have_ipx_started=0;
-
-
-static void set_sock_debug(int sock)
+void set_sock_debug(int sock)
 {
   if (setsockopt(sock, SOL_SOCKET, SO_DEBUG, &locipxdebug, sizeof(int))==-1){
     errorp(0, "setsockopt SO_DEBUG", NULL);
   }
 }
 
-static void sock2ipxadr(ipxAddr_t *i, struct sockaddr_ipx *so)
+void sock2ipxadr(ipxAddr_t *i, struct sockaddr_ipx *so)
 {
    memcpy(i->net,  &so->sipx_network, IPX_NET_SIZE + IPX_NODE_SIZE);
    memcpy(i->sock, &so->sipx_port, 2);
 }
 
-static void ipx2sockadr(struct sockaddr_ipx *so, ipxAddr_t *i)
+void ipx2sockadr(struct sockaddr_ipx *so, ipxAddr_t *i)
 {
    memcpy(&so->sipx_network, i->net, IPX_NET_SIZE + IPX_NODE_SIZE);
    memcpy(&so->sipx_port,    i->sock, 2);
@@ -78,241 +66,6 @@ void set_emu_tli()
   int i = get_ini_int(100);
   if (i > -1) locipxdebug = i;
 }
-
-static int x_ioctl(int sock, int mode, void *id)
-{
-  int result;
-  int i = 0;
-  do {
-    result = ioctl(sock, mode, id);
-    i++;
-  } while ((i < 5) && (result < 0) && (errno == EAGAIN));
-  return(result);
-}
-
-
-static void del_special_net(int special, char *devname, int frame)
-/* specials =       */
-/* IPX_SPECIAL_NONE */
-/* IPX_INTERNAL     */
-/* IPX_PRIMARY      */
-/* devname + frame only if not IPX_INTERNAL */
-{
-  int sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
-  if (sock > -1) {
-    struct ifreq  id;
-    struct sockaddr_ipx *sipx = (struct sockaddr_ipx *)&id.ifr_addr;
-    memset(&id, 0, sizeof(struct ifreq));
-
-    sipx->sipx_network = 0L;
-    sipx->sipx_special = special;
-    sipx->sipx_family  = AF_IPX;
-    if (special == IPX_PRIMARY) {
-      FILE *f=fopen("/proc/net/ipx_interface", "r");
-      if (f) {
-        char buff[200];
-        char buff1[200];
-        char buff2[200];
-        char buff3[200];
-        char buff4[200];
-        char buff5[200];
-        while (fgets((char*)buff, sizeof(buff), f) != NULL){
-          if (sscanf(buff, "%s %s %s %s %s",
-              buff1, buff2, buff3, buff4, buff5) == 5) {
-            int len = strlen(buff5);
-            if (!len) continue;
-            switch (*(buff5+len-1)) {
-              case  '2' : sipx->sipx_type = IPX_FRAME_8022; break;
-              case  '3' : sipx->sipx_type = IPX_FRAME_8023; break;
-              case  'P' : sipx->sipx_type = IPX_FRAME_SNAP; break;
-              case  'I' : sipx->sipx_type = IPX_FRAME_ETHERII; break;
-              default   : continue;
-            }
-            upstr(buff3);
-            if (!strcmp(buff3, "YES")) { /* primary */
-              strcpy(id.ifr_name, buff4);
-              break;
-            }
-          }
-        }
-        fclose(f);
-      }
-    } else if (special != IPX_INTERNAL) {
-      if (devname && *devname) strcpy(id.ifr_name, devname);
-      sipx->sipx_type    = frame;
-    }
-    sipx->sipx_action  = IPX_DLTITF;
-    x_ioctl(sock, SIOCSIFADDR, &id);
-    close(sock);
-  }
-}
-
-#define del_internal_net() \
-  del_special_net(IPX_INTERNAL, NULL, 0)
-#define del_interface(devname, frame) \
-  del_special_net(IPX_SPECIAL_NONE, (devname), (frame))
-#define del_primary_net() \
-  del_special_net(IPX_PRIMARY, NULL, 0)
-
-static void add_special_net(int special,
-  char *devname, int frame, uint32 netnum, uint32 node)
-{
-  int sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
-  if (sock > -1) {
-    struct ifreq  id;
-    struct sockaddr_ipx *sipx = (struct sockaddr_ipx *)&id.ifr_addr;
-    memset(&id, 0, sizeof(struct ifreq));
-    if (special != IPX_INTERNAL){
-      if (devname && *devname) strcpy(id.ifr_name, devname);
-      sipx->sipx_type    =  frame;
-    } else {
-      uint32 xx=htonl(node);
-      memcpy(sipx->sipx_node+2, &xx, 4);
-    }
-    sipx->sipx_network = htonl(netnum);
-    sipx->sipx_special = special;
-    sipx->sipx_family  = AF_IPX;
-    sipx->sipx_action  = IPX_CRTITF;
-    x_ioctl(sock, SIOCSIFADDR, &id);
-    close(sock);
-  }
-}
-#define add_internal_net(netnum, node) \
-  add_special_net(IPX_INTERNAL, NULL, 0, (netnum), (node))
-
-#define add_device_net(devname, frame, netnum) \
-  add_special_net(IPX_SPECIAL_NONE, (devname), (frame), (netnum), 0)
-
-#define add_primary_net(devname, frame, netnum) \
-  add_special_net(IPX_PRIMARY, (devname), (frame), (netnum), 0)
-
-int init_ipx(uint32 network, uint32 node, int ipx_debug)
-{
-  int result=-1;
-  int sock=sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
-  if (socket < 0) {
-    errorp(1, "EMUTLI:init_ipx", NULL);
-    exit(1);
-  } else {
-    set_sock_debug(sock);
-    result=0;
-    /* makes new internal net */
-    if (network) {
-      struct sockaddr_ipx ipxs;
-      memset((char*)&ipxs, 0, sizeof(struct sockaddr_ipx));
-      ipxs.sipx_port   = htons(SOCK_NCP);
-      ipxs.sipx_family = AF_IPX;
-      if (bind(sock, (struct sockaddr*)&ipxs,
-            sizeof(struct sockaddr_ipx))==-1) {
-        if (errno == EEXIST || errno == EADDRINUSE) result = -1;
-      } else result =-1;
-      close(sock);
-      if (result) {
-        errorp(1, "EMUTLI:init_ipx socket 0x451", NULL);
-        exit(1);
-      }
-      del_internal_net();
-      add_internal_net(network, node);
-      have_ipx_started++;
-    } else {
-      close(sock);
-    }
-  }
-  return(result);
-}
-
-void exit_ipx(int full)
-{
-  int sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
-  if (sock > -1) {
-    /* Switch DEBUG off */
-    locipxdebug = 0;
-    set_sock_debug(sock);
-    close(sock);
-  }
-  if (have_ipx_started && full) del_internal_net();
-}
-
-int init_dev(char *devname, int frame, uint32 network)
-{
-   if (!network) return(0);
-   del_interface(devname,  frame);
-   if (!have_ipx_started) {
-     have_ipx_started++;
-     del_primary_net();
-     add_primary_net(devname, frame, network);
-   } else
-     add_device_net(devname, frame, network);
-   return(0);
-}
-
-void exit_dev(char *devname, int frame)
-{
-  del_interface(devname, frame);
-}
-
-void ipx_route_add(uint32  dest_net,
-                   uint32  route_net,
-                   uint8   *route_node)
-{
-  struct rtentry  rd;
-  int result;
-  int sock;
-  /* Router */
-  struct sockaddr_ipx	*sr = (struct sockaddr_ipx *)&rd.rt_gateway;
-  /* Target */
-  struct sockaddr_ipx	*st = (struct sockaddr_ipx *)&rd.rt_dst;
-
-  rd.rt_flags = RTF_GATEWAY;
-
-  st->sipx_network = htonl(dest_net);
-  sr->sipx_network = htonl(route_net);
-  memcpy(sr->sipx_node, route_node, IPX_NODE_SIZE);
-
-  if ( (sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX)) < 0){
-    errorp(0, "EMUTLI:ipx_route_add", NULL);
-    return;
-  }
-  sr->sipx_family = st->sipx_family = AF_IPX;
-
-  if ( 0 != (result = x_ioctl(sock, SIOCADDRT, &rd))) {
-    switch (errno) {
-      case ENETUNREACH:
-        errorp(0, "ROUTE ADD", "Router network (%08X) not reachable.\n",
-      		     htonl(sr->sipx_network));
-      break;
-
-      case EEXIST:
-      case EADDRINUSE:
-      break;
-
-      default:
-        errorp(0, "ROUTE ADD", NULL);
-        break;
-    }
-  }
-  close(sock);
-}
-
-void ipx_route_del(uint32 net)
-{
-  struct rtentry  rd;
-  int    sock;
-  /* Router */
-  struct sockaddr_ipx	*sr = (struct sockaddr_ipx *)&rd.rt_gateway;
-  /* Target */
-  struct sockaddr_ipx	*st = (struct sockaddr_ipx *)&rd.rt_dst;
-  rd.rt_flags = RTF_GATEWAY;
-  st->sipx_network = htonl(net);
-  if ( (sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX)) < 0){
-    errorp(0, "EMUTLI:ipx_route_del", NULL);
-    return;
-  }
-  sr->sipx_family = st->sipx_family = AF_IPX;
-  x_ioctl(sock, SIOCDELRT, &rd);
-  close(sock);
-}
-
 
 int t_open(char *name, int open_mode, char * p)
 {
@@ -421,8 +174,8 @@ int poll( struct pollfd *fds, unsigned long nfds, int timeout)
      p = fds;
      while (k--){
        if (p->fd > -1 && FD_ISSET(p->fd, &readfs)){
-	 p->revents = POLLIN;
-	 if (! --rest) break; /* ready */
+         p->revents = POLLIN;
+         if (! --rest) break; /* ready */
        }
        p++;
      }
@@ -506,7 +259,7 @@ int t_sndudata(int fd, struct t_unitdata *ud)
    ipxs.sipx_type    = (ud->opt.len) ? (uint8) *((uint8*)(ud->opt.buf)) : 0;
 
    result = sendto(fd,(void *)ud->udata.buf,
-	  ud->udata.len, 0, (struct sockaddr *) &ipxs, sizeof(ipxs));
+          ud->udata.len, 0, (struct sockaddr *) &ipxs, sizeof(ipxs));
 
 #if HAVE_IPX_SEND_BUG
      alarm(0);

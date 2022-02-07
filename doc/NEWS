@@ -1,4 +1,21 @@
 # in this files are important notes for user of mars_nwe.
+------05-May-96--- 0.97.pl3 ----------
+Now nwserv can be called with parameter '-h' to send SIGHUP
+to the main nwserv program or with '-k' to send SIGTERM
+to the main nwserv program.
+
+Updating utmp/wtmp files.
+
+Automatic creat of ixp-interfaces in a NetWare
+environment enabled.
+
+Entry 1 for volumes enhanced.
+Now you can make entries like:
+
+1 HOME   ~    k   # Unixusers HOME
+
+This means (path = '~') that this will be a volume
+which allways point to the actual users homedir.
 ------21-Mar-96--- 0.97.pl2 ----------
 Entry '7' in ini/conf file modified.
 Old mode '8' is now mode '7' and mode '8'

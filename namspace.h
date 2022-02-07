@@ -46,10 +46,15 @@ typedef struct {
 #define INFO_MSK_DIR_ENTRY_INFO             0x00000400
 #define INFO_MSK_RIGHTS_INFO                0x00000800
 
-/* Attributes */
+/* File Attributes */
 #define FILE_ATTR_NORMAL                    0x00000000
 #define FILE_ATTR_DIR                       0x00000010
 #define FILE_ATTR_SHARE                     0x00000080
+
+/* Search Attributes */
+#define W_SEARCH_ATTR_DIR                   0x00008000
+#define W_SEARCH_ATTR_ALL                   0x00008006
+
 
 /* OPEN/CREAT Modes */
 #define OPC_MODE_OPEN		    	    0x01
@@ -62,6 +67,6 @@ typedef struct {
 #define OPC_ACTION_REPLACE		    0x04
 
 
-extern int handle_func_0x57(uint8 *p, uint8 *responsedata);
+extern int handle_func_0x57(uint8 *p, uint8 *responsedata, int task);
 
 #endif

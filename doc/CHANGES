@@ -1,5 +1,5 @@
-Sorry, this is in German only.  :-(
-Aenderungen in mars_nwe bis zum : 21-Mar-96
+Sorry, this is in German only.
+Aenderungen in mars_nwe bis zum : 07-May-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -102,5 +102,22 @@ Erste 'oeffentliche' Version
   OS/2 Client u. evtl. auch andere (Win95 ?)  erwarten es. !
 - Password Schema leicht veraendert/erweitert.
   modus '8' -> modus '7',  neuer modus '8'.
-- neue Routine 0x17, 0x10 (set file information) codiert.
+- neue Routine 0x17, 0x10 (set file information) kodiert.
+- ftruncate unter Linux fuer das Verkuerzen von Dateien eingebaut.
+- neuen Volumetyp HOME Dir eingebaut.
+- Fehler beim Mappen von Volumes auf UNIX Root '/' korrigiert.
+- Fehler ftruncate beseitigt, offset statt 0. (Eduardo Crosclaude)
+- Token Ring Frame eingebaut. (Guntram Blohm)
+- einfache Zugriffrechte fuer Bindery eingebaut.
+- Nur noch der Supervisor (OBJ_ID=1) kann root access erlangen.
+- RIP/SAP Routinen ueberarbeitet.
+- automatisches Anlegen von IPX-Devices ermoeglicht.
+- Routine rename dir 0x16,0xf kodiert.
+- 16-Bit get Volinfo Routinen korrigiert.
+- Volume Flag 'o' eingefuehrt fuer filesysteme die
+  Inodes > 0xfffffff liefern. (namespace-services)
+- utmp und wtmp werden nun gefuellt.
+- Parameter -k fuer SIGTERM und -h fuer SIGHUP eingebaut.
+- eigene 'pipe' Routine fuer Druck Queue Aufruf eingebaut.
+- namespace services call rename file/dir eingebaut.
 

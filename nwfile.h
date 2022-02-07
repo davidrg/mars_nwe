@@ -1,12 +1,13 @@
 /* nwfile.h 23-Jan-96 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
+#include "nwqueue.h"
 
 typedef struct {
   int      fd;          /* filehandle from system open/creat */
   long   offd;          /* aktuell file offset               */
   time_t tmodi;         /* modification TIME                 */
-  FILE      *f;         /* for PIPE                          */
+  FILE_PIPE *f;         /* for PIPE                          */
   int    flags;         /* 2 = PIPE                          */
                         /* 4 = don't reuse after close       */
   char   fname[256];    /* UNIX filename                     */

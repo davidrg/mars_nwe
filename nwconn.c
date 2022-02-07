@@ -1,4 +1,4 @@
-/* nwconn.c 21-Mar-96       */
+/* nwconn.c 04-May-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -23,6 +23,7 @@
 #include "nwvolume.h"
 #include "nwfile.h"
 #include "connect.h"
+#include "nwqueue.h"
 #include "namspace.h"
 
 
@@ -100,6 +101,7 @@ static void pr_debug_request()
     switch (ncprequest->function) {
       case 0x16 :
       case 0x17 : ufunc = (int) *(requestdata+2); break;
+      case 0x57 : ufunc = (int) *(requestdata);   break;
       default   : break;
     } /* switch */
     XDPRINTF((0, 0, "NCP REQUEST: func=0x%02x, ufunc=0x%02x, seq:%03d, task:%02d",
@@ -175,9 +177,12 @@ static int handle_ncp_serv(void)
 	               if ((result = nw_get_volume_name(volume, xdata->name))>-1){
 	                 struct fs_usage fsp;
 	                 if (!nw_get_fs_usage(xdata->name, &fsp)) {
-	                   U16_TO_BE16(1000, xdata->sec_per_block); /* hard coded */
-	                   U16_TO_BE16(fsp.fsu_blocks/1000, xdata->total_blocks);
-	                   U16_TO_BE16(fsp.fsu_bavail/1000, xdata->avail_blocks);
+	                   int sector_scale=1;
+	                   while (fsp.fsu_blocks/sector_scale > 0xffff)
+                                  sector_scale*=2;
+	                   U16_TO_BE16(sector_scale, xdata->sec_per_block);
+	                   U16_TO_BE16(fsp.fsu_blocks/sector_scale, xdata->total_blocks);
+	                   U16_TO_BE16(fsp.fsu_bavail/sector_scale, xdata->avail_blocks);
 	                   U16_TO_BE16(fsp.fsu_files,  xdata->total_dirs);
 	                   U16_TO_BE16(fsp.fsu_ffree,  xdata->avail_dirs);
                            if ( get_volume_options(volume, 1) & VOL_OPTION_REMOUNT) {
@@ -360,6 +365,17 @@ static int handle_ncp_serv(void)
 	                 } *input = (struct INPUT *) (ncprequest);
 	                  /* TODO !!!!!!!!!!!!!!!!!!!!  */
 	                 do_druck++;
+	               } else  if (*p == 0xf){ /* rename dir */
+	           /******** Rename DIR *********************/
+	                 int dir_handle  = (int) *(p+1);
+	                 int oldpathlen  = (int) *(p+2);
+                         uint8 *oldpath  =       p+3;
+	                 int newpathlen  = (int) *(oldpath + oldpathlen);
+                         uint8 *newpath  =       oldpath + oldpathlen + 1;
+	                 int code = mv_dir(dir_handle,
+	                                      oldpath, oldpathlen,
+	                                      newpath, newpathlen);
+	                 if (code) completition = (uint8) -code;
 	               } else  if (*p == 0x12 /* Allocate Permanent Dir Handle */
 
 	           /******** Allocate Permanent DIR Handle **/
@@ -408,9 +424,12 @@ static int handle_ncp_serv(void)
 	                   if (result > -1) {
                              struct fs_usage fsp;
                              if (!nw_get_fs_usage(xdata->name, &fsp)) {
-                               U16_TO_BE16(1000, xdata->sectors);
-                               U16_TO_BE16(fsp.fsu_blocks/1000, xdata->total_blocks);
-                               U16_TO_BE16(fsp.fsu_bavail/1000, xdata->avail_blocks);
+                               int sector_scale=1;
+                               while (fsp.fsu_blocks/sector_scale > 0xffff)
+                                  sector_scale*=2;
+                               U16_TO_BE16(sector_scale, xdata->sectors);
+                               U16_TO_BE16(fsp.fsu_blocks/sector_scale, xdata->total_blocks);
+                               U16_TO_BE16(fsp.fsu_bavail/sector_scale, xdata->avail_blocks);
                                U16_TO_BE16(fsp.fsu_files,  xdata->total_dirs);
                                U16_TO_BE16(fsp.fsu_ffree,  xdata->avail_dirs);
                                if (get_volume_options(volume, 1) & VOL_OPTION_REMOUNT) {
@@ -672,8 +691,8 @@ static int handle_ncp_serv(void)
              break;
 #endif
 
-             case 0x14:
-             case 0x18:
+             case 0x14: /* Login Objekt, unencrypted passwords */
+             case 0x18: /* crypt_keyed LOGIN */
              return(-2); /* nwbind must do prehandling */
 
 
@@ -781,6 +800,7 @@ static int handle_ncp_serv(void)
 	 case 0x19 : /* logout, some of this call is handled in ncpserv. */
                      nw_free_handles(0);
                      set_default_guid();
+                     nw_setup_home_vol(-1, NULL);
                      return(-1); /* nwbind must do rest */
                      break;
 
@@ -944,6 +964,36 @@ static int handle_ncp_serv(void)
 	             }
 	             break;
 
+	 case 0x41  : {  /* open file for reading */
+	               struct INPUT {
+	                 uint8   header[7];     /* Requestheader */
+	                 uint8   dirhandle;     /* Dirhandle     */
+	                 uint8   attrib;        /* z.B. 0x6 od. 0x4e  */
+	                       /* O_RDWR|TRUNC 0x6, O_RDONLY 0x6 */
+	                 uint8   len;           /* namelaenge */
+	                 uint8   data[2];       /* Name       */
+	               } *input = (struct INPUT *)ncprequest;
+	               struct OUTPUT {
+	                 uint8   ext_fhandle[2]; /* all zero       */
+	                 uint8   fhandle[4];     /* Dateihandle    */
+	                 uint8   reserve2[2];    /* z.B  0x0   0x0 */
+	                 NW_FILE_INFO fileinfo;
+	               } *xdata= (struct OUTPUT*)responsedata;
+	               int  fhandle=nw_creat_open_file((int)input->dirhandle,
+	                       input->data, input->len,
+	                       &(xdata->fileinfo),
+	                       (int)input->attrib,
+	                       0x1, 0);
+
+	               if (fhandle > -1){
+	                 U32_TO_BE32(fhandle, xdata->fhandle);
+	                 U16_TO_BE16(0, xdata->ext_fhandle);
+	                 U16_TO_BE16(0, xdata->reserve2);
+	                 data_len = sizeof(struct OUTPUT);
+	               } else completition = (uint8) (-fhandle);
+	             }
+	             break;
+
 	 case 0x42 : /* close file */
 	             {
 	               struct INPUT {
@@ -1086,12 +1136,12 @@ static int handle_ncp_serv(void)
 	                 uint8   filler;
 	                 uint8   ext_fhandle[2]; /* all zero */
 	                 uint8   fhandle[4];     /* filehandle */
-	                 uint8   offset[4];      /* alles 0 */
-	                 uint8   max_size[2];    /* zu lesende Bytes */
+	                 uint8   offset[4];
+	                 uint8   max_size[2];    /* byte to readd */
 	               } *input = (struct INPUT *)ncprequest;
 	               struct OUTPUT {
-	                 uint8   size[2];        /* Lese Bytes */
-	                 uint8   data[1072];     /* max data   */
+	                 uint8   size[2];        /* read byzes  */
+	                 uint8   data[1072];     /* max data    */
 	               } *xdata=(struct OUTPUT*)responsedata;
 	               int    fhandle  = GET_BE32(input->fhandle);
 	               int    max_size = GET_BE16(input->max_size);
@@ -1231,7 +1281,7 @@ static int handle_ncp_serv(void)
 #if WITH_NAME_SPACE_CALLS
 	 case 0x57 : /* some new namespace calls */
                      {
-                       int result = handle_func_0x57(requestdata, responsedata);
+                       int result = handle_func_0x57(requestdata, responsedata, ncprequest->task);
                        if (result > -1) data_len = result;
                        else completition=(uint8)-result;
                      }
@@ -1310,9 +1360,12 @@ static void handle_after_bind()
        uint8 ufunc    = *(requestdata+2);
        uint8 *rdata   = requestdata+3;
        switch (ufunc) {
-         case 0x14:
-         case 0x18: { /* ncpserv have change the structure */
+         case 0x14:   /* Login Objekt, unencrypted passwords */
+         case 0x18: { /* crypt_keyed LOGIN */
+           int   fnlen = (int) *(bindresponse + 2 * sizeof(int));
+           /* ncpserv have changed the structure */
            set_guid(*((int*)bindresponse), *((int*)(bindresponse+sizeof(int))));
+           nw_setup_home_vol(fnlen, bindresponse + 2 * sizeof(int) +1);
          }
          break;
 

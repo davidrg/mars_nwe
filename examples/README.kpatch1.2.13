@@ -1,0 +1,7 @@
+This is the kernel-ipx patch for the 1.2.13 kernel.
+If you have problems with mars_nwe or if you want to
+speed up mars_nwe with kernel 1.2.13 you should apply
+this patch to kernel 1.2.13
+
+Martin
+

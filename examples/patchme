@@ -1,4 +1,5 @@
 #!/bin/sh
+### !!!!!!! this is only for kernel 1.3.56 !!!!!!!!
 ACT_DIR=`pwd`
 PATCHFILE=kpatch1.3.56
 LINUXDIR=/usr/src/linux

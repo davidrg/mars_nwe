@@ -347,7 +347,7 @@ static int find_get_conn_nr(ipxAddr_t *addr)
     }
   }
   if (connection) {
-    uint8 buff[sizeof(ipxAddr_t)+sizeof(uint16)];
+    uint8 buff[sizeof(ipxAddr_t)+sizeof(uint16)+sizeof(uint32)];
     memcpy(buff, addr, sizeof(ipxAddr_t));
 #if CALL_NWCONN_OVER_SOCKET
     /* here i can use the nwconn socket */
@@ -356,6 +356,8 @@ static int find_get_conn_nr(ipxAddr_t *addr)
     /* and in this mode all must be go over ncpserv */
     U16_TO_BE16(SOCK_NCP, buff+sizeof(ipxAddr_t));
 #endif
+    U32_TO_BE32(connections[connection-1].pid,
+                buff+sizeof(ipxAddr_t)+sizeof(uint16));
     nwserv_insert_conn(connection, (char*)buff, sizeof(buff));
   }
   return(connection);
@@ -540,11 +542,14 @@ static void handle_ncp_request(void)
               c->retry       = 0;
               return;
             } else {  /* 0x5555, close connection  */
+
 #if !CALL_NWCONN_OVER_SOCKET
               if ( (uint8) (c->sequence+1) == (uint8) ncprequest->sequence)
 #endif
               {
+#if 1
                 clear_connection(connection);
+#endif
                 ncp_response(0x3333,
                              ncprequest->sequence,
                              connection,
@@ -566,8 +571,8 @@ static void handle_ncp_request(void)
       ncp_response(0x3333, ncprequest->sequence,
     	               ncprequest->connection,
     	               0,    /* task         */
-    	               0xff, /* completition */
-    	               0xff, /* conn status  */
+    	               0xfe, /* completition */
+    	               0xf0, /* conn status  */
     	               0);
 
 #if !CALL_NWCONN_OVER_SOCKET
@@ -621,11 +626,11 @@ static void handle_ncp_request(void)
 
 int main(int argc, char *argv[])
 {
-  if (argc != 4) {
-    fprintf(stderr, "usage ncpserv nwname address nwbindsock\n");
-    exit(1);
-  }
   init_tools(NCPSERV, 0);
+  if (argc != 4) {
+    errorp(1, "Usage:", "ncpserv nwname address nwbindsock");
+    return(1);
+  }
   get_ini();
   strncpy(my_nwname, argv[1], 48);
   my_nwname[47] = '\0';
@@ -636,7 +641,7 @@ int main(int argc, char *argv[])
 #endif
   if (open_ipx_sockets()) {
     errorp(1, "open_ipx_sockets", NULL);
-    exit(1);
+    return(1);
   }
 
   XDPRINTF((1, 0, "USE_PERMANENT_OUT_SOCKET %s",

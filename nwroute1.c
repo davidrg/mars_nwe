@@ -125,6 +125,11 @@ void get_servers(void)
 #endif
 }
 
+void print_routing_info(void)
+{
+;; /* DUMMY */
+}
+
 void send_sap_rip_broadcast(int mode)
 /* mode=0, standard broadcast */
 /* mode=1, first trie         */

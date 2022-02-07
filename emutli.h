@@ -1,4 +1,4 @@
-/* emutli.h 30-Jan-96 */
+/* emutli.h 28-Apr-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -92,6 +92,12 @@ struct pollfd {
 
 #define TOUTSTATE      6  /* out of state */
 
+extern void set_locipxdebug(int debug);
+extern void set_sock_debug(int sock);
+extern void sock2ipxadr(ipxAddr_t *i, struct sockaddr_ipx *so);
+extern void ipx2sockadr(struct sockaddr_ipx *so, ipxAddr_t *i);
+extern void set_emu_tli(void);
+
 extern int  poll(struct pollfd *fds, unsigned long nfds, int timeout);
 extern int  t_open(char *name, int open_mode, char *p);
 extern int  t_bind(int sock, struct t_bind *a_in, struct t_bind *a_out);
@@ -103,39 +109,21 @@ extern int  t_rcvuderr(int fd, struct t_uderr    *ud);
 extern int  t_sndudata(int fd, struct t_unitdata *ud);
 
 
-extern int  init_ipx(uint32 network, uint32 node, int ipx_debug);
-extern void exit_ipx(int full);
-
-extern int  init_dev(char  *devname, int frame, uint32 network);
-extern void exit_dev(char  *devname, int frame);
-
-#if 0
-extern int get_ipx_addr(ipxAddr_t *addr);
-#endif
-
-extern void ipx_route_add(uint32  dest_net,
-                          uint32  route_net,
-                          uint8   *route_node);
-
-extern void ipx_route_del(uint32  net);
-
-extern void set_emu_tli(void);
-
 #ifndef  IPX_FRAME_8022
-#define  OLD_KERNEL_IPX    1
-#define  IPX_FRAME_8022    IPX_RT_8022
+#  define  OLD_KERNEL_IPX    1
+#  define  IPX_FRAME_8022    IPX_RT_8022
 #endif
 
 #ifndef  IPX_FRAME_8023
-#define  IPX_FRAME_8023    0
+#  define  IPX_FRAME_8023    0
 #endif
 
 #ifndef  IPX_FRAME_SNAP
-#define  IPX_FRAME_SNAP    IPX_RT_SNAP
+#  define  IPX_FRAME_SNAP    IPX_RT_SNAP
 #endif
 
 #ifndef  IPX_FRAME_ETHERII
-#define  IPX_FRAME_ETHERII  IPX_RT_BLUEBOOK
+#  define  IPX_FRAME_ETHERII  IPX_RT_BLUEBOOK
 #endif
 
 #endif

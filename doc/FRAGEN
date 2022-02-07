@@ -1,0 +1,34 @@
+Sorry, this is in German only.
+einige Fragen und Antworten.
+
+F: Welche original Novell DOS Tools brauche ich.
+A: Fuer eine Minimalkonfiguration ist nur das LOGIN.EXE
+   Programm notwendig.
+   folgende weitere Programme sind sinnvoll einsetzbar.
+   MAP.EXE       : Zuweisung von Laufwerken.
+   CAPTURE.EXE   : Zuweisung von Druckern.
+   SYSCON.EXE    : Verwaltungstool
+
+   es ist z.Z. auch ein DOS Client Programm in Entwicklung, welches
+   es erlaubt, mars_nwe ohne original NOVELL DOS Tools zu
+   verwenden.
+
+F: Wird '/dev/ipx' benoetigt. Ich finde Verweise in mars_nwe.
+A: Unter Linux Nein. Diese Verweise betreffen nur Systeme mit
+   TLI-Interfaces. z.B. UnixWare (tm).
+
+F: Ich verstehe Eintrag '12,13' aus der ini/conf Datei nicht.
+   Was passiert, falls ich hier kein Passwort eintrage ?
+   Wird es aus der '/etc/passwd' verwendet.
+A: Dieses Passwort wird verschluesselt in die Bindery eingetragen.
+   Passwoerter aus der '/etc/passwd' werden nur verwendet, falls
+   mit 'unencryted login calls' gearbeitet wird.
+
+F: Welche Rolle spielt Eintrag '15'.
+A: Dieser Eintrag steht fuer das Passwort, welches bei
+   dem automatischen Umwandeln Unix -> mars_nwe User allen *neu*
+   eingetragenen mars_nwe Benutzern als default zugewiesen
+   wird.
+
+
+

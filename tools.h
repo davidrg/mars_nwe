@@ -1,4 +1,4 @@
-/*  tools.h : 20-Mar-96    */
+/*  tools.h : 01-May-96    */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -25,6 +25,7 @@
 #define NWCONN    3
 #define NWCLIENT  4
 #define NWBIND    5
+#define NWROUTED  6
 
 extern  FILE *logfile;
 extern  void x_x_xfree(char **p);
@@ -44,15 +45,19 @@ extern void  xdprintf(int dlevel, int mode, char *p, ...);
 extern void  errorp(int mode, char *what, char *p, ...);
 extern FILE  *open_nw_ini(void);
 extern int   get_ini_entry(FILE *f, int entry, uint8 *str, int strsize);
-extern char  *get_exec_path(char *buff, char *progname);
+extern char  *get_div_pathes(char *buff, char *name, int what, char *p, ... );
+#define get_exec_path(bu, progn) get_div_pathes((bu), (progn), 0, NULL)
+
 extern int   get_ini_int(int what);
 extern void  get_ini_debug(int what);
-extern void  init_tools(int module, int conn);
+extern void  creat_pidfile(void);
+extern void  init_tools(int module, int options);
+extern void  exit_tools(void);
 
 extern uint8 down_char(uint8 ch);
 extern uint8 up_char(uint8 ch);
-extern uint8 *downstr(uint8 *s);
-extern uint8 *upstr(uint8 *s);
+extern uint8 *downstr(uint8 *ss);
+extern uint8 *upstr(uint8 *ss);
 
 
 extern int nw_debug;

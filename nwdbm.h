@@ -1,4 +1,4 @@
-/* nwdbm.h 22-Feb-96 */
+/* nwdbm.h 30-Apr-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -68,6 +68,8 @@ extern int password_scheme;
 #define PW_SCHEME_GET_KEY_FAIL    4
 #define PW_SCHEME_ALLOW_EMPTY_PW  8
 
+/* next routine is in nwbind.c !!!! */
+extern int b_acc(uint32 obj_id, int security, int forwrite);
 
 extern void sync_dbm(void);
 
@@ -92,12 +94,6 @@ extern int nw_get_obj(NETOBJ *o);
 extern int prop_find_member(uint32 obj_id, int prop_id, uint32 member_id);
 extern int prop_add_member(uint32 obj_id, int prop_id, uint32 member_id);
 extern int prop_delete_member(uint32 obj_id, int prop_id, uint32 member_id);
-
-
-
-extern int ins_prop_val(uint32 obj_id, uint8 prop_id, int segment,
-	         uint8 *property_value, int erase_segments);
-
 
 extern int nw_get_prop_val_by_obj_id(uint32 obj_id,
                               int   segment_nr,
@@ -179,7 +175,8 @@ extern uint32 nw_new_obj_prop(uint32 wanted_id,
 	          char *propname, int propflags, int propsecurity,
 	          char *value, int valuesize);
 
-extern int get_guid(int *gid, int *uid, uint32 obj_id);
+extern int get_guid(int *gid, int *uid, uint32 obj_id, uint8 *name);
+extern int get_home_dir(uint8 *homedir, uint32 obj_id);
 
 extern int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key);
 extern int nw_test_unenpasswd(uint32 obj_id, uint8 *password);

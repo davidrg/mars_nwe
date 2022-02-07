@@ -1,0 +1,14 @@
+Q: I don't exaclty understand the meaning of some ponits in nw.ini:
+   12,13
+   What will happen if I will not put PASSWORD here? Will it take it from
+   /etc/passwd? I want it to be so.
+
+A: This passwords will be stored (crypted) into bindery to can handle
+   the crypted login call from a standarrd Novell client.
+
+Q: What role plays: 15?
+   What if I will no supply passwd here?
+A: This is for automatic inserting UNIX Users as mars_nwe users.
+   All of these automatic inserted users will get the password
+   as the crypted bindery password.
+

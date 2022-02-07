@@ -1,0 +1,70 @@
+The PIPE filesystem arose in answer to the question: how can I save
+all or part of a Linux system onto/ via a DOS computer or a Novell
+fileserver? The PIPE filesystem was designed as a quick attempt to
+solve this problem
+
+In the PIPE filesystem either shell scripts or Linux programs can be
+stored. These programs are treated on the client side (eg DOS) like
+simple files. Opening these files via the client causes a popen of the
+programs. The server passes as the first parameter either CREAT READ
+or WRITE, depending on the mode of the corresponding openfile
+operation. This allows the PIPE filesystem to provide a direct
+interface between client applications and Linux programs.
+
+The problem stated above could then be solved with the following
+simple shell script, which was stored in the PIPE-filesystem:
+
+#!/bin/sh
+case "$1" in
+'CREAT')
+        ;;
+'WRITE')
+        cd /u3 && tar -xf -  2>> /tmp/tar.in
+        # restore directory /u3/mar
+        ;;
+'READ')
+        cd /u3 && tar -cf -  mar  2> /dev/null
+        # save directory /u3/mar
+        ;;
+*)
+	;;
+esac
+
+
+Under DOS this 'Pipe File' can now be 'copied' into a local file using
+the Copy command (->save), or the local file can be copied into this
+'Pipe File' (->restore).
+
+A simple print operation can be achieved with the following script:
+
+#!/bin/sh
+case "$1" in
+'WRITE')
+        /usr/bin/lpr
+        ;;
+*)
+	;;
+esac
+
+
+
+Various unix programs can be invoked with the following script, after
+it has been linked with the required program name.
+
+#!/bin/sh
+case "$1" in
+'READ')
+        /usr/bin/`basename $0`
+        ;;
+*)
+	;;
+esac
+
+
+I would appreciate hearing about further documented applications of
+the PIPE filesystem or suggestions for other ways of using it.
+
+Martin
+
+(translated by Michael Beddow)
+

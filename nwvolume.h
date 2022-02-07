@@ -1,4 +1,4 @@
-/* nwvolume.h  07-Feb-96 */
+/* nwvolume.h  29-Mar-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,7 +18,7 @@
 #ifndef _NWVOLUME_H_
 #define _NWVOLUME_H_
 
-#define MAX_DEV_NAMESPACE_MAPS  256
+#define MAX_DEV_NAMESPACE_MAPS  16
 
 typedef struct {
   int dev;
@@ -32,17 +32,21 @@ typedef struct {
  */
 
 typedef struct {
-  uint8 *sysname;       /* VOL_NAME                       */
-  uint8 *unixname;      /* UNIX-DIR                       */
-  int   unixnamlen;     /* len of unixname		  */
+  uint8 *sysname;       /* VOL_NAME                          */
+  uint8 *unixname;      /* UNIX-DIR                          */
+  int   unixnamlen;     /* len of unixname		     */
   DEV_NAMESPACE_MAP *dev_namespace_maps[MAX_DEV_NAMESPACE_MAPS];
-  int   maps_count;     /* count of dev_namespace_maps    */
-  uint8 options;        /* *_1_* all is lowercase         */
+  int   max_maps_count; /* may be less than MAX_DEV_NAMESPACE_MAPS */
+  int   maps_count;     /* count of dev_namespace_maps       */
+  uint32 high_inode;    /* hight inode to can handle correct */
+  int   options;        /* *_1_* all is lowercase            */
 } NW_VOL;
 
-#define VOL_OPTION_DOWNSHIFT    1
-#define VOL_OPTION_IS_PIPE      2  /* Volume has only pipes    */
-#define VOL_OPTION_REMOUNT      4  /* Volume can be remounted (cdroms) */
+#define VOL_OPTION_DOWNSHIFT 0x01  /* All downshift               */
+#define VOL_OPTION_IS_PIPE   0x02  /* Volume contains pipes       */
+#define VOL_OPTION_REMOUNT   0x04  /* Volume can be remounted (cdroms) */
+#define VOL_OPTION_IS_HOME   0x08  /* Volume is USERS HOME        */
+#define VOL_OPTION_ONE_DEV   0x10  /* Volume has only one filesys */
 
 /* stolen from GNU-fileutils */
 /* Space usage statistics for a filesystem.  Blocks are 512-byte. */
@@ -58,6 +62,7 @@ extern NW_VOL    nw_volumes[MAX_NW_VOLS];
 extern int       used_nw_volumes;
 
 extern void nw_init_volumes(FILE *f);
+extern void nw_setup_home_vol(int len, uint8 *fn);
 extern int  nw_get_volume_number(uint8 *volname, int namelen);
 extern int  nw_get_volume_name(int volnr, uint8 *volname);
 extern int  nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu);

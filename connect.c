@@ -1,4 +1,4 @@
-/* connect.c  20-Mar-96 */
+/* connect.c  04-May-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,12 +17,10 @@
  */
 
 #include "net.h"
+#include "unxfile.h"
 
 #include <dirent.h>
 #include <utime.h>
-
-#include <sys/errno.h>
-extern int errno;
 
 /* #define TEST_FNAME   "PRINT.000"
 */
@@ -61,9 +59,10 @@ static char *build_unix_name(NW_PATH *nwpath, int modus)
   static char unixname[300];    /* must be big enouugh */
   int volume = nwpath->volume;
   char *p, *pp;
-  if (volume < 0 || volume >= used_nw_volumes) {
-    fprintf(stderr, "build_unix_name volume=%d not ok\n", volume);
-    strcpy(unixname, "ZZZZZZZZZZZZ"); /* vorsichthalber */
+  if (volume < 0 || volume >= used_nw_volumes
+                 || !nw_volumes[volume].unixnamlen) {
+    errorp(0, "build_unix_name", "volume=%d not ok\n", volume);
+    strcpy(unixname, "Z/Z/Z/Z"); /*  */
     return(unixname);
   }
   strcpy(unixname, (char*)nw_volumes[volume].unixname); /* first UNIXNAME VOLUME */
@@ -73,8 +72,14 @@ static char *build_unix_name(NW_PATH *nwpath, int modus)
   p += strlen((char*)nwpath->path);
   if ( (!(modus & 1)) && nwpath->fn[0])
     strcpy(p, (char*)nwpath->fn);    /* and now fn  */
-  else if ((modus & 2) && (*(p-1) == '/')) *(p-1) = '\0';
-  if (nw_volumes[volume].options & 1) downstr((uint8*)pp);
+  else if ((modus & 2) && (*(p-1) == '/')) {
+    if (p > unixname+1) *(--p) = '\0';
+    else {
+      *p++ = '.';
+      *p   = '\0';
+    }
+  }
+  if (nw_volumes[volume].options & VOL_OPTION_DOWNSHIFT) downstr((uint8*)pp);
   return(unixname);
 }
 
@@ -201,7 +206,7 @@ static int x_str_match(uint8 *s, uint8 *p)
     switch (state){
       case 0 :
       switch  (pc) {
-        case 255:   if (*p == '*' || *p == '?') continue;
+        case 255:   if (*p == '*' || *p == '?' || *p==0xaa || *p==0xae) continue;
                     break;
 
         case '\\': /* beliebiges Folgezeichen */
@@ -273,7 +278,7 @@ static int x_str_match(uint8 *s, uint8 *p)
   return ( (*s) ? 0 : 1);
 }
 
-int fn_match(uint8 *s, uint8 *p, uint8 options)
+int fn_match(uint8 *s, uint8 *p, int options)
 {
   uint8 *ss=s;
   int   len=0;
@@ -284,7 +289,7 @@ int fn_match(uint8 *s, uint8 *p, uint8 options)
       len=0;
     } else {
       if ((pf && len > 3) || len > 8) return(0);
-      if (options & 1){   /* only downshift chars */
+      if (options & VOL_OPTION_DOWNSHIFT){   /* only downshift chars */
         if (*ss >= 'A' && *ss <= 'Z') return(0);
       } else {            /* only upshift chars   */
         if (*ss >= 'a' && *ss <= 'z') return(0);
@@ -312,7 +317,7 @@ static int func_search_entry(NW_PATH *nwpath, int attrib,
   char           xkpath[256];
   uint8          entry[256];
   int            volume = nwpath->volume;
-  uint8          soptions;
+  int            soptions;
   FUNC_SEARCH    fs_local;
   if (!fs) {
     fs        = &fs_local;
@@ -322,7 +327,7 @@ static int func_search_entry(NW_PATH *nwpath, int attrib,
   if (volume < 0 || volume >= used_nw_volumes) return(-1); /* something wrong */
   else  soptions = nw_volumes[volume].options;
   strcpy((char*)entry,  (char*)nwpath->fn);
-  if (soptions & 1) downstr(entry);   /* now downshift chars */
+  if (soptions & VOL_OPTION_DOWNSHIFT) downstr(entry);   /* now downshift chars */
   nwpath->fn[0] = '\0';
   strcpy(xkpath, build_unix_name(nwpath, 1|2));
 
@@ -347,7 +352,7 @@ static int func_search_entry(NW_PATH *nwpath, int attrib,
                   ||    ( ( (fs->statb.st_mode & S_IFMT) != S_IFDIR) && !(attrib & 0x10)));
             if (okflag){
               strcpy((char*)nwpath->fn, (char*)name);
-              if (soptions & 1) upstr(nwpath->fn);
+              if (soptions & VOL_OPTION_DOWNSHIFT) upstr(nwpath->fn);
               XDPRINTF((5,0,"FOUND=:%s: attrib=0x%x", nwpath->fn, fs->statb.st_mode));
               result = (*fs_func)(nwpath, fs);
               if (result < 0) break;
@@ -376,11 +381,11 @@ static int get_dir_entry(NW_PATH *nwpath,
   char           xkpath[256];
   uint8          entry[256];
   int            volume = nwpath->volume;
-  uint8          soptions;
+  int          soptions;
   if (volume < 0 || volume >= used_nw_volumes) return(0); /* something wrong */
   else  soptions = nw_volumes[volume].options;
   strcpy((char*)entry,  (char*)nwpath->fn);
-  if (soptions & 1) downstr(entry);   /* now downshift chars */
+  if (soptions & VOL_OPTION_DOWNSHIFT) downstr(entry);   /* now downshift chars */
 
   nwpath->fn[0] = '\0';
   strcpy(xkpath, build_unix_name(nwpath, 1|2));
@@ -409,7 +414,7 @@ static int get_dir_entry(NW_PATH *nwpath,
                   ||    ( ( (statb->st_mode & S_IFMT) != S_IFDIR) && !(attrib & 0x10)));
             if (okflag){
               strcpy((char*)nwpath->fn, (char*)name);
-              if (soptions & 1) upstr(nwpath->fn);
+              if (soptions & VOL_OPTION_DOWNSHIFT) upstr(nwpath->fn);
               XDPRINTF((5,0,"FOUND=:%s: attrib=0x%x", nwpath->fn, statb->st_mode));
               break; /* ready */
             }
@@ -457,7 +462,7 @@ static int get_dh_entry(DIR_HANDLE *dh,
     uint8   entry[256];
     strmaxcpy(entry, search, 255);
 
-    if (dh->vol_options & 1)   downstr(entry);
+    if (dh->vol_options & VOL_OPTION_DOWNSHIFT)   downstr(entry);
     if ( (uint16)*sequence == MAX_U16)  *sequence = 0;
     seekdir(f, (long) *sequence);
 
@@ -483,7 +488,7 @@ static int get_dh_entry(DIR_HANDLE *dh,
                      || (((statb->st_mode & S_IFMT) != S_IFDIR) && !(attrib & 0x10)));
             if (okflag){
               strcpy((char*)search, (char*)name);
-              if (dh->vol_options & 1) upstr(search);
+              if (dh->vol_options & VOL_OPTION_DOWNSHIFT) upstr(search);
               break; /* ready */
             }
           } else okflag = 0;
@@ -907,7 +912,7 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
           d++;
         }
         completition = 0;
-      } else if (errno & EEXIST)
+      } else if (errno == EEXIST)
          completition = -0xa0;    /* dir not empty */
        else completition = -0x8a; /* No privilegs  */
     }
@@ -942,9 +947,9 @@ int mv_file(int qdirhandle, uint8 *q, int qlen,
           unlink(unziel);
         }
       } else {
-        if (errno & EEXIST)
-          completition=-0x91;    /* allready exist */
-        else if (errno & EXDEV)
+        if (errno == EEXIST)
+          completition=-0x92;    /* allready exist */
+        else if (errno == EXDEV)
           completition=-0x9a;    /* cross devices */
         else completition=-0x9c; /* wrong path */
       }
@@ -953,6 +958,42 @@ int mv_file(int qdirhandle, uint8 *q, int qlen,
   return(completition);
 }
 
+int mv_dir(int dir_handle, uint8 *q, int qlen,
+                           uint8 *z, int zlen)
+{
+  NW_PATH quellpath;
+  NW_PATH zielpath;
+  int completition=conn_get_kpl_path(&quellpath, dir_handle, q, qlen, 0);
+  if (!completition > -1){
+    memcpy(&zielpath, &quellpath, sizeof(NW_PATH));
+    strmaxcpy(zielpath.fn, z, zlen);
+    if (completition > -1) {
+      if (get_volume_options(quellpath.volume, 1) &
+           VOL_OPTION_IS_PIPE)
+          completition = -0x9c;
+    }
+    if (completition > -1){
+      int result;
+      char unquelle[256];
+      char unziel[256];
+      strcpy(unquelle, build_unix_name(&quellpath, 0));
+      strcpy(unziel,   build_unix_name(&zielpath,  0));
+      result = unx_mvdir((uint8 *)unquelle, (uint8 *)unziel);
+      XDPRINTF((2,0, "rendir result=%d, '%s'->'%s'",
+                 result, unquelle, unziel));
+      if (!result)
+        completition = 0;
+      else {
+        if (result == EEXIST)
+          completition=-0x92;    /* allready exist */
+        else if (result == EXDEV)
+          completition=-0x9a;    /* cross devices */
+        else completition=-0x9c; /* wrong path */
+      }
+    }
+  }
+  return(completition);
+}
 
 static int change_dir_entry( NW_DIR *dir,     int volume,
                              uint8 *path,     ino_t inode,
@@ -1077,7 +1118,7 @@ int nw_free_handles(int task)
   return(0);
 }
 
-int insert_new_dir(NW_PATH *nwpath, int inode, int drive, int is_temp, int task)
+int xinsert_new_dir(int volume, uint8 *path, int inode, int drive, int is_temp, int task)
 {
   int j              = 0;
   time_t lowtime     = time(NULL);
@@ -1088,7 +1129,7 @@ int insert_new_dir(NW_PATH *nwpath, int inode, int drive, int is_temp, int task)
   for (j = 0; j < (int)used_dirs; j++) {
     NW_DIR *d = &(dirs[j]);
     if (d->inode && !is_temp && !d->is_temp && (int)d->drive == drive) {
-      (void)change_dir_entry(d, nwpath->volume, nwpath->path, inode, drive, is_temp, 1, task);
+      (void)change_dir_entry(d, volume, path, inode, drive, is_temp, 1, task);
       return(++j);
     } else if (!d->inode) freehandle = j+1;
     else if (d->is_temp && d->timestamp < lowtime) {
@@ -1100,12 +1141,19 @@ int insert_new_dir(NW_PATH *nwpath, int inode, int drive, int is_temp, int task)
   if (!freehandle) freehandle = timedhandle;
   if (freehandle){
     (void)change_dir_entry(&(dirs[freehandle-1]),
-          nwpath->volume, nwpath->path, inode,
+          volume, path, inode,
           drive, is_temp, 1, task);
     while (used_dirs > freehandle && !dirs[used_dirs-1].inode) used_dirs--;
     return(freehandle);
   } else return(-0x9d);  /* no dir Handles */
 }
+
+int insert_new_dir(NW_PATH *nwpath, int inode, int drive, int is_temp, int task)
+{
+ return(xinsert_new_dir(nwpath->volume, nwpath->path,
+                       inode, drive, is_temp, task));
+}
+
 
 int nw_search(uint8 *info,
               int dirhandle, int searchsequence,
@@ -1556,232 +1604,5 @@ int nw_scan_a_root_dir(uint8   *rdata,
   } else return(completition); /* wrong path */
 }
 
-/* <======================================================================> */
-/* minimal queue handling to enable very simple printing */
-/* qick and dirty  !!!!!!!!!!!!!!! */
-
-#define MAX_JOBS    5   /*  max. open queue jobs for one connection */
-static int anz_jobs=0;
-
-typedef struct {
-  uint32  fhandle;
-  int     old_job;        /* is old structure */
-  union  {
-    QUEUE_JOB      n;
-    QUEUE_JOB_OLD  o;
-  } q;
-} INT_QUEUE_JOB;
-
-INT_QUEUE_JOB *queue_jobs[MAX_JOBS];
-
-static INT_QUEUE_JOB *give_new_queue_job(int old_job)
-{
-  int k=-1;
-  while (++k < anz_jobs) {
-    INT_QUEUE_JOB *p=queue_jobs[k];
-    if (!p->fhandle) { /* free slot */
-      memset(p, 0, sizeof(INT_QUEUE_JOB));
-      p->old_job = old_job;
-      if (old_job)
-        p->q.o.job_id[0] = k+1;
-      else
-        p->q.n.job_id[0] = k+1;
-      return(p);
-    }
-  }
-  if (anz_jobs < MAX_JOBS) {
-    INT_QUEUE_JOB **pp=&(queue_jobs[anz_jobs++]);
-    *pp = (INT_QUEUE_JOB *) xmalloc(sizeof(INT_QUEUE_JOB));
-    memset(*pp, 0, sizeof(INT_QUEUE_JOB));
-    (*pp)->old_job = old_job;
-    if (old_job)
-      (*pp)->q.o.job_id[0] = anz_jobs;
-    else
-      (*pp)->q.n.job_id[0] = anz_jobs;
-    return(*pp);
-  }
-  return(NULL);
-}
-
-static void free_queue_job(int q_id)
-{
-  if (q_id > 0 && q_id <= anz_jobs) {
-    INT_QUEUE_JOB **pp=&(queue_jobs[q_id-1]);
-    uint32 fhandle   = (*pp)->fhandle;
-    if (fhandle > 0) nw_close_datei(fhandle, 1);
-    if (q_id == anz_jobs) {
-      xfree(*pp);
-      --anz_jobs;
-    } else (*pp)->fhandle=0L;
-  }
-}
-
-static void set_entry_time(uint8 *entry_time)
-{
-  struct tm  *s_tm;
-  time_t     timer;
-  time(&timer);
-  s_tm = localtime(&timer);
-  entry_time[0]    = (uint8) s_tm->tm_year;
-  entry_time[1]    = (uint8) s_tm->tm_mon+1;
-  entry_time[2]    = (uint8) s_tm->tm_mday;
-  entry_time[3]    = (uint8) s_tm->tm_hour;
-  entry_time[4]    = (uint8) s_tm->tm_min;
-  entry_time[5]    = (uint8) s_tm->tm_sec;
-}
-
-static int create_queue_file(uint8   *job_file_name,
-                             uint32 q_id,
-                             int    jo_id,
-                             int    connection,
-                             uint8  *dirname,
-                             int    dir_nam_len,
-                             uint8  *job_bez)
-
-{
-  int result;
-  NW_FILE_INFO fnfo;
-  *job_file_name
-     = sprintf((char*)job_file_name+1, "%07lX%d.%03d", q_id, jo_id, connection);
-
-  result=nw_alloc_dir_handle(0, dirname, dir_nam_len, 99, 2, 1);
-  if (result > -1)
-    result = nw_creat_open_file(result, job_file_name+1,
-                                       (int)  *job_file_name,
-                                        &fnfo, 0x6, 0x6, 1 | 4);
-
-  XDPRINTF((5,0,"creat queue file bez=`%s` handle=%d",
-                                         job_bez, result));
-  return(result);
-}
-
-
-int nw_creat_queue(int connection, uint8 *queue_id, uint8 *queue_job,
-                           uint8 *dirname, int dir_nam_len, int old_call)
-{
-  INT_QUEUE_JOB *jo   = give_new_queue_job(old_call);
-  uint32         q_id = GET_BE32(queue_id);
-  int result = -0xff;
-  XDPRINTF((5,0,"NW_CREAT_Q:dlen=%d, dirname=%s", dir_nam_len, dirname));
-
-  if (NULL  != jo) {
-    int jo_id = 0;
-    if (jo->old_job) {
-      jo_id = (int) jo->q.o.job_id[0];
-      memcpy(&(jo->q.o), queue_job, sizeof(QUEUE_JOB_OLD));
-      jo->q.o.job_id[0]         = (uint8) jo_id;
-      jo->q.o.client_connection = (uint8)connection;
-      jo->q.o.client_task       = (uint8)0xfe; /* ?? */
-      U32_TO_BE32(1, jo->q.o.client_id); /* SU */
-      set_entry_time(jo->q.o.job_entry_time);
-      jo->q.o.job_typ[0]            = 0x0; /* 0xd0;*/
-      jo->q.o.job_typ[1]            = 0x0;
-      jo->q.o.job_position          = 0x1;
-      jo->q.o.job_control_flags    |= 0x20;
-
-      result = create_queue_file(jo->q.o.job_file_name,
-                                 q_id, jo_id, connection,
-                                 dirname, dir_nam_len,
-                                 jo->q.o.job_bez);
-
-      if (result > -1) {
-        jo->fhandle     = (uint32) result;
-        U16_TO_BE16(0,           jo->q.o.job_file_handle);
-        U32_TO_BE32(jo->fhandle, jo->q.o.job_file_handle+2);
-        result = 0;
-      }
-      jo->q.o.server_station = 0;
-      jo->q.o.server_task    = 0;
-      U32_TO_BE32(0, jo->q.o.server_id);
-      if (!result) memcpy(queue_job, &(jo->q.o), sizeof(QUEUE_JOB_OLD));
-    } else {
-      jo_id = (int) jo->q.n.job_id[0];
-      memcpy(&(jo->q.n), queue_job, sizeof(QUEUE_JOB));
-      jo->q.n.job_id[0]         = (uint8) jo_id;
-
-      U16_TO_BE16(0xffff, jo->q.n.record_in_use);
-      U32_TO_BE32(0x0,    jo->q.n.record_previous);
-      U32_TO_BE32(0x0,    jo->q.n.record_next);
-      memset(jo->q.n.client_connection, 0, 4);
-      jo->q.n.client_connection[0] = (uint8)connection;
-      memset(jo->q.n.client_task,  0, 4);
-      jo->q.n.client_task[0]       = (uint8)0xfe; /* ?? */
-      U32_TO_BE32(1, jo->q.n.client_id); /* SU */
-      set_entry_time(jo->q.n.job_entry_time);
-
-      jo->q.n.job_typ[0]            = 0x0; /* 0xd0;*/
-      jo->q.n.job_typ[1]            = 0x0;
-      jo->q.n.job_position[0]       = 0x1;
-      jo->q.n.job_position[1]       = 0x0;
-      jo->q.n.job_control_flags[0] |= 0x20;
-      jo->q.n.job_control_flags[1]  = 0x0;
-
-      result = create_queue_file(jo->q.n.job_file_name,
-                                 q_id, jo_id, connection,
-                                 dirname, dir_nam_len,
-                                 jo->q.n.job_bez);
-
-      if (result > -1) {
-        jo->fhandle = (uint32) result;
-        U32_TO_BE32(jo->fhandle,    jo->q.n.job_file_handle);
-        result = 0;
-      }
-      U32_TO_BE32(0, jo->q.n.server_station);
-      U32_TO_BE32(0, jo->q.n.server_task);
-      U32_TO_BE32(0, jo->q.n.server_id);
-      if (!result) memcpy(queue_job, &(jo->q.n), sizeof(QUEUE_JOB));
-    }
-    if (result) free_queue_job(jo_id);
-  }
-  return(result);
-}
-
-int nw_close_file_queue(uint8 *queue_id,
-                        uint8 *job_id,
-                        uint8 *prc, int prc_len)
-{
-  int result = -0xff;
-  int jo_id  = (int) *job_id;  /* ever only the first byte */
-  XDPRINTF((5,0,"nw_close_file_queue JOB=%d", jo_id));
-  if (jo_id > 0 && jo_id <= anz_jobs){
-    INT_QUEUE_JOB *jo=queue_jobs[jo_id-1];
-    int fhandle = (int)jo->fhandle;
-    char unixname[300];
-    strmaxcpy((uint8*)unixname, (uint8*)file_get_unix_name(fhandle), sizeof(unixname)-1);
-    XDPRINTF((5,0,"nw_close_file_queue fhandle=%d", fhandle));
-    if (*unixname) {
-      char printcommand[256];
-      FILE *f=NULL;
-      strmaxcpy((uint8*)printcommand, prc, prc_len);
-      nw_close_datei(fhandle, 1);
-      jo->fhandle = 0L;
-      if (NULL != (f = fopen(unixname, "r"))) {
-        int  is_ok = 0;
-        FILE *fout = popen(printcommand, "w");
-        if (fout) {
-          char buff[1024];
-          int  k;
-          is_ok++;
-          while ((k = fread(buff, 1, sizeof(buff), f)) > 0) {
-            if (1 != fwrite(buff, k, 1, fout)) {
-              XDPRINTF((1,0,"Cannot write to pipe `%s`", printcommand));
-              is_ok=0;
-            }
-          }
-          pclose(fout);
-        } else
-          XDPRINTF((1,0,"Cannot open pipe `%s`", printcommand));
-        fclose(f);
-        if (is_ok) {
-          unlink(unixname);
-          result=0;
-        }
-      } else XDPRINTF((1,0,"Cannot open queue-file `%s`", unixname));
-    } else
-      XDPRINTF((2,0,"fhandle=%d NOT OK !", fhandle));
-    free_queue_job(jo_id);
-  }
-  return(result);
-}
 
 

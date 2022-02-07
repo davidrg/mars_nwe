@@ -1,0 +1,100 @@
+Sorry, this is in German only.
+folgende Fragen/Antworten stammen von Erik Thiele.
+
+> Heisst das, dass mars_nwe die Novell-Partition lesen kann?
+ ________
+ * NEIN *   dafuer benutzt du ncpfs oder einen neuen HACKER-KERNEL
+ ^^^^^^^^
+                                           Novell-Volume
+1. 1.2.xx Kernel +  NCPFS Packet             client
+2. 1.3.xx Kernel mit integriertem NCPFS      client
+3. diverse Kernel u. MARS_NWE                server
+4. diverse Kernel + patches  u. linware      server
+
+wobei sich mars_nwe und ncpfs gleichzeitig miteinander vertragen.
+
+> wie funktioniert das Drucken
+
+*** SWITCHING TO THE DOS/NOVELL WORLD ***
+das Drucken funktioniert bei Novell so:
+
+jemand druckt in eine PRINT-QUEUE auf einem NOVELL-SERVER.
+
+nun gibt es QUEUE-SERVERs. ein QUEUE-SERVER managed eine
+oder mehrere PRINT-QUEUEs. Er kann den Inhalt einer PRINT-QUEUE auf eine
+parallele Schnittstelle rausdrucken, oder an einen REMOTE-PRINTER schicken.
+
+QUEUE-SERVER laufen auf DOS als alleiniger systemblockierender Prozess,
+d.h. der PC kann derweil nix anderes machen, oder auf einem NOVELL-SERVER,
+dort natuerlich nicht blockierenderweisse, iss ja schliesslich Multitasking.
+
+ein REMOTE-PRINTER ist KEIN drucker der ans ethernet angeschlossen ist, sondern
+ein auf einer DOS-kiste laufendes TSR (hintergrundprogramm), das ankommende
+Bytes auf die parallele schnittstelle schiebt. Der PC kann derweil noch anderes
+tun (oder sich aufhaengen *grins* )
+
+*** BACK TO LINUX ***
+wenn man nun in eine PRINT-QUEUE drucken will, benutzt man "nprint" aus dem
+ncpfs packet. da gibt man den namen der PRINT-QUEUE sowie den Namen des
+NOVELL-SERVERS an, auf dem die PRINT-QUEUE rumliegt.
+
+will man einen drucker an eine linux kiste hinhaengen und ihn ins novell-netz
+integrieren (ich hab einen DIN A0 Tintenklekser der an einer HP-workstation
+haengt ueber einen LINUX rechner ins NOVELL-NETZ integriert...), so muss man
+sich zunaechst entscheiden, ob die PRINT-QUEUE auf dem echten NOVELL-SERVER
+sein soll, oder auf dem mars_nwe NOVELL-SERVER. Letzteres bringt probleme mit
+sich bei software, die nicht in der lage ist auf eine print-queue zu drucken,
+die NICHT auf dem benutzten NOVELL-FILE-SERVER ist. (Wordperfect hat das
+bei mir nicht kapiert. man kann es nur so konfigurieren, dass es auf
+PRINT-QUEUES druckt, die auch auf dem aktuellen NOVELL-FILE-SERVER sind.)
+(Anmerkung: mittels capture funktioniert es aber immer.)
+also iss es besser, die QUEUE auf dem bereits existierenden NOVELL-SERVER zu
+installieren. dann laesst man noch den QUEUE-SERVER auf dem NOVELL-SERVER laufen
+(pconsole), da es einen solchigen fuer Linux nicht gibt. nun muss man auf einer
+linux-kiste nur noch das aequivalent zum REMOTE-PRINTER starten. ich weiss
+leider nicht mehr, wie das heisst, oder wo es ist, aber ich glaube es ist
+in ncpfs... (ich bin zuhause...)
+
+(will man die PRINT-QUEUE aufm mars_nwe installieren, ist man in 3 sekunden
+fertig, lies die mars_nwe dokus)
+
+naja das ganze iss gar net soooooo schwierig :-) man muss nur kraeftig docus
+lesen. und FTP starten :-)
+saug dir einfach alle IPX-tools und NETWARE-speziefischen sachen vom sunsite.
+
+>Ich habe mir mal vor kurzem mars_nwe angesehen, leider ist kein Readme dabei,
+>welches die Features beschreibt.
+stimmt absolut nicht !!! (schau dir mal die configurationsdatei an :-))))
+
+>Kann mars_nwe auch bootserver spielen? Da in unserem Schulrechnerraum nur
+>ein einziger >386"-er Rechner da ist, wollte ich unter Linux die restlichen
+>10 286'er booten lassen. Kann mars_nwe sich hierbei komplett wie der echte
+>Novellserver verhalten?
+
+ich habe aehnliches problem, allerdings vertagt. BOOT-ROM rechner machen unter
+umstaenden ein paar calls, die der mars_nwe noch nicht vertraegt. aber
+ansonsten loggen sie sich einfach auf dem ding ein und laden dateien
+an definierten positionen. -> mars_nwe muesste das auch koennen.
+wenn es nicht geht, liegt das an eben diesen calls.
+
+es gibt einen der heisst SAP_GET_NEAREST_SERVER.
+diesen kann man beim NEUEN mars_nwe ausschalten, damit nur noch der Original
+Novell-server auf diesen call reagiert. wenn man naemlich auf der DOS-kiste
+den NETX.COM laedt, dann loggt sich das teil automatisch auf dem server ein,
+der als ersten den call beantwortet. (der novell server gewinnt immer das
+rennen, aber wenn er mal ein bischen busy ist,.... man weiss ja nie !)
+abhilfe schafft da eben die option, den call abzuschaffen, oder bei
+NETX die option /PS=eumel hinzufuegen, dann loggt er sich nur auf dem "eumel"
+ein.
+WENN MAN ABER DEN CALL ABSCHAFFT, DANN KOENNEN DIE BOOT-ROM RECHNER EINEN
+NICHT MEHR IM NETZ FINDEN !!!! DAS ist ein saudummes problem.
+der author sagte aber er wolle es beheben, durch eine liste von
+rechnern im configurationsfile, die den call beantwortet kriegen, und
+solche, die ihn nicht beantwortet kriegen. allerdings ist wie oben gesagt
+der Novell-server immer schneller, so dass der Novell-server hardwaremaessig
+von den boot-rom kisten getrennt werden muss, und dann bringt auch die liste
+nix mehr...
+
+
+
+

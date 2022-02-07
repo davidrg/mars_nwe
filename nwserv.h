@@ -1,4 +1,4 @@
-/* nwserv.h 30-Jan-96 */
+/* nwserv.h 26-Apr-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -15,20 +15,24 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
-
+#ifndef _M_NWSERV_H_
+#define _M_NWSERV_H_
 extern uint32    internal_net;        /* NETWORKNUMMER INTERN (SERVER) */
-extern ipxAddr_t my_server_adr;       /* Address of this server    */
-extern char      my_nwname[50];       /* Name of this server       */
+extern int       no_internal;         /* no use of internal net        */
+extern int       auto_creat_interfaces;
+extern ipxAddr_t my_server_adr;       /* Address of this server        */
+extern char      my_nwname[50];       /* Name of this server           */
 extern int       print_route_tac;     /* every x broadcasts print it   */
-extern int       print_route_mode;    /* append    */
-extern char      *pr_route_info_fn;   /* filename */
+extern int       print_route_mode;    /* append                        */
+extern char      *pr_route_info_fn;   /* filename                      */
 extern int       wdogs_till_tics;
 
 typedef struct {
-  char     *devname;   /* "eth0" or "isdnX"         */
-  int      frame;      /* frametyp 		    */
+  char     *devname;   /* "eth0" or "isdnX"  or ??    */
+  int      frame;      /* frametyp                    */
   int      ticks;      /* ether:ticks=1, isdn:ticks=7 */
-  uint32   net;        /* NETWORK NUMBER 	    */
+  uint32   net;        /* NETWORK NUMBER              */
+  int      is_up;      /* Is this device up ?         */
 } NW_NET_DEVICE;
 
 /* <========== DEVICES ==========> */
@@ -55,13 +59,14 @@ extern void ins_del_bind_net_addr(uint8 *name, int styp, ipxAddr_t *adr);
 extern void send_server_response(int respond_typ,
                                  int styp, ipxAddr_t *to_addr);
 
+extern void print_routing_info(void);
 extern void send_sap_rip_broadcast(int mode);
 extern void rip_for_net(uint32 net);
 extern void get_servers(void);
 
 extern void handle_rip(int fd, int ipx_pack_typ,
-	        int data_len, IPX_DATA *ipxdata,
-	        ipxAddr_t *from_addr);
+                int data_len, IPX_DATA *ipxdata,
+                ipxAddr_t *from_addr);
 
 
 extern  void insert_delete_server(uint8  *name,
@@ -73,4 +78,5 @@ extern  void insert_delete_server(uint8  *name,
                                  int        flags);
 
 extern int dont_send_wdog(ipxAddr_t *addr);
-
+extern int test_ins_device_net(uint32 rnet);
+#endif

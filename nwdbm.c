@@ -1,4 +1,4 @@
-/* nwdbm.c  20-Mar-96  data base for mars_nwe */
+/* nwdbm.c  30-Apr-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,9 +26,12 @@
 #include "nwcrypt.h"
 #ifdef LINUX
 #  include <ndbm.h>
-#  define SHADOW_PWD  0
+#  ifndef  SHADOW_PWD
+#    define SHADOW_PWD  0
+#  endif
 #else
 #  include </usr/ucbinclude/ndbm.h>
+#  undef  SHADOW_PWD
 #  define SHADOW_PWD  1
 #endif
 
@@ -372,14 +375,16 @@ static int loc_change_prop_security(NETPROP *p, uint32 obj_id)
 	if (data.dptr != NULL  && name_match(prop->name, p->name) )  {
 	  uint8 security = p->security;
 	  XDPRINTF((2,0, "found PROP %s, id=0x%x", prop->name, (int) prop->id));
-	  result = 0;
-	  memcpy(p, prop, sizeof(NETPROP));
-	  p->security = security;
-	  data.dptr  = (char*)p;
-	  data.dsize = sizeof(NETPROP);
-	  key.dptr  = (char *)p;
-	  key.dsize = NETPROP_KEY_SIZE;
-	  if (store(key, data)) result=-0xff;
+          result = b_acc(obj_id, prop->security, 1);
+          if (!result) {
+	    memcpy(p, prop, sizeof(NETPROP));
+	    p->security = security;
+	    data.dptr  = (char*)p;
+	    data.dsize = sizeof(NETPROP);
+	    key.dptr  = (char *)p;
+	    key.dsize = NETPROP_KEY_SIZE;
+	    if (store(key, data)) result=-0xff;
+          }
 	  break;
 	}
       }
@@ -526,17 +531,19 @@ L1:
   return(result);
 }
 
-int ins_prop_val(uint32 obj_id, uint8 prop_id, int segment,
+static int ins_prop_val(uint32 obj_id, NETPROP *prop, int segment,
 	         uint8 *property_value, int erase_segments)
 {
-  int result = -0xec; /* no such Segment */
+  int result = b_acc(obj_id, prop->security, 1);
+  if (result) return(result);
   if (!dbminit(FNVAL)){
     NETVAL  val;
     int flag    = 1;
     key.dsize   = NETVAL_KEY_SIZE;
     key.dptr    = (char*)&val;
     val.obj_id  = obj_id;
-    val.prop_id = (uint8)prop_id;
+    val.prop_id = (uint8)prop->id;
+    result = -0xec; /* no such Segment */
     if (segment > 1) {
       val.segment = segment-1;
       data        = fetch(key);
@@ -722,7 +729,7 @@ int nw_write_prop_value(int object_type,
 
   if ((result = find_obj_id(&obj, 0)) == 0){
     if ((result=find_first_prop_id(&prop, obj.id))==0){
-       result=ins_prop_val(obj.id, prop.id, segment_nr,
+       result=ins_prop_val(obj.id, &prop, segment_nr,
 	    property_value, erase_segments);
 
     }
@@ -745,10 +752,9 @@ int nw_change_prop_security(int object_type,
   XDPRINTF((2,0, "nw_change_prop_security obj=%s,0x%x, prop=%s",
       obj.name, object_type, prop.name));
   obj.type    = (uint16) object_type;
-  if ((result = find_obj_id(&obj, 0)) == 0){
-    result=loc_change_prop_security(&prop, obj.id);
-  }
-  return(result);
+  if ((result = find_obj_id(&obj, 0)) == 0)
+    return(loc_change_prop_security(&prop, obj.id));
+  return(-0xff);
 }
 
 int nw_scan_property(NETPROP *prop,
@@ -960,16 +966,18 @@ uint32 nw_new_obj_prop(uint32 wanted_id,
       uint8  locvalue[128];
       memset(locvalue, 0, sizeof(locvalue));
       memcpy(locvalue, value, min(sizeof(locvalue), valuesize));
-      ins_prop_val(obj.id, prop.id, 1, locvalue, 0xff);
+      ins_prop_val(obj.id, &prop, 1, locvalue, 0xff);
     }
   }
   return(obj.id);
 }
 
 typedef struct {
-  int  pw_uid;
-  int  pw_gid;
-  char pw_passwd[80];
+  int    pw_uid;
+  int    pw_gid;
+  char   pw_passwd[80];
+  uint8  pw_dir[257];
+  uint8  pw_name[20];
 } MYPASSWD;
 
 static MYPASSWD *nw_getpwnam(uint32 obj_id)
@@ -979,10 +987,13 @@ static MYPASSWD *nw_getpwnam(uint32 obj_id)
   if (nw_get_prop_val_str(obj_id, "UNIX_USER", buff) > 0){
     struct passwd *pw = getpwnam(buff);
     if (NULL != pw) {
-      memcpy(&pwstat, pw, sizeof(struct passwd));
+      if (obj_id != 1 && pw->pw_uid == 1)
+        return(NULL);  /* only supervisor -> root */
       pwstat.pw_uid = pw->pw_uid;
       pwstat.pw_gid = pw->pw_gid;
       xstrcpy(pwstat.pw_passwd, pw->pw_passwd);
+      xstrcpy(pwstat.pw_name,   pw->pw_name);
+      xstrcpy(pwstat.pw_dir,    pw->pw_dir);
 #if SHADOW_PWD
       if (pwstat.pw_passwd[0] == 'x' && pwstat.pw_passwd[1]=='\0') {
         struct spwd *spw=getspnam(buff);
@@ -998,18 +1009,39 @@ static MYPASSWD *nw_getpwnam(uint32 obj_id)
   return(NULL);
 }
 
-int get_guid(int *gid, int *uid, uint32 obj_id)
+int get_guid(int *gid, int *uid, uint32 obj_id, uint8 *name)
 /* searched for gid und uid of actual obj */
 {
   MYPASSWD *pw = nw_getpwnam(obj_id);
   if (NULL != pw) {
     *gid    = pw->pw_gid;
     *uid    = pw->pw_uid;
+    if (name) strmaxcpy(name, pw->pw_name, 20);
     return(0);
   } else {
     *gid = -1;
     *uid = -1;
+    if (name) strcpy(name, "UNKNOWN");
     return(-0xff);
+  }
+}
+
+int get_home_dir(uint8 *homedir,  uint32 obj_id)
+/* searches for UNIX homedir of actual obj */
+{
+  MYPASSWD *pw = nw_getpwnam(obj_id);
+  if (NULL != pw) {
+    int len=strlen(pw->pw_dir);
+    if (!len) {
+      *homedir++ = '/';
+      *homedir   = '\0';
+      len =1;
+    } else
+      strmaxcpy(homedir, pw->pw_dir, min(255, len));
+    return(len);
+  } else {
+    *homedir='\0';
+    return(0);
   }
 }
 
@@ -1221,7 +1253,7 @@ static void add_user(uint32 u_id,   uint32 g_id,
   add_user_to_group(u_id, g_id);
   if (unname && *unname)
     nw_new_obj_prop(u_id, NULL,                 0  ,   0  ,   0 ,
-      	             "UNIX_USER",             P_FL_ITEM,    0x33,
+      	             "UNIX_USER",        P_FL_ITEM,    0x33,
 	             (char*)unname,  strlen(unname));
 
   if (password && *password) {
@@ -1237,7 +1269,7 @@ static void add_group(char *name,  char  *unname, char *password)
   (void) nw_new_obj(&g_id,  name,       0x2  , 0x0,   0x31);
   if (unname && *unname)
     nw_new_obj_prop(g_id, NULL,                0  ,   0  ,   0 ,
-      	             "UNIX_GROUP",           P_FL_ITEM,    0x33,
+      	             "UNIX_GROUP",         P_FL_ITEM,    0x33,
 	             (char*)unname,  strlen(unname));
 }
 
@@ -1453,7 +1485,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
           int gid;
           int uid;
           sprintf(sx, "%lx", objs[ocount]);
-          if (!get_guid(&gid, &uid, objs[ocount]))
+          if (!get_guid(&gid, &uid, objs[ocount], NULL))
             test_add_dir(unixname, ppp, 1, downshift, 0770, gid, uid, sx);
           else  {
             NETOBJ obj;
