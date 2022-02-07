@@ -1,4 +1,4 @@
-/* nwconn.c 04-Jun-98       */
+/* nwconn.c 10-Nov-98       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -241,17 +241,30 @@ static int handle_ncp_serv(void)
 
   if (ncp_type == 0x2222) {
     switch (function) {
-
-#if 0
+#if 0         
          case 0x3 :  { /* Log File */
-NWCONN	1:UNKNOWN FUNCTION od. TYPE: 0x3
-NWCONN	1:NWCONN NCP_RESP seq:56, conn:1, compl=0xfb task=5 TO
-	net=0:0:0:22, node=0:0:1:22:59:52, sock=40:03
-NWCONN	1:NCP REQUEST: func=0x03, ufunc=0x00, seq:060, task:05
-NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
-	'9','7','.','Z','I','P'
-                     ;;
-                     } break;
+           struct INPUT {
+             uint8   header[7];       /* Requestheader */
+             uint8   dir_handle;      
+             uint8   lock_flag;       /* 1 = lock direct, 0 = only log */
+             uint8   timeout[2];      /* HI LO */
+             uint8   len;            
+             uint8   path[2];
+           } *input = (struct INPUT *) (ncprequest);
+           if (input->lock_flag==1) {
+             int result = nw_log_file( input->lock_flag,
+                                   GET_BE16(input->timeout),
+                                   input->dir_handle, 
+                                   input->len,
+                                   input->path);
+             if (result) completition = (uint8) -result;
+           }  else {  /* not handled */
+             completition = 0xfb;
+           }
+         }
+         break;
+#endif
+#if 0         
          case 0x4 :  { /* Lock File Set  */
                      ;;
                      } break;
@@ -262,6 +275,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                      ;;
                      } break;
          case 0x7 :  { /* Clear File */
+NWC 2  94:NCP REQUEST: func=0x07, ufunc=0x00, seq:094, task:08
+NWC 2  94:len 28, DATA:,0x2,0x1a,'P','R','O','B','A','\\','U','S','E','R','D','\\','A','D','M','I','N','\\','F','H','K','D','L','K','Y','X'
                      ;;
                      } break;
          case 0x8 :  { /* Clear File Set  */
@@ -802,7 +817,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                           data_len=sizeof(struct XDATA);
 #endif
                        } else  if (*p == 0x2a){
-                          /*  Get Eff. Rights of DIR's and Files  ??*/
+                          /*  Get Eff. Rights of DIR's and Files */
                          struct XDATA {
                            uint8    eff_rights[2]; /* LO-HI */
                          } *xdata = (struct XDATA*) responsedata;

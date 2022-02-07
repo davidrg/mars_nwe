@@ -1,4 +1,4 @@
-/* connect.c  13-May-98 */
+/* connect.c  10-Nov-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1327,7 +1327,7 @@ int nw_set_file_attributes(int dir_handle, uint8 *data, int len,
 static int nw_rmdir(uint8 *unname)
 {
   if (rmdir(unname)) {
-    if (errno == EEXIST) return(-0xa0); /* directory not empty */
+    if (errno == /*EEXIST*/ ENOTEMPTY) return(-0xa0); /* directory not empty */
     return(-0x8a); /* no privilegs */
   }
   return(0);
@@ -2236,6 +2236,8 @@ void get_dos_file_attrib(NW_DOS_FILE_INFO *f,
   up_fn(spath);
   strncpy((char*)f->name, (char*)spath, f->namlen);
   U32_TO_32(get_nw_attrib_dword(volume, unixname, stb), f->attributes);
+  U16_TO_16(tru_get_inherited_mask(volume, unixname, stb), 
+        f->inherited_rights_mask);
   un_date_2_nw(stb->st_mtime, f->created.date, 0);
   un_time_2_nw(stb->st_mtime, f->created.time, 0);
   U32_TO_BE32(nw_owner, f->created.id);
@@ -2260,7 +2262,10 @@ void get_dos_dir_attrib(NW_DOS_DIR_INFO *f,
   strmaxcpy(spath, path, 12);
   up_fn(spath);
   strncpy((char*)f->name, (char*)spath, f->namlen);
-  U32_TO_32(get_nw_attrib_dword(volume, unixname, stb), f->attributes);
+  U32_TO_32(get_nw_attrib_dword(volume, unixname, stb), 
+             f->attributes);
+  U16_TO_16(tru_get_inherited_mask(volume, unixname, stb), 
+        f->inherited_rights_mask);
   un_date_2_nw(stb->st_mtime, f->created.date,0);
   un_time_2_nw(stb->st_mtime, f->created.time,0);
   U32_TO_BE32(get_file_owner(stb), f->created.id);
@@ -2360,6 +2365,21 @@ int nw_set_a_directory_entry(int     dirhandle,
        if (change_mask & 0x2) {
          completition=set_nw_attrib_dword(nwpath.volume, unixname, &stbuff, 
             GET_32(f->u.f.attributes));
+       }
+       if (S_ISDIR(stbuff.st_mode)) {
+         if (change_mask & 0x1000) {
+           int result=tru_set_inherited_mask(nwpath.volume, unixname, 
+                         &stbuff, GET_16(f->u.d.inherited_rights_mask));
+           if (result)
+             completition=result;
+         }
+       } else {
+         if (change_mask & 0x1000) {
+           int result=tru_set_inherited_mask(nwpath.volume, unixname, 
+                         &stbuff, GET_16(f->u.f.inherited_rights_mask));
+           if (result)
+             completition=result;
+         }
        }
      } 
   } 

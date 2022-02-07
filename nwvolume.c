@@ -1,4 +1,4 @@
-/* nwvolume.c  10-May-98 */
+/* nwvolume.c  09-Nov-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -209,7 +209,12 @@ void nw_init_volumes(FILE *f)
               case 't' : vol->options
                          |= VOL_OPTION_TRUSTEES;
                          break;
-              
+
+              case 'T' : /* option added by Norbert Nemec <nobbi@cheerful.com> */
+                         vol->options 
+                         |= (VOL_OPTION_TRUSTEES | VOL_OPTION_IGNUNXRIGHT);
+                         break;
+
               case 'O' : vol->options
                          |= VOL_NAMESPACE_OS2;
                          loaded_namespaces |= VOL_NAMESPACE_OS2;
@@ -250,6 +255,7 @@ void nw_init_volumes(FILE *f)
 
         if (vol->options & VOL_OPTION_NO_INODES) {
           vol->options &= ~VOL_OPTION_TRUSTEES;
+          vol->options &= ~VOL_OPTION_IGNUNXRIGHT;
           vol->options &= ~VOL_OPTION_ATTRIBUTES;
         }
 
@@ -326,8 +332,10 @@ void nw_setup_vol_opts(int act_gid, int act_uid,
       nw_volumes[k].maps_count = 0;
       fname = unixname;
       flen = homepathlen;
+#if 0  /* removed in 0.99.pl14, 03-Nov-98 */
       nw_volumes[k].umode_dir  = 0;
       nw_volumes[k].umode_file = 0;
+#endif      
       if (homepathlen > 0 && nw_volumes[k].addonlen) {
         if (homepathlen + nw_volumes[k].addonlen > 256) {
           flen = 0;
@@ -533,12 +541,16 @@ fsd.f_bsize  = 1024;
   fsp->fsu_ffree  = fsd.f_ffree;
 
   if (limit) {
-    if (fsp->fsu_blocks > 4000000)
+    if (fsp->fsu_blocks > 4000000) {
        fsp->fsu_blocks = 4000000;
-    if (fsp->fsu_bfree > 4000000)
+    }
+    if (fsp->fsu_bfree > 4000000) {
        fsp->fsu_bfree = 4000000;
+    }
+    if (fsp->fsu_bavail > 4000000) {
+       fsp->fsu_bavail = 4000000;
+    }
   }
-
   return(0);
 }
 

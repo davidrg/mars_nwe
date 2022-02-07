@@ -1,4 +1,4 @@
-/* trustee.c 31-Jul-98 */
+/* trustee.c 09-Nov-98 */
 /* (C)opyright (C) 1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -787,7 +787,9 @@ int tru_get_eff_rights(int volume, uint8 *unixname, struct stat *stb)
   if (voloptions & VOL_OPTION_TRUSTEES){ 
     rights=get_eff_rights_by_trustees(volume, unixname, stb);
   }    
-  rights1 = un_nw_rights(voloptions, unixname, stb);
+  if (!(voloptions & VOL_OPTION_IGNUNXRIGHT)){
+    rights1 = un_nw_rights(voloptions, unixname, stb);
+  }
   MDEBUG(D_TRUSTEES, {
     xdprintf(1,0, "eff_rights=%04x,%04x for`%s`", 
       rights, rights1, unixname);
@@ -807,7 +809,9 @@ int tru_eff_rights_exists(int volume, uint8 *unixname, struct stat *stb,
     if ((rights & TRUSTEE_S)||((rights&lookfor)==lookfor))
       return(0);
   }
-  rights1=un_nw_rights(voloptions, unixname, stb);
+  if (!(voloptions & VOL_OPTION_IGNUNXRIGHT)){
+    rights1=un_nw_rights(voloptions, unixname, stb);
+  }
   MDEBUG(D_TRUSTEES, {
     xdprintf(1,0, "%04x eff_rights_exists ? = %04x,%04x for`%s`", 
      lookfor, rights, rights1, unixname);

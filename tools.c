@@ -68,7 +68,7 @@ static char *get_debstr(int with_time)
   if (with_time) {
     time_t actualtime=time(NULL);
     struct tm *ptm=localtime(&actualtime);
-    int l=strftime(debuf, sizeof(debuf)- 4, "%m:%d,%H:%M:%S ", ptm);
+    int l=strftime(debuf, sizeof(debuf)- 4, "%m.%d,%H:%M:%S ", ptm);
     strmaxcpy(debuf+l, get_modstr(), 3);
   } else {
     sprintf(debuf, "%-8s" , get_modstr());

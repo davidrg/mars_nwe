@@ -1,4 +1,4 @@
-/* nwfile.c  21-Oct-98 */
+/* nwfile.c  03-Dec-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -97,6 +97,8 @@ static int new_file_handle(int volume, uint8 *unixname, int task)
   fh->tmodi   = 0L;
   fh->modified = 0;
   fh->st_ino  = 0;
+  fh->access  = 0;
+  fh->inuse   = 0;
   strcpy((char*)fh->fname, (char*)unixname);
   fh->fh_flags   = 0;
   fh->f       = NULL;
@@ -201,6 +203,37 @@ static int open_with_root_access(char *path, int mode)
   return(fd);
 }
 
+
+static int reopen_file(int volume, uint8 *unixname, struct stat *stbuff, 
+                   int access, int task)
+/* look for file already open and try to use it */
+/* do not know whether this is real ok */
+{
+  int fhandle=-1;
+  int result=0;
+  while (++fhandle < count_fhandles) {
+    FILE_HANDLE *fh=&(file_handles[fhandle]);
+    if (fh->fd > -1 && fh->task == task && fh->volume == volume
+       && fh->st_dev == stbuff->st_dev && fh->st_ino == stbuff->st_ino) {
+      if ((fh->access&4) && (access&4)) 
+         return(-0x80); /* share error */
+      if ((fh->access&8) && (access&8)) 
+         return(-0x80); /* share error */
+      if (access & 4) 
+        result=share_file(stbuff->st_dev, stbuff->st_ino, 0x5);
+      if ((access & 0x8) && !result)
+        result=share_file(stbuff->st_dev, stbuff->st_ino, 0x2);
+      if (result)
+         return(-0x80); /* share error */
+      if ((fh->access&2) || (access&2))
+        return(0);
+      fh->inuse++;
+      return(++fhandle);
+    }
+  }
+  return(0);
+}
+
 int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                      int attrib, int access, int creatmode, int task)
 /*
@@ -256,6 +289,11 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
     if (S_ISDIR(stbuff->st_mode)) 
       completition = -0xff; /* directory is total wrong here */
     else {
+      if (!(creatmode&1) && !(voloptions & VOL_OPTION_IS_PIPE)) {
+        int fdx=reopen_file(volume, unixname, stbuff, access, task);
+        if (fdx != 0) 
+            return(fdx);
+      }
       eff_rights = tru_get_eff_rights(volume, unixname, stbuff);
       dwattrib   = get_nw_attrib_dword(volume, unixname, stbuff);
       if (creatmode&0x2) { /* creat if not exist */
@@ -434,7 +472,9 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
         }
       }
       if (!completition) {
+        fh->access = access;
         if (fh->fd != -1) {
+          fh->inuse++;
           if (!dowrite)
             fh->fh_flags |= FH_OPENED_RO;
           if (voloptions & VOL_OPTION_READONLY)
@@ -521,6 +561,9 @@ int nw_close_file(int fhandle, int reset_reuse, int task)
        return(0); /* 24-May-98 , 0.99.pl9 */
 #endif
     }
+
+    if (--fh->inuse > 0)  /* 03-Dec-98 */
+        return(0);
 
     if (fh->fd > -1 || (fh->fd == -3 && fh->fh_flags & FH_IS_PIPE_COMMAND)) {
       int result = 0;

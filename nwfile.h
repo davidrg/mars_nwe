@@ -1,4 +1,4 @@
-/* nwfile.h 30-Apr-98 */
+/* nwfile.h 03-Dec-98 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
 #include "extpipe.h"
@@ -19,6 +19,8 @@ typedef struct {
   int    st_ino;        /* inode 			     */
   char   fname[256];    /* UNIX filename                     */
   int    volume;        /* Volume			     */
+  int    inuse;         /* used for multiple open of filehandle */
+  int    access;        /* open access                       */
 } FILE_HANDLE;
 
 /* fh_flags */

@@ -1,4 +1,4 @@
-/* nwvolume.h  24-May-98 */
+/* nwvolume.h  09-Nov-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -80,6 +80,7 @@ typedef struct {
 #define VOL_OPTION_NO_INODES   0x0080  /* Volume do not have fixed inodes */
 #define VOL_OPTION_TRUSTEES    0x0100  /* Volume use Trustees           */
 #define VOL_OPTION_ATTRIBUTES  0x0200  /* Volume use 'real' Attributes  */
+#define VOL_OPTION_IGNUNXRIGHT 0x0400  /* Ignore rights granted in UN*X FS */
 
 /* namespaces */
 #define VOL_NAMESPACE_DOS      0x1000

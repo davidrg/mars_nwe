@@ -1,6 +1,6 @@
 Sorry, beginning is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 25-Oct-98
+Aenderungen in mars_nwe bis zum : 03-Dec-98
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -476,4 +476,15 @@ Erste 'oeffentliche' Version
   if file is opened for writing.  
 - fn_dos_match routine corrected, was broken in pl7. ( ndir.exe works again )
 <----- ^^^^^^^^^^ pl13 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- now section 1 permissions works for '~' ('HOME') entries too
+- get_fs_usage now also sets fsu_bavail to limit.
+- new flag 'T' for volumes which has trustees & ignore the rights granted 
+  in UN*X filesystem, added by Norbert Nemec <nobbi@cheerful.com>
+- added 'inherited_rights_mask handling' to some routines.
+- nwfile.c. Filehandle can now be used for more than one open.
+  Don't know whether this is correct. Under W95 client the dos 
+  programm 'blinker' needs it.
+- nw_rmdir() in connect.c now returns correct value if directory
+  cannot be removed because it is not empty.
+<----- ^^^^^^^^^^ pl14 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
