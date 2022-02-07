@@ -1,4 +1,4 @@
-/* nwserv.h 09-Jan-96 */
+/* nwserv.h 11-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -33,10 +33,6 @@ extern  int anz_net_devices;
 extern  NW_NET_DEVICE *net_devices[];
 
 /* <======== SOCKETS =========> */
-#if 0
-#define MY_BROADCAST_SLOT  0     /* Server Broadcast OUT */
-#endif
-
 #define WDOG_SLOT          0      /* Watchdog send + recv */
 #define SAP_SLOT           1
 #define RIP_SLOT           (SAP_SLOT   +1)
@@ -49,6 +45,7 @@ extern  NW_NET_DEVICE *net_devices[];
 
 extern  int     sockfd[];
 
+extern void ins_del_bind_net_addr(char *name, ipxAddr_t *adr);
 extern void send_rip_broadcast(int mode);
 extern void send_sap_broadcast(int mode);
 extern void rip_for_net(uint32 net);
@@ -57,4 +54,14 @@ extern void get_servers(void);
 extern void handle_rip(int fd, int ipx_pack_typ,
 	        int data_len, IPX_DATA *ipxdata,
 	        ipxAddr_t *from_addr);
+
+
+extern  void insert_delete_server(uint8  *name,
+                                 int        styp,
+                                 ipxAddr_t *addr,
+                                 ipxAddr_t *from_addr,
+                                 int        hops,
+                                 int        do_delete,  /* delete = 1 */
+                                 int        flags);
+
 

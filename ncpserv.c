@@ -286,7 +286,7 @@ static void get_login_time(uint8 login_time[], CONNECTION *cx)
 
 
 static int handle_fxx(CONNECTION *c, int gelen, int func)
-/* here are handled the global 0x15, 0x17 functions */
+/* here are handled the global 0x15, 0x17, 0x57 functions */
 {
   IPX_DATA     ipxoutdata;
   NCPRESPONSE  *ncpresponse  = (NCPRESPONSE*)&ipxoutdata;
@@ -1130,8 +1130,9 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 
        default : return(-1); /* not known here */
     }  /* switch */
+  } else if (0x57 == func) { /* namespace functions not handled !!  */
+    completition = 0xfb;     /* 2.15 don't kwown namespace services */
   } else return(-1); /* not kwown here */
-
   U16_TO_BE16(0x3333,           ncpresponse->type);
   ncpresponse->sequence       = ncprequest->sequence;
   ncpresponse->connection     = ncprequest->connection;
@@ -1376,6 +1377,13 @@ int main(int argc, char *argv[])
                             case 0x17 : /* File Server Environment */
                                         sent_here = handle_fxx(c, in_len, func);
                                         break;
+
+                            case 0x57 : if (!tells_server_version) {
+                                     /* 2.15 er has no namespace_calls */
+                                          sent_here = handle_fxx(c, in_len, func);
+                                        }
+                                        break;
+
                             default :   break;
                           } /* switch */
 
@@ -1389,13 +1397,16 @@ int main(int argc, char *argv[])
                           c->sequence    = ncprequest->sequence; /* save last sequence */
                           c->retry       = 0;
 	                  continue;
-                        } else {  /* 0x5555, conection beenden */
+                        } else {  /* 0x5555, close connection  */
                           if ( (uint8) (c->sequence+1) == (uint8) ncprequest->sequence) {
                             clear_connection(ncprequest->connection);
 	                    ncp_response(0x3333,
 	                                 ncprequest->sequence,
 	                                 connection,
-	             	                 1, 0x0, 0, 0);
+	             	                 1,    /* task */
+	             	                 0x0,  /* completition */
+	             	                 0,    /* conn status  */
+	             	                 0);
 	                    continue;
                           }
                         }
@@ -1409,7 +1420,7 @@ int main(int argc, char *argv[])
 
 	          ncp_response(0x3333, ncprequest->sequence,
 			               ncprequest->connection,
-			               0,
+			               0,    /* task         */
 			               0xff, /* completition */
 			               0xff, /* conn status  */
 			               0);
@@ -1427,7 +1438,11 @@ int main(int argc, char *argv[])
 	            anz=write(c->fd, (char*)ncprequest, in_len);
 	            XDPRINTF((10, 0, "write to oldconn %d, anz = %d", c->fd, anz));
 	          } else  /* no free connection */
-	            ncp_response(0x3333, 0, 0, 0, 0xf9, 0, 0);
+	            ncp_response(0x3333, 0, 0, 0,
+	                         0xf9, /* completition */
+	                         0,    /* conn status  */
+	                         0);
+
                 } else {
 	          int connection     = (int)ncprequest->connection;
 	          int sequence       = (int)ncprequest->sequence;

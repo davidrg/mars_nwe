@@ -47,8 +47,9 @@ Erste 'oeffentliche' Version
 - MAX_NW_ROUTES ist nun in config.h.
 - nwroute.c build_rip_buff if condition richtig geklammert.
 - Code mittels cc -Wall etwas gesaeubert.
-- RIP Broadcast's werden nun ueber einen temporaeren socket
-  geschrieben.
 - direkte Responses von ncpserv werden nun ueber einen
   temporaeren socket und nicht mehr ueber den NCP-Socket
   geschrieben.
+- SAP Responses gehen nun immer ueber den SAP Socket.
+- Routing Bereich (SAP's) erweitert.
+

@@ -1,4 +1,4 @@
-/* nwroute.c 08-Jan-96 */
+/* nwroute.c 11-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -24,13 +24,24 @@ typedef struct {
   uint32  net;                  /* destnet              */
   uint16  hops;                 /* hops to net          */
   uint16  ticks;                /* ticks to net, ether 1/hop, isdn 7/hop */
-
   uint32  rnet;                 /* net  of forw. router */
   uint8   rnode[IPX_NODE_SIZE]; /* node of forw. router */
 } NW_ROUTES;
 
 static int        anz_routes=0;
 static NW_ROUTES *nw_routes[MAX_NW_ROUTES];
+
+typedef struct {
+  uint8     *name;
+  int         typ;
+  ipxAddr_t  addr;
+  int         net; /* routing over NET */
+  int        hops;
+  int       flags;
+} NW_SERVERS;
+
+static int        anz_servers=0;
+static NW_SERVERS *nw_servers[MAX_NW_ROUTES];
 
 static void insert_delete_net(uint32 destnet,
                               uint32 rnet,      /* routernet  */
@@ -57,7 +68,7 @@ static void insert_delete_net(uint32 destnet,
 
   k=-1;
   while (++k < anz_routes && nw_routes[k]->net != destnet) {
-    XDPRINTF((3,0, "NET 0x%X is routed", nw_routes[k]->net));
+    XDPRINTF((3,0, "NET 0x%x is routed", nw_routes[k]->net));
     if (freeslot < 0 && !nw_routes[k]->net) freeslot=k;
   }
 
@@ -78,15 +89,14 @@ static void insert_delete_net(uint32 destnet,
     nr->hops  = 0xffff;
   } else if (do_delete) {
     nr=nw_routes[k];
-    if (nr->rnet == rnet &&
-        IPXCMPNODE(nr->rnode, rnode) ) {
+    if (nr->rnet == rnet && IPXCMPNODE(nr->rnode, rnode) ) {
       /* only delete the routes, which we have inserted */
-      XDPRINTF((2,0,"ROUTE DEL NET=0x%X over Router NET 0x%X",
+      XDPRINTF((2,0,"ROUTE DEL NET=0x%x over Router NET 0x%x",
                 nr->net, rnet));
       ipx_route_del(nr->net);
       nr->net = 0L;
     } else {
-      XDPRINTF((3,0,"ROUTE NOT deleted NET=0x%X, RNET=0X%X",
+      XDPRINTF((3,0,"ROUTE NOT deleted NET=0x%x, RNET=0x%x",
                 nr->net, rnet));
     }
     return;
@@ -103,6 +113,75 @@ static void insert_delete_net(uint32 destnet,
          (int)nr->rnode[0], (int)nr->rnode[1], (int)nr->rnode[2],
          (int)nr->rnode[3], (int)nr->rnode[4], (int)nr->rnode[5]));
     ipx_route_add(nr->net, nr->rnet, nr->rnode);
+  }
+}
+
+void insert_delete_server(uint8  *name,
+                                 int        styp,
+                                 ipxAddr_t *addr,
+                                 ipxAddr_t *from_addr,
+                                 int        hops,
+                                 int        do_delete,  /* delete = 1 */
+                                 int        flags)
+{
+  int         k=-1;
+  int         freeslot=-1;
+  uint32      net;
+  uint8       sname[MAX_SERVER_NAME+2];
+  NW_SERVERS *nr=NULL;
+  strmaxcpy(sname, name, MAX_SERVER_NAME);
+  upstr(sname);
+  XDPRINTF((3,0,"%s %s %s,0x%04x",
+     visable_ipx_adr(addr),
+    (do_delete) ? "DEL" : "INS", sname, (int) styp));
+  k=-1;
+
+  if (!*sname) return;
+
+  while (++k < anz_servers && (nw_servers[k]->typ != styp ||
+     !nw_servers[k]->name || strcmp(nw_servers[k]->name, sname)) ) {
+    if (nw_servers[k]->name) {
+      XDPRINTF((3,0, "Server %s = typ=0x%04x",
+              nw_servers[k]->name, nw_servers[k]->typ));
+    }
+    if (freeslot < 0 && !nw_servers[k]->typ) freeslot=k;
+  }
+
+  if (k == anz_servers) {   /* server not found    */
+    if (do_delete) return;  /* nothing to delete   */
+
+    if (freeslot < 0) {
+      if (anz_servers == MAX_NW_ROUTES) {
+        XDPRINTF((1, 0, "too many servers=%d, increase MAX_NW_ROUTES in config.h", anz_servers));
+        return;
+      }
+      nw_servers[k] = (NW_SERVERS*)xcmalloc(sizeof(NW_SERVERS));
+      anz_servers++;
+    } else k=freeslot;
+    nr        = nw_servers[k];
+    new_str(nr->name, sname);
+    nr->typ   = styp;
+    nr->hops  = 0xffff;
+  } else if (do_delete) {
+    nr=nw_servers[k];
+    if (nr->typ == 4) ins_del_bind_net_addr(nr->name, NULL);
+    xfree(nr->name);
+    memset(nr, 0, sizeof(NW_SERVERS));
+    return;
+  } else nr=nw_servers[k];
+  /* here now i perhaps must change the entry */
+  if (nr->hops > 16 || memcmp(&(nr->addr), addr, sizeof(ipxAddr_t))) {
+    ins_del_bind_net_addr(nr->name, addr);
+    memcpy(&(nr->addr), addr, sizeof(ipxAddr_t));
+    if (IPXCMPNODE(from_addr->node, my_server_adr.node) &&
+        IPXCMPNET (from_addr->net,  my_server_adr.net)
+        && GET_BE16(from_addr->sock) == SOCK_SAP) {
+      hops = 0;
+    }
+  }
+  if (hops <= nr->hops && 0 != (net = GET_BE32(from_addr->net)) ) {
+    nr->net  = net;
+    nr->hops = hops;
   }
 }
 
@@ -131,7 +210,8 @@ static void ins_rip_buff(uint32 net, uint16 hops, uint16 ticks)
   }
 }
 
-static void build_rip_buff(uint32 destnet)
+static void build_rip_buff(uint32 destnet, int to_internal_net)
+/* to_internal_net = request from dosemu etc. */
 {
   int    is_wild     = (destnet==MAX_U32);
   int    is_response = (rmode < 10);
@@ -155,7 +235,12 @@ static void build_rip_buff(uint32 destnet)
   k=-1;
   while (++k < anz_routes) {
     NW_ROUTES *nr=nw_routes[k];
-    if ( (is_wild || nr->net == destnet) && (rmode==1 || nr->hops < 2) )
+#if 0
+    if ( (is_wild || nr->net == destnet) &&
+      (rmode==1 || nr->hops < 2 || to_internal_net) )
+#else
+    if (is_wild || (nr->net == destnet))
+#endif
       ins_rip_buff(nr->net, (rmode==1) ? 16 : nr->hops, nr->ticks);
   }
 }
@@ -209,7 +294,7 @@ void send_rip_broadcast(int mode)
     NW_NET_DEVICE *nd=net_devices[k];
     if (nd->ticks < 7) { /* isdn devices should not get RIP broadcasts everytime */
       init_rip_buff(nd->net, (mode == 2) ? 1 : 0);
-      build_rip_buff(MAX_U32);
+      build_rip_buff(MAX_U32, 0);
       send_rip_buff(NULL);
     }
   }
@@ -260,7 +345,7 @@ void handle_rip(int fd,       int ipx_pack_typ,
       insert_delete_net(net, GET_BE32(from_addr->net),
          from_addr->node,  hops+1, ticks+1, (hops > 15) ? 1 : 0);
     } else { /* rip request */
-      build_rip_buff(net);
+      build_rip_buff(net, GET_BE32(from_addr->net)==internal_net);
       if (net == MAX_U32) break;
     }
     p+=8;
@@ -281,41 +366,36 @@ void send_sap_broadcast(int mode)
     if (nd->ticks < 7 || mode) { /* isdn devices should not get SAP broadcasts everytime */
       IPX_DATA      ipx_data;
       ipxAddr_t     wild;
+      int           j=-1;
       memset(&wild, 0, sizeof(ipxAddr_t));
-
       U32_TO_BE32(nd->net,    wild.net);
       memset(wild.node, 0xFF, IPX_NODE_SIZE);
       U16_TO_BE16(SOCK_SAP,   wild.sock);
-
-      memset(&ipx_data, 0, sizeof(ipx_data.sip));
-      strcpy(ipx_data.sip.server_name, my_nwname);
-      memcpy(&ipx_data.sip.server_adr, &my_server_adr, sizeof(ipxAddr_t));
-      U16_TO_BE16(SOCK_NCP, ipx_data.sip.server_adr.sock);
-         /* use NCP SOCKET */
-
-      U16_TO_BE16(2,    ipx_data.sip.response_type);  /* General    */
-      U16_TO_BE16(4,    ipx_data.sip.server_type);    /* Fileserver */
-
-      if (mode == 2) {
-        U16_TO_BE16(16, ipx_data.sip.intermediate_networks);
-      } else {
-        U16_TO_BE16(1,  ipx_data.sip.intermediate_networks);
-       /* I hope 1 is ok here */
+      while (++j < anz_servers) {
+        NW_SERVERS *nw=nw_servers[j];
+        if (!nw->typ || (nw->net == nd->net && nw->hops)) continue; /* no SAP to this NET */
+        memset(&ipx_data, 0, sizeof(ipx_data.sip));
+        strcpy(ipx_data.sip.server_name, nw->name);
+        memcpy(&ipx_data.sip.server_adr, &(nw->addr), sizeof(ipxAddr_t));
+        U16_TO_BE16(2,       ipx_data.sip.response_type);  /* General    */
+        U16_TO_BE16(nw->typ, ipx_data.sip.server_type);    /* Fileserver */
+        if (mode == 2) {
+          U16_TO_BE16(16,         ipx_data.sip.intermediate_networks);
+        } else {
+          U16_TO_BE16(nw->hops+1, ipx_data.sip.intermediate_networks);
+          XDPRINTF((3, 0, "SEND SIP %s,0x%04x, hops=%d",
+                   nw->name, nw->typ, nw->hops+1));
+         /* I hope 1 is ok here */
+        }
+        send_ipx_data(sockfd[SAP_SLOT],
+                       0,
+	               sizeof(ipx_data.sip),
+	               (char *)&(ipx_data.sip),
+	               &wild, "SIP Broadcast");
       }
-
-#ifdef MY_BROADCAST_SLOT
-      send_ipx_data(sockfd[MY_BROADCAST_SLOT],
-#else
-      send_ipx_data(-1,
-#endif
-                     0,
-	             sizeof(ipx_data.sip),
-	             (char *)&(ipx_data.sip),
-	             &wild, "SIP Broadcast");
     }
   }
 }
-
 
 static void query_sap_on_net(uint32 net)
 /* searches for the next server on this network */
@@ -339,7 +419,8 @@ void get_servers(void)
     NW_NET_DEVICE *nd=net_devices[k];
     if (nd->ticks < 7)  query_sap_on_net(nd->net); /* only fast routes */
   }
-  if (!anz_net_devices) query_sap_on_net(internal_net);
+  if (!anz_net_devices)
+      query_sap_on_net(internal_net);
 }
 
 

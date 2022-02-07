@@ -28,9 +28,6 @@ int            anz_net_devices=0;
 NW_NET_DEVICE *net_devices[MAX_NET_DEVICES];
 
 uint16  ipx_sock_nummern[]={
-#ifdef MY_BROADCAST_SLOT
-                             0,                 /*  auto sock */
-#endif
 #ifdef WDOG_SLOT
                              0,                 /*  auto sock */
 #endif
@@ -68,18 +65,7 @@ static  int 	     broadsecs		       =  2048;
 static  time_t 	     server_down_stamp         =  0;
 static  int          server_goes_down_secs     = 10;
 static  int          save_ipx_routes	       =  0;
-static  int 	     bytes_to_write_to_ncpserv =  0;
 
-static void inform_ncpserv(void)
-{
-  if (bytes_to_write_to_ncpserv && pid_ncpserv > -1) {
-#if 0
-    XDPRINTF((2, 0,"inform_ncpserv bytes=%d", bytes_to_write_to_ncpserv));
-    kill(pid_ncpserv, SIGHUP);    /* tell ncpserv to read input */
-#endif
-    bytes_to_write_to_ncpserv=0;
-  }
-}
 
 static void write_to_ncpserv(int what, int connection,
                            char *data, int data_size)
@@ -89,40 +75,30 @@ static void write_to_ncpserv(int what, int connection,
 
   switch (what) {
     case 0x5555  : /* kill connection  */
-          bytes_to_write_to_ncpserv +=
             write(fd_ncpserv_out, (char*) &what,        sizeof(int));
-          bytes_to_write_to_ncpserv +=
             write(fd_ncpserv_out, (char*) &connection,  sizeof(int));
          break;
 
     case 0x3333  : /* 'bindery' calls  */
-          bytes_to_write_to_ncpserv +=
             write(fd_ncpserv_out, (char*) &what,        sizeof(int));
-          bytes_to_write_to_ncpserv +=
             write(fd_ncpserv_out, (char*) &data_size,   sizeof(int));
-          bytes_to_write_to_ncpserv +=
             write(fd_ncpserv_out, data,   data_size);
          break;
 
     case 0xeeee  : /* hup, read init */
-         bytes_to_write_to_ncpserv +=
             write(fd_ncpserv_out, (char*) &what,        sizeof(int));
          break;
 
     case 0xffff  : /* 'down server' */
-         bytes_to_write_to_ncpserv +=
            write(fd_ncpserv_out, (char*) &what, sizeof(int));
-         bytes_to_write_to_ncpserv +=
            write(fd_ncpserv_out, (char*) &what, sizeof(int));
-         inform_ncpserv();
-         return;
+         break;
 
     default     :  break;
   }
-  if (bytes_to_write_to_ncpserv > 255) inform_ncpserv();
 }
 
-static void ins_del_bind_net_addr(char *name, ipxAddr_t *adr)
+void ins_del_bind_net_addr(char *name, ipxAddr_t *adr)
 {
   uint8 buf[1024];
   uint8 *p  = buf;
@@ -389,7 +365,7 @@ void get_server_data(char *name,
                 ipxAddr_t *adr,
                 ipxAddr_t *from_addr)
 {
-   if (!nw386_found) {
+   if (!nw386_found && strcmp(name, my_nwname)) {
      memcpy(&nw386_adr, adr, sizeof(ipxAddr_t));
      nw386_found++;
      if (client_mode) {
@@ -398,7 +374,6 @@ void get_server_data(char *name,
      }
    }
    XDPRINTF((2,0,"NW386 %s found at:%s", name, visable_ipx_adr(adr)));
-   ins_del_bind_net_addr(name, adr);
 }
 
 static void handle_sap(int fd,
@@ -434,18 +409,21 @@ static void handle_sap(int fd,
       uint8 *name    = p+2;
       ipxAddr_t *ad  = (ipxAddr_t*) (p+50);
       int   hops     = GET_BE16(p+ sizeof(SAPS) -2);
+      if (hops < 16)   U16_TO_BE16(hops+1, p+ sizeof(SAPS) -2);
       XDPRINTF((2,0, "TYP=%2d,hops=%2d, Addr=%s, Name=%s", type, hops,
           visable_ipx_adr(ad), name));
 
-      if (type == 4 && strcmp(name, my_nwname)) {  /* from Fileserver */
+      if (type == 4)  /* && strcmp(name, my_nwname)) */ {  /* from Fileserver */
         if (16 == hops) {
           /* shutdown */
           XDPRINTF((2,0, "SERVER %s IS GOING DOWN", name));
-          ins_del_bind_net_addr(name, NULL);
+          insert_delete_server(name, type, NULL, NULL,      16, 1, 0);
         } else {
           get_server_data(name, ad, from_addr);
+          insert_delete_server(name, type, ad, from_addr, hops, 0, 0);
         }
       }
+
       p+=sizeof(SAPS);
     } /* while */
   } else {
@@ -583,11 +561,6 @@ static void handle_event(int fd, uint16 socknr, int slot)
        IPXCMPNET (source_adr.net,  my_server_adr.net)) {
 
     int source_sock = (int) GET_BE16(source_adr.sock);
-
-#if 0
-    if (  source_sock  == sock_nummern[MY_BROADCAST_SLOT]
-#endif
-
     if  ( source_sock  == sock_nummern[WDOG_SLOT]
        || source_sock  == SOCK_SAP
        || source_sock  == SOCK_RIP) {
@@ -977,7 +950,6 @@ int main(int argc, char **argv)
             get_servers();
             broadsecs *= 2;
           }
-          inform_ncpserv();
           send_wdogs();
           broadtime = akttime_stamp;
         } else if (client_mode) get_servers();  /* Here more often */
