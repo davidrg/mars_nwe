@@ -34,6 +34,7 @@ static  int 	   ipx_out_fd=-1;
 
 static  int        tells_server_version=0;
 static  int        sock_nwbind=-1;
+static  int        sock_echo  =-1;
 
 
 static int get_ini(void)
@@ -309,6 +310,7 @@ static int find_get_conn_nr(ipxAddr_t *addr)
 	  char connstr[20];
 	  char addrstr[100];
 	  char nwbindsock[20];
+	  char echosock[20];
 
 	  int j = 3;
 #if !CALL_NWCONN_OVER_SOCKET
@@ -327,9 +329,9 @@ static int find_get_conn_nr(ipxAddr_t *addr)
 	  sprintf(connstr, "%d", connection);
 	  ipx_addr_to_adr(addrstr, addr);
 	  sprintf(nwbindsock, "%04x", sock_nwbind);
-
+	  sprintf(echosock,   "%04x", sock_echo);
 	  execl(get_exec_path(pathname, progname), progname,
-	          pidstr, addrstr, connstr, nwbindsock, NULL);
+	          pidstr, addrstr, connstr, nwbindsock, echosock, NULL);
 
 	  exit(1);  /* normaly not reached */
         }
@@ -632,7 +634,7 @@ static void handle_ncp_request(void)
        && IPXCMPNET (from_addr.net,  my_addr.net)) {
       /* comes from nwserv  */
       handle_ctrl();
-#if _MAR_TESTS_
+#ifdef _MAR_TESTS_xx
     } else if (type == 0xc000) {
       /* rprinter */
       int connection     = (int)ncprequest->connection;
@@ -651,8 +653,8 @@ static void handle_ncp_request(void)
 int main(int argc, char *argv[])
 {
   init_tools(NCPSERV, 0);
-  if (argc != 4) {
-    errorp(1, "Usage:", "ncpserv nwname address nwbindsock");
+  if (argc != 5) {
+    errorp(1, "Usage:", "%s: nwname address nwbindsock echosocket", argv[0]);
     return(1);
   }
   get_ini();
@@ -660,6 +662,8 @@ int main(int argc, char *argv[])
   my_nwname[47] = '\0';
   adr_to_ipx_addr(&my_addr, argv[2]);
   sscanf(argv[3], "%x", &sock_nwbind);
+  sscanf(argv[4], "%x", &sock_echo);
+
 #ifdef LINUX
   set_emu_tli();
 #endif

@@ -1,4 +1,4 @@
-/* connect.c  04-May-96 */
+/* connect.c  13-Jul-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -34,15 +34,14 @@
 static int  default_uid=-1;
 static int  default_gid=-1;
 
-static int  act_uid=-1;
-static int  act_gid=-1;
-
 #include "nwvolume.h"
 #include "nwfile.h"
 #include "connect.h"
 
 NW_DIR    dirs[MAX_NW_DIRS];
 int       used_dirs=0;
+int       act_uid=-1;
+int       act_gid=-1;
 
 static int       connect_is_init = 0;
 
@@ -224,51 +223,51 @@ static int x_str_match(uint8 *s, uint8 *p)
   uint8    pc, sc;
   uint     state = 0;
   uint8    anf, ende;
-  int  not = 0;
-  uint found = 0;
+  int      not = 0;
+  uint     found = 0;
   while ( (pc = *p++) != 0) {
+
+    if (state != 100) {
+      if (pc == 255 &&  (*p == '*' || *p == '?'
+                      || *p==0xaa  || *p==0xae || *p==0xbf || *p=='.')) {
+        pc=*p++;
+      }
+
+      switch  (pc) {
+        case 0xaa:   pc='*';  break;
+        case 0xae:   pc='.';  break;
+        case 0xbf:   pc='?';  break;
+      }
+    }
+
     switch (state){
       case 0 :
       switch  (pc) {
-        case 255:   if (*p == '*' || *p == '?'
-                     || *p==0xaa  || *p==0xae || *p=='.') continue;
-                    break;
-
-        case '\\': /* any following char */
+        case '\\':  /* any following char */
                     if (*p++ != *s++) return(0);
                     break;
 
-        case '?' :  if ( (sc = *s++) == '.' || sc == '\0' ) {
-                      uint8 *pp=p;
-                      while (*pp=='?' || *pp=='*') ++pp;
-                      if (*pp=='.') p=++pp;
-                      else if (*pp || sc) return(0);
-                      if (!sc) {
-                        while (*pp=='?' || *pp=='*') ++pp;
-                        return((*pp) ? 0 : 1);
-                      }
-                    }
+        case '?' :  if (!*s ||  (sc = *s++) == '.')
+                      state = 10;
                     break;
 
-        case  '.' :
-                    if (!*s && (!*p || *p == '*' || *p == '?')) return(1);
-                    if (pc != *s++) return(0);
-                    if (*p == '*') return(1);
+        case  '.' : if (*s && pc != *s++) return(0);
                     break;
 
-        case '*' :
-                   if (!*p) return(1);
-                   while (*s){
-                     if (x_str_match(s, p) == 1) return(1);
-                     ++s;
-                   }
-                   return((*p == '.' &&  *(p+1) == '*') ? 1 : 0);
+	case '*' : if (!*p) return(1); /* last star */
+	           while (*s) {
+	             if (x_str_match(s, p) == 1) return(1);
+                     else if (*s == '.') return(0);
+	             ++s;
+	           }
+                   state = 30;
+                   break;
 
         case '[' :  if ( (*p == '!') || (*p == '^') ){
                        ++p;
                        not = 1;
                      }
-                     state = 1;
+                     state = 100;
                      continue;
 
         default  :  if (pc != *s++) return(0); /* normal char */
@@ -277,7 +276,21 @@ static int x_str_match(uint8 *s, uint8 *p)
       }  /* switch */
       break;
 
-      case   1  :   /*  Bereich von Zeichen  */
+      case 10 :  if (pc != '*' && pc != '?' ) {
+                   if (pc == '.')
+                     state = 0;
+                   else return(0);
+                 }
+                 break;
+
+      case 30:   if (pc != '.') return(0);
+                 state = 31;
+                 break;
+
+      case 31:   if (pc != '*' ) return(0);
+                 break;
+
+      case   100  :   /*  Bereich von Zeichen  */
         sc = *s++;
         found = not;
         if (!sc) return(0);
@@ -314,7 +327,7 @@ int fn_match(uint8 *s, uint8 *p, int options)
   int   pf=0;
   for (; *ss; ss++){
     if (*ss == '.') {
-      if (pf++) return(0); /* no 2. pouint */
+      if (pf++) return(0); /* no 2. point */
       len=0;
     } else {
       ++len;
@@ -1246,7 +1259,7 @@ int nw_init_connect(void)
 int nw_free_handles(int task)
 /*
  * if task== -1 then all is initialized
- * else the temp handles of the actual task ( and greater )
+ * else the temp handles of the actual task
  * are deleted. I hope this is right. !??
  */
 {
@@ -1255,12 +1268,8 @@ int nw_free_handles(int task)
     NW_DIR *d = &(dirs[0]);
     int     k = used_dirs;
     while (k--) {
-#if 0
-      if (d->is_temp && d->task >= task) {
-#else
       if (d->is_temp && d->task == task) {
       /* only actual task */
-#endif
         xfree(d->path);
         d->volume    = 0;
         d->inode     = 0;
@@ -1276,30 +1285,27 @@ int nw_free_handles(int task)
 int xinsert_new_dir(int volume, uint8 *path, int inode, int drive, int is_temp, int task)
 {
   int j              = 0;
-  time_t lowtime     = time(NULL);
   int    freehandle  = 0;
+#if 0
+  time_t lowtime     = time(NULL);
   int    timedhandle = 0;
-
+#endif
   /* first look, whether drive is allready in use */
   for (j = 0; j < (int)used_dirs; j++) {
     NW_DIR *d = &(dirs[j]);
-    if (!d->inode) freehandle = j+1;
-    else if (!is_temp && !d->is_temp
-             && (int)d->drive == drive
+    if (!d->inode)
+       freehandle = j+1;
 #if 0
-             && (int)d->task  == task
-#endif
-             ) {
-      (void)change_dir_entry(d, volume, path, inode, drive, is_temp, 1, task);
-      return(++j);
-    } else if (!d->inode) freehandle = j+1;
-    else if (d->is_temp && d->timestamp < lowtime) {
+    } else if (d->is_temp && d->timestamp < lowtime) {
       timedhandle = j+1;
       lowtime     = d->timestamp;
     }
+#endif
   }
   if (!freehandle && used_dirs < MAX_NW_DIRS) freehandle = ++used_dirs;
+#if 0
   if (!freehandle) freehandle = timedhandle;
+#endif
   if (freehandle){
     (void)change_dir_entry(&(dirs[freehandle-1]),
           volume, path, inode,
@@ -1469,7 +1475,8 @@ int nw_get_directory_path(int dir_handle, uint8 *name)
 {
   int     result   = -0x9b;
   name[0] = '\0';
-  if (dir_handle > 0 && --dir_handle < (int)used_dirs) {
+  if (dir_handle > 0 && --dir_handle < (int)used_dirs
+                     && dirs[dir_handle].inode) {
     int volume = dirs[dir_handle].volume;
     if (volume > -1 && volume < used_nw_volumes){
       result=sprintf((char*)name, "%s:%s", nw_volumes[volume].sysname, dirs[dir_handle].path);

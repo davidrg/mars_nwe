@@ -1,4 +1,4 @@
-/* nwserv.h 26-Apr-96 */
+/* nwserv.h 16-Jul-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -40,8 +40,28 @@ extern  int anz_net_devices;
 extern  NW_NET_DEVICE *net_devices[];
 
 /* <======== SOCKETS =========> */
-#define WDOG_SLOT          0      /* Watchdog send + recv     */
-#define SAP_SLOT           1      /* SAP wellkwon or dynamic  */
+#if !IN_NWROUTED
+# define WDOG_SLOT          0           /* Watchdog send + recv     */
+
+# if SOCK_EXTERN
+#  define EXTERN_SLOT       (WDOG_SLOT+1)
+#  ifdef _MAR_TESTS_1
+#   define PSERVER_SLOT     (EXTERN_SLOT+1)
+#   define SAP_SLOT         (PSERVER_SLOT+1)
+#  else
+#   define SAP_SLOT         (EXTERN_SLOT+1)
+#  endif
+# else
+#  ifdef _MAR_TESTS_1
+#   define PSERVER_SLOT     (WDOG_SLOT+1)
+#   define SAP_SLOT         (PSERVER_SLOT+1)
+#  else
+#   define SAP_SLOT         (WDOG_SLOT+1)
+#  endif
+# endif
+#else
+# define SAP_SLOT           0
+#endif
 
 #if INTERNAL_RIP_SAP
 # define RIP_SLOT           (SAP_SLOT   +1)

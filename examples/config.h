@@ -1,4 +1,4 @@
-/* config.h: 21-May-96 */
+/* config.h: 18-Jul-96 */
 /* some of this config is needed by make, others by cc                     */
 
 #define DO_DEBUG      1              /* compile in debug code              */
@@ -35,6 +35,12 @@
 #define IPX_DATA_GR_546        1     /* allow ipx packets > 546+30 Byte    */
 
 #define USE_MMAP               1     /* use mmap systen call               */
+
+#if 0
+#define SOCK_EXTERN       0x8005     /* creat socket for external access   */
+                                     /* i.e. Xmarsmon from H. Buchholz     */
+#endif
+
 /* <-------------------------------------------------------------------->  */
 #define MAX_NW_VOLS           10     /* max. number of mars_nwe-volumes    */
 #define MAX_FILE_HANDLES_CONN 80     /* max. number of open files per      */
@@ -42,7 +48,7 @@
 /* <---------------  new namespace services call ----------------------->  */
 #define MAX_DIR_BASE_ENTRIES  50     /* max. cached base entries per       */
                                      /* connection                         */
-#define WITH_NAME_SPACE_CALLS  0     /* Namespace Calls are only minimal   */
+#define WITH_NAME_SPACE_CALLS  1     /* Namespace Calls are only minimal   */
                                      /* supported so far.                  */
                                      /* To enable testing of them this     */
                                      /* entry must be changed to '1' and   */

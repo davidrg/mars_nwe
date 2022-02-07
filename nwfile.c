@@ -1,4 +1,4 @@
-/* nwfile.c  11-May-96 */
+/* nwfile.c  16-Jul-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,6 +29,13 @@
 #include "nwconn.h"
 #if USE_MMAP
 # include <sys/mman.h>
+static got_sig_bus=0;
+void sig_bus_mmap(int rsig)
+{
+  got_sig_bus++;
+  XDPRINTF((2,0, "Got sig_bus"));
+  signal(SIGBUS, sig_bus_mmap);
+}
 #endif
 
 static FILE_HANDLE  file_handles[MAX_FILE_HANDLES_CONN];
@@ -116,7 +123,9 @@ void init_file_module(void)
 int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                      int attrib, int access, int creatmode)
 /*
- * creatmode: 0 = open | 1 = creat | 2 = creatnew  & 4 == save handle
+ * creatmode: 0 = open | 1 = creat (ever) | 2 = creatnew ( creat if not exist )
+ *            & 4 == save handle    (creat)
+ *            & 8 == ignore rights  (create ever)
  * attrib ??
  *
  * access: 0x1=read,
@@ -181,7 +190,17 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
            XDPRINTF((5,0,"CREAT FILE, ever with attrib:0x%x, access:0x%x, fh->fname:%s: handle:%d",
              attrib,  access, fh->fname, fhandle));
            fh->fd = open(fh->fname, O_CREAT|O_TRUNC|O_RDWR, 0777);
-           if (fh->fd < 0) completition = -0x85; /* no delete /create Rights */
+           if (fh->fd < 0) {
+             if (creatmode & 0x8) {
+               if ( (!seteuid(0)) && (-1 < (fh->fd =
+                    open(fh->fname, O_CREAT|O_TRUNC|O_RDWR, 0777)))) {
+                 chown(fh->fname, act_uid, act_gid);
+               }
+               set_guid(act_gid, act_uid);
+             }
+             if (fh->fd < 0)
+               completition = -0x85; /* no delete /create Rights */
+           }
          }
          if (fh->fd > -1) {
            close(fh->fd);
@@ -342,11 +361,21 @@ int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
       } else {
 #if USE_MMAP
         if (fh->p_mmap) {
-          if (offset < fh->size_mmap) {
-            if (size + offset > fh->size_mmap)
-                 size =  fh->size_mmap - offset;
-            memcpy(data, fh->p_mmap+offset, size);
-          } else size=-1;
+          while (1) {
+            if (offset < fh->size_mmap) {
+              if (size + offset > fh->size_mmap)
+                   size =  fh->size_mmap - offset;
+              memcpy(data, fh->p_mmap+offset, size);
+              if (got_sig_bus) {
+                fh->size_mmap = lseek(fh->fd, 0L, SEEK_END);
+                got_sig_bus   = 0;
+              } else
+                break;
+            } else {
+              size=-1;
+              break;
+            }
+          } /* while */
         } else {
 #endif
           if (fh->offd != (long)offset) {

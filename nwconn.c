@@ -1,4 +1,4 @@
-/* nwconn.c 04-May-96       */
+/* nwconn.c 13-Jul-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -52,6 +52,7 @@ static NCPREQUEST   *ncprequest  = (NCPREQUEST*)readbuff;
 static uint8        *requestdata = readbuff + sizeof(NCPREQUEST);
 static int          ncp_type;
 static int          sock_nwbind=-1;
+static int          sock_echo  =-1;
 
 static int req_printed=0;
 
@@ -359,6 +360,7 @@ static int handle_ncp_serv(void)
 	                 if (code) completition = (uint8) -code;
 	               } else  if (*p == 0xd){  /* Add Trustees to DIR  */
 	           /******** AddTrustesstoDir ***************/
+#if 0
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
 	                   uint8   div[3];         /* 0x0, dlen,  typ */
@@ -369,6 +371,7 @@ static int handle_ncp_serv(void)
 	                   uint8   path;
 	                 } *input = (struct INPUT *) (ncprequest);
 	                  /* TODO !!!!!!!!!!!!!!!!!!!!  */
+#endif
 	                 do_druck++;
 	               } else  if (*p == 0xf){ /* rename dir */
 	           /******** Rename DIR *********************/
@@ -451,6 +454,7 @@ static int handle_ncp_serv(void)
 	                 }
 	                 completition = (uint8)-result;
 	               } else  if (*p == 0x19){ /* Set Directory Information */
+#if 0
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
 	                   uint8   div[3];         /* 0x0, dlen,  typ */
@@ -460,9 +464,11 @@ static int handle_ncp_serv(void)
 	                   uint8   pathlen;
 	                   uint8   path;
 	                 } *input = (struct INPUT *) (ncprequest);
+#endif
                          /* No REPLY */
 	                 completition = 0xfb;  /* !!!!! TODO !!!! */
 	               } else  if (*p == 0x1a){ /* Get Pathname of A Volume Dir Pair */
+#if 0
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
 	                   uint8   div[3];         /* 0x0, dlen,  typ */
@@ -473,6 +479,7 @@ static int handle_ncp_serv(void)
 	                   uint8  pathlen;
 	                   uint8  pathname;
 	                 } *xdata = (struct XDATA*)responsedata;
+#endif
 	                 completition = 0xfb;  /* !!!!! TODO !!!! */
 	               } else  if (*p == 0x1e){
                          /* SCAN a Directory */
@@ -566,6 +573,7 @@ static int handle_ncp_serv(void)
                            } else completition = 0x9c;  /* no more trustees */
                          } else completition = (uint8) (-result);
 	               } else  if (*p == 0x27) { /* Add Trustees to DIR ?? */
+#if 0
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
 	                   uint8   div[3];         /* 0x0, dlen,  typ */
@@ -577,6 +585,7 @@ static int handle_ncp_serv(void)
 	                   uint8   path;
 	                 } *input = (struct INPUT *) (ncprequest);
 	                  /* TODO !!!!!!!!!!!!!!!!!!!!  */
+#endif
 	                 do_druck++;
 	               } else  if (*p == 0x29){
 	                /* read  volume restrictions for an object */
@@ -895,14 +904,13 @@ static int handle_ncp_serv(void)
 	               } else completition = (uint8) -rights;
 	             } break;
 
-
 	 case 0x3f : {  /* file search continue */
 	                /* Dir_id is from file search init */
 	               struct INPUT {
 	                 uint8   header[7];         /* Requestheader */
 	                 uint8   volume;            /* Volume ID    */
                          uint8   dir_id[2];         /* von File Search Init */
-	                 uint8   searchsequence[2]; /* FRAGE Sequence FFFF ertster Eintrag */
+	                 uint8   searchsequence[2]; /* sequence FFFF = first entry */
 	                 uint8   search_attrib;     /* Attribute */
                              /*     0 none,
                                     2 HIDDEN,
@@ -916,7 +924,7 @@ static int handle_ncp_serv(void)
 	                 int     len=input->len  ; /* FN Length */
 
 	               struct OUTPUT {
-	                 uint8   searchsequence[2]; /* FRAGE Sequence  */
+	                 uint8   searchsequence[2]; /* same as request sequence  */
 	                 uint8   dir_id[2];         /* Direktory ID    */
                        /*  is correct !! */
 	                 union {
@@ -1318,12 +1326,26 @@ static int handle_ncp_serv(void)
 
 #endif
 
-#if 0
-	 case 0x61 : { /* Negotiate Buffer Size, Packetsize new ??? */
+#ifdef  _MAR_TESTS_
+	 case 0x61 : { /* Negotiate Buffer Size,  Packetsize new ?  */
                        /* > 3.11 */
-                       /* similar request as 0x21 */
-                     }
-
+	               int   wantsize = GET_BE16((uint8*)ncprequest);
+                       /* wantsize is here normally 1500 */
+                       /* 1 byte unknown ( zero )   */
+	               struct OUTPUT {
+	                 uint8   getsize[2];
+	                 uint8   socket[2];      /* socket for echo ?? */
+                         uint8   unknown;        /* zero               */
+	               } *xdata= (struct OUTPUT*)responsedata;
+                       memset(xdata, 0, sizeof(*xdata));
+	               wantsize = min(1500, wantsize);
+	               U16_TO_BE16(wantsize,  xdata->getsize);
+	               U16_TO_BE16(sock_echo, xdata->socket);
+	               data_len = sizeof(*xdata);
+                       XDPRINTF((5,0, "Negotiate Buffer (new) =0x%04x,(%d)",
+                              (int) wantsize, (int) wantsize));
+	             }
+	             break;
 #endif
 
 #if 0
@@ -1376,7 +1398,6 @@ static void handle_after_bind()
   switch (ncprequest->function) {
     case 0x17 : {  /* FILE SERVER ENVIRONMENT */
        uint8 ufunc    = *(requestdata+2);
-       uint8 *rdata   = requestdata+3;
        switch (ufunc) {
          case 0x14:   /* Login Objekt, unencrypted passwords */
          case 0x18: { /* crypt_keyed LOGIN */
@@ -1486,12 +1507,15 @@ static void set_sig(void)
   signal(SIGINT,   sig_quit);
   signal(SIGPIPE,  sig_pipe);
   signal(SIGHUP,   sig_hup);
+#if USE_MMAP
+  signal(SIGBUS,   sig_bus_mmap);  /* in nwfile.c */
+#endif
 }
 
 int main(int argc, char **argv)
 {
-  if (argc != 5) {
-    fprintf(stderr, "usage nwconn PID FROM_ADDR Connection nwbindsock\n");
+  if (argc != 6) {
+    fprintf(stderr, "usage nwconn PID FROM_ADDR Connection nwbindsock echosock\n");
     exit(1);
   } else father_pid = atoi(*(argv+1));
   setuid(0);
@@ -1509,6 +1533,7 @@ int main(int argc, char **argv)
   act_pid = getpid();
 
   sscanf(argv[4], "%x", &sock_nwbind);
+  sscanf(argv[5], "%x", &sock_echo);
 
 #ifdef LINUX
   set_emu_tli();

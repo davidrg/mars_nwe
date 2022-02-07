@@ -1445,7 +1445,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   uint32 ngr_id   = 0x0C000001;
   uint32 ps1_id   = 0x0D000001;
 #endif
-#if _MAR_TESTS_
+#ifdef _MAR_TESTS_1
   uint32 pserv_id = 0L;
 #endif
   FILE *f	     = open_nw_ini();
@@ -1546,7 +1546,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
 	               "NET_ADDRESS",         P_FL_ITEM | P_FL_DYNA, 0x40,
 	                (char*)adr,  sizeof(ipxAddr_t));
 
-#if _MAR_TESTS_
+#ifdef _MAR_TESTS_1
     nw_new_obj_prop(pserv_id, serverna,      0x47,    O_FL_DYNA, 0x31,
 	               "NET_ADDRESS",     P_FL_ITEM | P_FL_DYNA, 0x40,
 	                (char*)adr,  sizeof(ipxAddr_t));

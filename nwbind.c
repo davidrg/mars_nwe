@@ -1312,7 +1312,7 @@ static int xread(IPX_DATA *ipxd, int *offs, uint8 *data, int size)
 }
 
 static void handle_ctrl(void)
-/* reads stdin pipe or packets from nwserv/ncpserv */
+/* reads packets from nwserv/ncpserv */
 {
   IPX_DATA ipxd;
   int   what;

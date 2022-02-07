@@ -1,4 +1,4 @@
-/* nwvolume.h  11-May-96 */
+/* nwvolume.h  14-Jul-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,12 +42,17 @@ typedef struct {
   int   options;        /* see defines below                 */
 } NW_VOL;
 
-#define VOL_OPTION_DOWNSHIFT 0x01  /* All downshift               */
-#define VOL_OPTION_IS_PIPE   0x02  /* Volume contains pipes       */
-#define VOL_OPTION_REMOUNT   0x04  /* Volume can be remounted (cdroms) */
-#define VOL_OPTION_IS_HOME   0x08  /* Volume is USERS HOME        */
-#define VOL_OPTION_ONE_DEV   0x10  /* Volume has only one filesys */
-#define VOL_OPTION_READONLY  0x20  /* Volume is readonly          */
+/* vol options */
+#define VOL_OPTION_DOWNSHIFT 0x0001  /* All downshift               */
+#define VOL_OPTION_IS_PIPE   0x0002  /* Volume contains pipes       */
+#define VOL_OPTION_REMOUNT   0x0004  /* Volume can be remounted (cdroms) */
+#define VOL_OPTION_IS_HOME   0x0008  /* Volume is USERS HOME        */
+#define VOL_OPTION_ONE_DEV   0x0010  /* Volume has only one filesys */
+#define VOL_OPTION_READONLY  0x0020  /* Volume is readonly          */
+/* namespaces */
+#define VOL_NAMESPACE_DOS    0x1000
+#define VOL_NAMESPACE_OS2    0x2000
+#define VOL_NAMESPACE_NFS    0x4000
 
 /* stolen from GNU-fileutils */
 /* Space usage statistics for a filesystem.  Blocks are 512-byte. */
@@ -68,6 +73,7 @@ extern int  nw_get_volume_number(uint8 *volname, int namelen);
 extern int  nw_get_volume_name(int volnr, uint8 *volname);
 extern int  nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu);
 extern int  get_volume_options(int volnr, int mode);
+extern int  get_volume_inode(int volnr);
 
 extern uint32 nw_vol_inode_to_handle(int volume, ino_t inode,
                                DEV_NAMESPACE_MAP *dnm);

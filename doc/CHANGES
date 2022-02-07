@@ -1,5 +1,6 @@
 Sorry, this is in German only.
-Aenderungen in mars_nwe bis zum : 24-Jun-96
+User important notes are in the NEWS file.
+Aenderungen in mars_nwe bis zum : 22-Jul-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -153,7 +154,15 @@ Erste 'oeffentliche' Version
 - Dateien werden nun mittels mmap gelesen.
   neuer config.h Schalter USE_MMAP
 <----- ^^^^^^^^^^ pl9 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
+^^^^^^^^^^ VERSION 0.97 ^^^^^^^^
+- automatischen Ueberschreiben von bestimmten Directory Handles
+  entfernt. War von Anfang an falsch verstanden. :(
+- namespace routinen verbessert/erweitert.
+  namespace OS/2 rudimentaer eingebaut.
+- wildcardhandling wiederum geaendert.
+- Dummy Routinen fuer OS/2 extended attributes eingebaut.
+- NFS-namespace rudimentaer eingebaut.
+<----- ^^^^^^^^^^ pl0 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 

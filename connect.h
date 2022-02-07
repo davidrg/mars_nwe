@@ -133,7 +133,8 @@ extern int nw_scan_dir_info(int dir_handle, uint8 *data, int len,
 #define MAX_NW_DIRS    255
 extern NW_DIR  dirs[MAX_NW_DIRS];
 extern int     used_dirs;
-
+extern int     act_uid;
+extern int     act_gid;
 
 extern int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
 	                  uint8 *data,   int len, int only_dir) ;

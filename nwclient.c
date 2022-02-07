@@ -356,7 +356,7 @@ static int allocate_dir_handle(int dirhandle,
   if (!handle_event()) return((int) *responsedata);
   return(-1);
 }
-
+#if 0
 static void scan_irgendwas(int dirhandle, int attrib, char *name)
 {
    uint8  *p  = requestdata;
@@ -409,7 +409,7 @@ static int get_dir_path(int dirhandle)
   }
   return(0);
 }
-
+#endif
 static void get_connection_info(int conn)
 /* liefert Connection INFO */
 {
@@ -521,7 +521,7 @@ static void send_console_broadcast(char *message)
   }
 }
 
-
+#if 0
 
 static int get_bindery_object_name(uint32 id)
 {
@@ -536,7 +536,7 @@ static int get_bindery_object_name(uint32 id)
    }
    return(0);
 }
-
+#endif
 
 static int get_volume_restriction_for_obj(uint32 id, int volnr)
 {
@@ -576,7 +576,7 @@ static int login_object(int type, char *name, char *password)
    return(0);
 }
 
-
+#if 0
 static void test_xx()
 {
   uint8 data[] = {0x0,0x1c,0xf,0xff,0xff,0x0,0x0,0x16,'S','Y','S',':','S','Y','S','T','E','M','\\','N','E','T','$','O','B','J','.','O','L','D'} ;
@@ -585,7 +585,7 @@ static void test_xx()
     ;
   }
 }
-
+#endif
 
 
 static int open_datei(int dirhandle, int attrib, int ext_attrib, char *name)

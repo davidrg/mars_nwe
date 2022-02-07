@@ -1,13 +1,20 @@
 # in this files are important notes for user of mars_nwe.
+------22-Jul-96--- 0.98.pl0 ----------
+- problems with directory handles eliminated.
+  (missunderstood 'creat permanent directory handle' call :( )
+- now poor OS/2 and NFS namespace added.
+- dummy routine for OS/2 extended attributes.
+  (OS/2 WP needs it)
 ------12-Jul-96--- 0.97.pl9 ----------
-automatic adding and removing of ipx-interfaces. (internal router)
-now running under linux/sparc.
-better file locking/sharing.
-some unix->dos attribute handling now.
-better read performance (mmap(ing))
-A not yet assigned mars_nwe user is now automatic assigned
-to a Linux user with same name when the password is changed and the
-new password is not null.
+- better automatic handling of adding and removing
+  of ipx-interfaces. (internal router)
+- now running under linux/sparc.
+- better file locking/sharing.
+- some unix->dos attribute handling now.
+- better read performance (mmap(ing)) config.h: USE_MMAP
+- A not yet assigned mars_nwe user is now automatic assigned
+  to a Linux user with same name when the password is changed and the
+  new password is not null.
 ------------------ 0.97.pl7 ----------
 Crypted Change password call implemented.
 ------05-May-96--- 0.97.pl3 ----------

@@ -39,15 +39,23 @@ int        wdogs_till_tics   = 0;    /* send wdogs to all             */
 int           anz_net_devices=0;
 NW_NET_DEVICE *net_devices[MAX_NET_DEVICES];
 
-uint16  ipx_sock_nummern[]={ SOCK_AUTO    /* WDOG */
-#ifdef PSERVER_SLOT
-                             ,SOCK_PSERVER
-#endif
+#if !IN_NWROUTED
+  uint16  ipx_sock_nummern[]={  SOCK_AUTO    /* WDOG    */
+# ifdef EXTERN_SLOT
+                             ,SOCK_EXTERN  /* Xmarsmon */
+# endif
 
-#if INTERNAL_RIP_SAP
+# ifdef PSERVER_SLOT
+                             ,SOCK_PSERVER
+# endif
+
+# if INTERNAL_RIP_SAP
                              ,SOCK_SAP
-#else
+# else
                              ,SOCK_AUTO
+# endif
+#else
+  uint16  ipx_sock_nummern[]={SOCK_SAP
 #endif
 
 #ifdef RIP_SLOT
@@ -70,6 +78,7 @@ uint16  ipx_sock_nummern[]={ SOCK_AUTO    /* WDOG */
                              };
 
 #define NEEDED_SOCKETS  (sizeof(ipx_sock_nummern) / sizeof(uint16))
+
 #if IN_NWROUTED
 #  define NEEDED_POLLS    (NEEDED_SOCKETS+1)
 #else
@@ -247,6 +256,7 @@ static int start_ncpserv(char *nwname, ipxAddr_t *addr)
                char addrstr[100];
                char pathname[300];
                char nwbindsock[20];
+               char echosock[20];
                int j = FD_NWSERV;
                close(fds_in[0]);            /* no need to read       */
                dup2(fds_in[1], FD_NWSERV);  /* becommes fd FD_NWSERV */
@@ -255,8 +265,9 @@ static int start_ncpserv(char *nwname, ipxAddr_t *addr)
                U16_TO_BE16(SOCK_NCP, addr->sock);
                ipx_addr_to_adr(addrstr, addr);
                sprintf(nwbindsock, "%04x", sock_nwbind);
+               sprintf(echosock,   "%04x", sock_nummern[WDOG_SLOT]);
                execl(get_exec_path(pathname, progname), progname,
-                      nwname,  addrstr, nwbindsock, NULL);
+                      nwname,  addrstr, nwbindsock, echosock, NULL);
                exit(1);
              }
              break;
@@ -322,7 +333,6 @@ static int start_nwbind(char *nwname, ipxAddr_t *addr)
                U16_TO_BE16(SOCK_NCP, addr->sock);
                ipx_addr_to_adr(addrstr, addr);
                sprintf(nwbindsock, "%04x", sock_nwbind);
-
                execl(get_exec_path(pathname, progname), progname,
                       nwname,  addrstr,  nwbindsock, NULL);
                exit(1);
@@ -363,7 +373,6 @@ static int start_nwclient(void)
   }
   return(0);       /*  OK */
 }
-#endif
 
 /* ===========================  WDOG =============================== */
 #ifndef _WDOG_TESTING_
@@ -497,6 +506,8 @@ static void send_bcasts(int conn)
     send_bcast_packet(&adr, conn+1, '!');  /* notify */
   }
 }
+#endif
+
 
 void get_server_data(char *name,
                 ipxAddr_t *adr,
@@ -720,6 +731,25 @@ static void handle_diag(int fd, int ipx_pack_typ,
 }
 #endif
 
+#ifdef EXTERN_SLOT
+ipxAddr_t auth_addr;
+int       is_auth=0;
+
+static void handle_extern_call(int fd,
+                int        ipx_pack_typ,
+                int        data_len,
+                IPX_DATA   *ipxdata,
+                ipxAddr_t  *from_addr)
+{
+  if (memcmp(&auth_addr, from_addr, sizeof(ipxAddr_t))){
+    memcpy(&auth_addr, from_addr, sizeof(ipxAddr_t));
+    is_auth=0;
+  }
+
+
+}
+#endif
+
 static void handle_event(int fd, uint16 socknr, int slot)
 {
   struct        t_unitdata ud;
@@ -766,8 +796,11 @@ static void handle_event(int fd, uint16 socknr, int slot)
        IPXCMPNET (source_adr.net,  my_server_adr.net)) {
 
     int source_sock = (int) GET_BE16(source_adr.sock);
-    if  ( source_sock  == sock_nummern[WDOG_SLOT]
-       || source_sock  == SOCK_SAP
+    if  (
+#if !IN_NWROUTED
+          source_sock  == sock_nummern[WDOG_SLOT] ||
+#endif
+          source_sock  == SOCK_SAP
        || source_sock  == SOCK_RIP) {
       XDPRINTF((2,0,"OWN Packet from sock:0x%04x, ignored", source_sock));
       return;
@@ -781,6 +814,29 @@ static void handle_event(int fd, uint16 socknr, int slot)
 #endif
 
   switch (slot) {
+#ifdef WDOG_SLOT
+    case WDOG_SLOT :
+
+                     if (2 == ud.udata.len) {
+                       XDPRINTF((2,0, "WDOG Packet len=%d connid=%d, status=%d",
+                          (int)ud.udata.len, (int) ipx_data_buff.wdog.connid,
+                        (int)ipx_data_buff.wdog.status));
+                        if ('Y' == ipx_data_buff.wdog.status)
+                           modify_wdog_conn(ipx_data_buff.wdog.connid, 0);
+                     } else if ( 2 < ud.udata.len
+                             && ipx_data_buff.data[0] == 0x11
+                             && ipx_data_buff.data[1] == 0x11 ) {
+                       /* now we make an echo of this data */
+                       send_ipx_data(sockfd[WDOG_SLOT],
+                        17, ud.udata.len, ud.udata.buf, &source_adr, "ECHO");
+                     }
+                     break;
+#endif
+
+#ifdef EXTERN_SLOT
+    case EXTERN_SLOT   : handle_extern_call(fd, (int) ipx_pack_typ, ud.udata.len, &ipx_data_buff, &source_adr); break;
+#endif
+
     case SAP_SLOT      : handle_sap( fd, (int) ipx_pack_typ, ud.udata.len, &ipx_data_buff, &source_adr); break;
 #ifdef RIP_SLOT
     case RIP_SLOT      : handle_rip( fd, (int) ipx_pack_typ, ud.udata.len, &ipx_data_buff, &source_adr); break;
@@ -790,16 +846,7 @@ static void handle_event(int fd, uint16 socknr, int slot)
     case DIAG_SLOT     : handle_diag(fd, (int) ipx_pack_typ, ud.udata.len, &ipx_data_buff, &source_adr); break;
 #endif
 
-    default :
-              if (WDOG_SLOT == slot) {  /* this is a watchdog packet */
-                XDPRINTF((2,0, "WDOG Packet len=%d connid=%d, status=%d",
-                        (int)ud.udata.len, (int) ipx_data_buff.wdog.connid,
-                        (int)ipx_data_buff.wdog.status));
-                if (2 == ud.udata.len) {
-                  if ('Y' == ipx_data_buff.wdog.status)
-                      modify_wdog_conn(ipx_data_buff.wdog.connid, 0);
-                }
-              } else {
+    default : {
                 uint8 *p = (uint8*)&ipx_data_buff;
                 int    k = 0;
                 XDPRINTF((1, 2, "UNKNOWN"));
@@ -1241,6 +1288,7 @@ int main(int argc, char **argv)
               else handle_event(p->fd, sock_nummern[j], j);
             }  else {  /* fd_ncpserv_in */
               XDPRINTF((2, 0, "POLL %d, fh=%d", p->revents, p->fd));
+#if !IN_NWROUTED
               if (p->revents & ~POLLIN)
                  errorp(0, "STREAM error", "revents=0x%x", p->revents );
               else {
@@ -1308,6 +1356,7 @@ int main(int argc, char **argv)
                   }
                 }
               }
+#endif
             }
             if (! --anz_poll) break;
           } /* if */
@@ -1333,10 +1382,14 @@ int main(int argc, char **argv)
                 bsecs=server_broadcast_secs;
             broadmillisecs = bsecs*1000+10;
           }
+#if !IN_NWROUTED
           send_wdogs();
+#endif
           broadtime = akttime_stamp;
         } else {
+#if !IN_NWROUTED
           if (call_wdog) send_wdogs(1);
+#endif
           if (client_mode && difftime > 5) get_servers();  /* Here more often */
         }
       }

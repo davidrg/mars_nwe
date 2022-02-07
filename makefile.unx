@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 10-Jul-96
+#makefile.unx 12-Jul-96
 #endif
 
 VPATH=$(V_VPATH)
@@ -8,10 +8,10 @@ O=.o
 C=.c
 
 V_H=0
-V_L=97
-P_L=9
+V_L=98
+P_L=0
 
-#define D_P_L 1
+#define D_P_L 0
 DISTRIB=mars_nwe
 #if D_P_L
 DISTRIBF=$(DISTRIB)-$(V_H).$(V_L).pl$(P_L)
@@ -247,11 +247,10 @@ n_distrib: n_diff
 ; cd $(OBJDIR) )
 
 n_distrib_bin:
-	cd $(VPATH) && (tar cvzf /tmp/$(DISTRIB).bin.tgz \
+	cd $(VPATH) && (/usr/local/bin/cdar cb /tmp/mars_nwb.cda \
  $(PROGS) \
- COPYING  \
- README   \
  examples \
  doc \
 ; cd $(OBJDIR))
+
 

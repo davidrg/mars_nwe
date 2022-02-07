@@ -24,6 +24,8 @@ typedef struct {
 #define FH_DO_NOT_REUSE      0x04
 #define FH_IS_READONLY       0x20
 
+extern void sig_bus_mmap(int rsig);
+
 extern void init_file_module(void);
 
 extern int file_creat_open(int volume, uint8 *unixname,

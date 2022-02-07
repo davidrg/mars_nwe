@@ -1,4 +1,4 @@
-/* nwconn.c 04-May-96       */
+/* nwconn.c 16-Jul-96       */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -273,7 +273,7 @@ static int create_queue_file(uint8   *job_file_name,
   if (result > -1)
     result = nw_creat_open_file(result, job_file_name+1,
                                        (int)  *job_file_name,
-                                        &fnfo, 0x6, 0x6, 1 | 4);
+                                        &fnfo, 0x6, 0x6, 1 | 4 | 8);
 
   XDPRINTF((5,0,"creat queue file bez=`%s` handle=%d",
                                          job_bez, result));

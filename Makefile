@@ -45,6 +45,9 @@ clean:  mk.li nw.ini
 distrib: mk.li nw.ini
 	./mk.li $@
 
+distrib_bin: mk.li nw.ini
+	./mk.li $@
+
 diff:
 	./mk.li $@
 

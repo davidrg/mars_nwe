@@ -119,6 +119,9 @@ static buf32 encryptkeys  =
  0xF4,0x47,0xDC,0xA7,0xEC,0xCF,0x50,0xC0};
 
 #include "nwcrypt.h"
+
+extern void memset(void* p, int c, int size);
+
 static void
 shuffle1(buf32 temp, unsigned char *target)
 {
