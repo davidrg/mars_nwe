@@ -1,5 +1,5 @@
-/* nwdbm.c  29-Sep-98  data base for mars_nwe */
-/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
+/* nwdbm.c  14-Apr-00 data base for mars_nwe */
+/* (C)opyright (C) 1993,2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@
 #include "nwcrypt.h"
 #include "nwqueue.h"
 #include "dirent.h"
+#include "unxfile.h"
 
 #ifdef LINUX
 #  ifdef USE_GDBM
@@ -65,7 +66,8 @@ uint8 *sys_sysname=NULL;  /* Name of first Volume, normally SYS */
 
 uint32 network_serial_nmbr=(uint32)NETWORK_SERIAL_NMBR;
 uint16 network_appl_nmbr=(uint16)NETWORK_APPL_NMBR;
-static int entry8_flags  = 0;
+int entry8_flags  = 0;   /* used in nwbind too */
+
 static int entry17_flags = 0;
 
 static datum key;
@@ -96,15 +98,15 @@ static DBM_FILE  my_dbms[COUNT_DBM_FILES] = {
 };
 #endif
 
-static int x_dbminit(char *s)
+static int x_dbminit(char *s, int ro)
 {
   char buff[256];
 #ifdef USE_GDBM
   (void)get_div_pathes(buff, s, 1, ".pag");
-  my_dbm = gdbm_open(buff, 0, GDBM_WRCREAT, 0600, NULL);
+  my_dbm = gdbm_open(buff, 0, ro ? GDBM_READER : GDBM_WRCREAT, 0600, NULL);
 #else
   (void)get_div_pathes(buff, s, 1, NULL);
-  my_dbm = dbm_open(buff, O_RDWR|O_CREAT, 0600);
+  my_dbm = dbm_open(buff,  ro ? O_RDONLY : O_RDWR|O_CREAT , 0600);
 #endif
   return( (my_dbm == NULL) ? -1 : 0);
 }
@@ -114,17 +116,36 @@ static int dbminit(int what_dbm)
   int result = 0;
 #if DBM_REMAINS_OPEN
   if (NULL == my_dbms[what_dbm]) {
-    result = x_dbminit(dbm_fn[what_dbm]);
+    result = x_dbminit(dbm_fn[what_dbm], 0);
     if (!result)  my_dbms[what_dbm] = my_dbm;
   } else my_dbm = my_dbms[what_dbm];
   return(result);
 #else
-  return(x_dbminit(dbm_fn[what_dbm]));
+  return(x_dbminit(dbm_fn[what_dbm], 0));
 #endif
   if (result)
     errorp(0, "dbminit", "on %s", dbm_fn[what_dbm]);
   return(result);
 }
+
+static int dbminit_ro(int what_dbm)
+{
+  int result = 0;
+#if DBM_REMAINS_OPEN
+  if (NULL == my_dbms[what_dbm]) {
+    result = x_dbminit(dbm_fn[what_dbm], 1);
+    if (!result)  my_dbms[what_dbm] = my_dbm;
+  } else my_dbm = my_dbms[what_dbm];
+  return(result);
+#else
+  return(x_dbminit(dbm_fn[what_dbm], 1));
+#endif
+  if (result)
+    errorp(0, "dbminit ro", "on %s", dbm_fn[what_dbm]);
+  return(result);
+}
+
+
 
 static int dbmclose()
 {
@@ -1847,7 +1868,9 @@ static void add_user_g(uint32 u_id,   uint32 g_id,
   add_user_to_group(u_id, g_id);
   add_user_2_unx(u_id, unname);
   if (password && *password) {
-    if (*password == '-') *password='\0';
+    // if (*password == '-') *password='\0';
+    if (password[0] == '-' && password[1] != '\0')    
+       *password='\0';
     nw_set_passwd(u_id, password, dont_ch);
   }
   if (set_flags)
@@ -2158,10 +2181,14 @@ static void check_compress_bindery()
       int  fd=-1;
       char tmpfn[300];
       strcpy(tmpfn,"/tmp/nwvalXXXXXX");
+#if 0      
       if (mktemp(tmpfn)) {
         unlink(tmpfn);
         fd=creat(tmpfn, 0600);
       }
+#else /* mst: 04-Apr-00, patch from (Jukka Ukkonen) */
+      fd = mkstemp (tmpfn);
+#endif
       if (fd > -1) {
         if (!dbminit(FNVAL)){
           int     i   = -1;
@@ -2932,4 +2959,206 @@ int do_import_dbm(char *path)
   if (!result) result=import_val(path);
   return(result);
 }
+
+
+/* export functions to export bindery to directory entries */
+
+static char *path_bindery   = "/var/nwserv/bind";
+
+static void bcreate_obj(uint32 id, char *name, int type,
+                        int flags, int security)
+
+{
+  char buf[300];
+  char buf1[300];
+  uint8 buf_uc[4];
+  char id_buf[30];
+  int  len = slprintf(buf, sizeof(buf)-1,"%s/%x", path_bindery, type);
+  int  idlen;
+
+  U32_TO_BE32(id, buf_uc);
+  idlen = slprintf(id_buf, sizeof(id_buf)-1,"%x/%x/%x/%x",
+                              (int) buf_uc[0],
+                              (int) buf_uc[1],
+                              (int) buf_uc[2],
+                              (int) buf_uc[3]);
+
+  /*  1 creat */
+  nwdbm_mkdir(buf, 0755, 1);
+
+  /*  1/mstover unlink */
+  slprintf(buf+len, sizeof(buf)-1-len,"/%s", name);
+  downstr(buf+len);
+  unlink(buf);
+
+  /*  1/mstover  ->  ../id/1/2/3/4 */
+  slprintf(buf1,sizeof(buf1)-1, "../id/%s", id_buf);
+  symlink(buf1, buf);
+
+  /* id/1/2/3/4   creat */
+  len = slprintf(buf, sizeof(buf)-2,"%s/id/%s", path_bindery, id_buf);
+  unx_xrmdir(buf); /* remove if exist */
+  nwdbm_mkdir(buf, 0755, 1);
+  buf[len++] = '/';
+  /* ----------------------------------- */
+
+  /* name  ->  mstover */
+  strmaxcpy(buf+len, "name.o", sizeof(buf)-1-len);
+  strmaxcpy(buf1, name, sizeof(buf1)-1);
+  downstr(buf1);
+  symlink(buf1, buf);
+
+  /* typ   ->  1 */
+  strmaxcpy(buf+len, "typ.o", sizeof(buf)-1-len);
+  slprintf(buf1, sizeof(buf1)-1,"%x", type);
+  symlink(buf1, buf);
+
+  /* flags & security */
+  strmaxcpy(buf+len, "f+s.o", sizeof(buf)-1-len);
+  slprintf(buf1, sizeof(buf1)-1,"%02x%02x", flags&0xff, security&0xff);
+  symlink(buf1, buf);
+
+}
+
+static int export_obj_to_dir(void)
+{
+  int result = 0;
+  if (!result) {
+    for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+      data = fetch(key);
+      if (data.dptr) {
+        NETOBJ *o=(NETOBJ*)data.dptr;
+        bcreate_obj( o->id, o->name, (int) o->type,
+                          (int)o->flags, (int) o->security);
+      }
+    }
+  }
+  return(result);
+}
+
+static void bcreate_prop(uint32 id, int prop_id, char *name,
+                        int propflags, int propsecurity)
+{
+  char buf[300];
+  char buf1[300];
+  uint8 buf_uc[4];
+
+  int  len;
+  int  len1;
+  U32_TO_BE32(id, buf_uc);
+  len = slprintf(buf, sizeof(buf)-1,"%s/id/%x/%x/%x/%x/",
+                              path_bindery,
+                              (int) buf_uc[0],
+                              (int) buf_uc[1],
+                              (int) buf_uc[2],
+                              (int) buf_uc[3]);
+
+  /* prop_id unlink */
+  slprintf(buf+len, sizeof(buf)-1-len,"%x.p", prop_id);
+  downstr(buf+len);
+  unlink(buf);
+
+  /*  id.p -> name */
+  slprintf(buf1,sizeof(buf1)-1, "%s", name);
+  downstr(buf1);
+  symlink(buf1, buf);
+
+
+  /* x/name  creat */
+  len1 = slprintf(buf+len, sizeof(buf)-1-len,"%s", name);
+  downstr(buf+len);
+  unx_xrmdir(buf); /* remove if exist */
+  nwdbm_mkdir(buf, 0700, 1);
+  len += len1;
+  buf[len++] = '/';
+
+  /* flags & security */
+  strmaxcpy(buf+len, "f+s", sizeof(buf)-1-len);
+  slprintf(buf1, sizeof(buf1)-1,"%02x%02x", propflags&0xff, propsecurity&0xff);
+  symlink(buf1, buf);
+
+}
+
+static int export_prop_to_dir(void)
+{
+  int result = 0;
+  if (!result) {
+    for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+      data = fetch(key);
+      if (data.dptr) {
+        NETPROP *p=(NETPROP*)data.dptr;
+        bcreate_prop(p->obj_id, (int) p->id, p->name,
+                  (int)p->flags, (int) p->security);
+      }
+    }
+  }
+  return(result);
+}
+
+
+static void bcreate_val(uint32 id, int prop_id, int segment,
+                                       uint8 *value)
+{
+  char buf[300];
+  char buf1[300];
+  uint8 buf_uc[4];
+
+  int  len;
+  int k     = 128;
+  uint8 *p  = value;
+  uint8 *p1 = buf1;
+
+  U32_TO_BE32(id, buf_uc);
+  len = slprintf(buf, sizeof(buf)-1,"%s/id/%x/%x/%x/%x/%x.p/%x",
+                              path_bindery,
+                              (int) buf_uc[0],
+                              (int) buf_uc[1],
+                              (int) buf_uc[2],
+                              (int) buf_uc[3],
+                              prop_id,
+                              segment);
+
+  /* segment unlink */
+  unlink(buf);
+  while (k--) {
+    sprintf(p1, "%02x", (int) *p++);
+    p1+=2;
+  }
+  symlink(buf1, buf);
+}
+
+
+static int export_val_to_dir(void)
+{
+  int result = 0;
+  if (!result) {
+    for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+      data = fetch(key);
+      if (data.dptr) {
+        NETVAL *v=(NETVAL*)data.dptr;
+        bcreate_val(v->obj_id, (int)v->prop_id, (int) v->segment, v->value);
+      }
+    }
+  }
+  return(result);
+}
+
+int do_export_dbm_to_dir(void)
+{
+  int result =dbminit_ro(FNOBJ);
+  if (!result) {
+    export_obj_to_dir();
+    result = dbminit_ro(FNPROP);
+  }
+  if (!result) {
+    export_prop_to_dir();
+    result = dbminit_ro(FNVAL);
+  }
+  if (!result)
+     export_val_to_dir();
+  return(result);
+}
+
+
+
 

@@ -1,4 +1,4 @@
-/* dbmtool.c  08-Sep-96  data base tool program for mars_nwe */
+/* dbmtool.c  10-Nov-99  data base tool program for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,6 +32,7 @@ static int usage(char *s)
   fprintf(stderr, "\te = export\n");
   fprintf(stderr, "\ti = import\n");
   fprintf(stderr, "\tr = repair\n");
+  fprintf(stderr, "\tE = Export To DIR\n");
   return(1);
 }
 
@@ -42,9 +43,12 @@ int main(int argc, char *argv[])
   if (argc < 2)             return(usage(argv[0]));
   if      (*argv[1] == 'e') return(do_export_dbm(argv[2]));
   else if (*argv[1] == 'i') return(do_import_dbm(argv[2]));
-  else if (*argv[1] == 'r') if (!do_export_dbm(argv[2]))
-                              return(do_import_dbm(argv[2]));
-                            else return(1);
+  else if (*argv[1] == 'r') {
+    if (!do_export_dbm(argv[2]))
+      return(do_import_dbm(argv[2]));
+    else return(1);
+  }
+  if  (*argv[1] == 'E') return(do_export_dbm_to_dir());
   else usage(argv[0]);
   return(0);
 }

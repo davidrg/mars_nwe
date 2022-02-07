@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=99
-P_L=17
+P_L=18
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -79,6 +79,7 @@ PROG5=nwclient
 PROG6=nwbind
 PROG7=nwrouted
 PROG8=dbmtool
+PROG9=ftrustee
 
 #include "config.h"
 #ifdef FILENAME_NW_INI
@@ -120,7 +121,7 @@ NWROUTED=
 #endif
 
 INSTALLPROGS=$(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5) $(PROG6) $(NWROUTED)
-PROGS=$(INSTALLPROGS) $(PROG8)
+PROGS=$(INSTALLPROGS) $(PROG8) $(PROG9)
 
 OBJ1= $(EMUTLIOBJ) net1$(O) tools$(O)
 OBJ2= $(OBJ1) $(EMUTLIOBJ1) $(NWROUTE_O)
@@ -129,9 +130,10 @@ nwqconn$(O) nameos2$(O) nwfname$(O) nwshare$(O) extpipe$(O) \
 nwattrib$(O) trustee$(O)
 OBJ4= $(OBJ1)
 OBJ5= $(OBJ1)
-OBJ6= $(OBJ1) nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O)
+OBJ6= $(OBJ1) nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O) unxfile$(O)
 OBJ7= $(OBJ1) emutli1$(O)
 OBJ8= $(OBJ6)
+OBJ9= tools$(O) nwfname$(O) unxfile$(O) nwvolume$(O) nwattrib$(O) trustee$(O)
 
 OBJS= $(EMUTLIOBJ) net1$(O) tools$(O) \
       $(EMUTLIOBJ1) $(NWROUTE_O) \
@@ -140,7 +142,7 @@ OBJS= $(EMUTLIOBJ) net1$(O) tools$(O) \
       nwattrib$(O) trustee$(O) \
       nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O)  \
       $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O) $(PROG6)$(O) \
-      $(PROG7)$(O) $(PROG8)$(O)
+      $(PROG7)$(O) $(PROG8)$(O) $(PROG9)$(O)
 
 HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) \
        unxfile$(O)
@@ -176,6 +178,9 @@ $(PROG7):  $(PROG7)$(O) $(OBJ7)
 
 $(PROG8):  $(PROG8)$(O) $(OBJ8)
 	   $(CC) -o $(VPATH)/$(PROG8) $(PROG8)$(O) $(OBJ8) $(NDBMLIB) $(CRYPTLIB) $(NSLLIB)
+
+$(PROG9):  $(PROG9)$(O) $(OBJ9)
+	   $(CC) -o $(VPATH)/$(PROG9) $(PROG9)$(O) $(OBJ9) $(CRYPTLIB) $(NSLLIB)
 
 $(HOBJ3):  namspace.h connect.h nwvolume.h nwfile.h
 $(HOBJ6):  nwbind.h sema.h

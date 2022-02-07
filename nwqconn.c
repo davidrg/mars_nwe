@@ -1,4 +1,4 @@
-/* nwqconn.c 14-Apr-98 */
+/* nwqconn.c 15-Sep-99 */
 /* (C)opyright (C) 1997  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -103,7 +103,8 @@ static int open_creat_queue_file(int mode, uint8
   if (result > -1) {
     char unixname[300];
     int  dirhandle=result;
-    result=conn_get_kpl_unxname(unixname, dirhandle, file_name, file_name_len);
+    result=conn_get_kpl_unxname(unixname, sizeof(unixname), 
+                                 dirhandle, file_name, file_name_len);
     if (result > -1) {
       struct stat stbuff;
       if (mode == 0) {  /* creat */

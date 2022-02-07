@@ -84,7 +84,7 @@ int unx_xrmdir(char *unixname)
         (     dirbuff->d_name[0] != '.'
           || (dirbuff->d_name[1] != '\0' && 
              (dirbuff->d_name[1] != '.' || dirbuff->d_name[2] != '\0')))) {
-        strcpy(p, dirbuff->d_name);
+        strmaxcpy(p, dirbuff->d_name, 298);
         if (unlink(buf) && unx_xrmdir(buf)) {
           errorp(1, "unx_xrmdir", "cannot remove '%s'", buf);
           break;

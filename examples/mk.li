@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 16-May-99
+# mk.li 15-Dec-99
 # please edit this file !
 
 mk()
@@ -43,7 +43,8 @@ case $UNX in
      CPP="cc -E"
 #    CFLAGS="-pipe -O2 -fomit-frame-pointer"
 #    problems gcc2.5.8 ^^^^^^^^^^^^^^^^^^^^^
-     CFLAGS="-pipe -Wall"
+#    CFLAGS="-pipe -Wall -Dsignal=sysv_signal"
+     CFLAGS="$RPM_OPT_FLAGS -pipe -Wall -D_GNU_SOURCE"
 
   case $MASCHINE in
     sparc)

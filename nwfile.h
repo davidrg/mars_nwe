@@ -1,4 +1,4 @@
-/* nwfile.h 26-May-99 */
+/* nwfile.h 10-Nov-99 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
 #include "extpipe.h"
@@ -53,13 +53,14 @@ extern int nw_server_copy(int qfhandle, uint32 qoffset,
                    int zfhandle, uint32 zoffset,
                    uint32 size);
 
-extern int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock);
+extern int nw_log_physical_record(int fhandle, uint32 offset, uint32 size, int do_lock);
 
 extern int fd_2_fname(int fhandle, char *buf, int bufsize);
 extern FILE_HANDLE *fd_2_fh(int fhandle);
 extern int get_nwfd(int fhandle);
+extern void log_file_module(FILE *f);
 
-extern  int nw_log_record(int lock_flag,
+extern  int nw_log_logical_record(int lock_flag,
                   int timeout,
                   int len,
                   uint8 *data);

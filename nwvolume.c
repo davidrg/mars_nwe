@@ -1,5 +1,5 @@
-/* nwvolume.c  09-Nov-98 */
-/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
+/* nwvolume.c  09-Oct-99 */
+/* (C)opyright (C) 1993-1999  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -341,9 +341,10 @@ void nw_setup_vol_opts(int act_gid, int act_uid,
           flen = 0;
           fname = "";
         } else {
-          strcpy(fullname, unixname);
+          xstrcpy(fullname, unixname);
           /* concatenation $HOME/ and add/on/ */
-          strcpy(fullname + homepathlen, nw_volumes[k].homeaddon);
+          strmaxcpy(fullname + homepathlen, nw_volumes[k].homeaddon,
+            sizeof(fullname) - homepathlen - 1);
           fname = fullname;
           flen = homepathlen + nw_volumes[k].addonlen;
         }
@@ -446,13 +447,13 @@ int nw_get_volume_number(uint8 *volname, int namelen)
   return(result);
 }
 
-int nw_get_volume_name(int volnr, uint8 *volname)
+int nw_get_volume_name(int volnr, uint8 *volname, int size_volname)
 /* returns < 0 if error, else len of volname  */
 {
   int  result = -0x98; /* Volume not exist */;
   if (volnr > -1 && volnr < used_nw_volumes) {
     if (volname != NULL) {
-      strcpy((char*)volname, (char*)nw_volumes[volnr].sysname);
+      strmaxcpy((char*)volname, (char*)nw_volumes[volnr].sysname, size_volname-1);
       result = strlen((char*)volname);
     } else result= strlen((char*)nw_volumes[volnr].sysname);
   } else {
@@ -599,19 +600,15 @@ int get_volume_inode(int volnr, struct stat *stb)
   return(result);
 }
 
-int get_volume_unixname(int volnr, uint8 *unixname)
+int get_volume_unixnamlen(int volnr)
 {
-  int result = 0;
-  if (volnr > -1 && volnr < used_nw_volumes) {
-    if (unixname)
-      memcpy(unixname,nw_volumes[volnr].unixname,
-        nw_volumes[volnr].unixnamlen);
-    result = nw_volumes[volnr].unixnamlen;
-  }
-  return(result);
+  return( (volnr > -1 && volnr < used_nw_volumes)              
+                  ? nw_volumes[volnr].unixnamlen
+                  : 0 );
 }
 
-static void vol_trustee_scan(NW_VOL *v, int volume, uint8 *trusteepath, uint8 *p)
+static void vol_trustee_scan(NW_VOL *v, int volume, 
+             uint8 *trusteepath, uint8 *p, int size_p)
 {
   DIR   *f;
   *p='.';
@@ -623,7 +620,7 @@ static void vol_trustee_scan(NW_VOL *v, int volume, uint8 *trusteepath, uint8 *p
           && dirbuff->d_name[0] != 't' 
           && dirbuff->d_name[0] != '.') {
         struct stat stb;
-        strcpy(p, dirbuff->d_name);
+        strmaxcpy(p, dirbuff->d_name, size_p-1);
         if (dirbuff->d_name[0] == 'n') {
           uint8 path[255];
           int l=readlink(trusteepath, path, 254);
@@ -650,9 +647,10 @@ static void vol_trustee_scan(NW_VOL *v, int volume, uint8 *trusteepath, uint8 *p
             }
           }
         } else if ((!stat(trusteepath, &stb)) && S_ISDIR(stb.st_mode)) {
-          uint8 *pp=p+strlen(p);
+          int l=strlen(p);
+          uint8 *pp = p+l;
           *pp='/';
-          vol_trustee_scan(v, volume, trusteepath, pp+1);
+          vol_trustee_scan(v, volume, trusteepath, pp+1, size_p - l -1);
         }
       }
     }
@@ -666,16 +664,17 @@ static void build_volume_user_trustee(int volume, uint32 id, int namespace)
   uint8 trusteepath[500];
   uint8 *p;
   free_vol_trustee(v);
-  strcpy(trusteepath, path_trustees);
+  xstrcpy(trusteepath, path_trustees);
   p=trusteepath+strlen(trusteepath);
   *p++='/';
-  strcpy(p, v->sysname);
+  strmaxcpy(p, v->sysname, sizeof(trusteepath) - (int)(p-trusteepath) -1);
   p+=strlen(v->sysname);
   *p++='/';
   *p='\0';
   v->trustee_id=id;
   v->trustee_namespace=namespace;
-  vol_trustee_scan(v, volume, trusteepath, p);
+  vol_trustee_scan(v, volume, trusteepath, p, 
+             sizeof(trusteepath) - (int) (p - trusteepath) );
 }
 
 int vol_trustees_were_changed(int volume)
@@ -779,8 +778,10 @@ const char *find_device_file(const char *path)
 #ifdef LINUX
 # ifndef QTAINSYS
 #  include <linux/quota.h>
-# else /* probably used for libc6 */
-/* #  include <asm/types.h>  ?? */
+# else
+#  ifdef _GNU_SOURCE_
+#   include <asm/types.h>
+#  endif
 #  include <sys/quota.h>
 # endif
 

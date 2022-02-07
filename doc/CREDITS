@@ -29,13 +29,16 @@ Csoma Csaba <csoma@usa.net>
         testings+bugfixes
 
 Przemyslaw Czerpak <przemyslaw.czerpak@students.mimuw.edu.pl>
-        testings+bugfixes
+        testings+bugfixes+more bugfixes (pcz:)
 
 Ales Dryak <A.Dryak@sh.cvut.cz>
         his linware gave the kick
 
 Fritz Elfert <fritz@wuemaus.franken.de>
-        gives bugreport and patches
+        give bugreport and patches
+
+Przemyslaw Frasunek <venglin@FreeBSD.lublin.pl>
+        hints for possible security bugs
 
 Peter Gerhard <pgerhard@jpn.tuv.com>
         testings, bugreport, patches.
@@ -99,6 +102,9 @@ Andrew Sapozhnikov <sapa@hq.icb.chel.su>
         fixed prop_find_member bug,
         fixed x_str_match (DOS match) routine.
 
+Christoph Scheeder <christoph.scheeder@scheeder.de>
+        added TRUSTEE_T flag
+
 Hayo Schmidt <100305.1424@compuserve.com>
         added patch to let ATARI client work.
 
@@ -114,7 +120,11 @@ Morio Taneda <eb04@rz.uni-karlsruhe.de>
 Erik Thiele <erik@escape.mos.unterland.de>
         testings and doc
 
-Winfried Truemper <winni@xpilot.org>:
+Ingmar Thiemann <ingmar@gefas.com>
+        added patches for better file locking/sharing
+
+Winfried Truemper <winni@xpilot.org>
         re-wrote `INSTALL' and added explanations to `nw.ini'
 
-
+Jukka Ukkonen <jau@iki.fi>
+        small patches

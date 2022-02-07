@@ -1,5 +1,5 @@
-/* nwfile.c  26-May-99 */
-/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
+/* nwfile.c  14-Apr-00 */
+/* (C)opyright (C) 1993-2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@
 
 # include <sys/mman.h>
 
-static got_sig_bus=0;
+static int got_sig_bus=0;
 void sig_bus_mmap(int rsig)
 {
   got_sig_bus++;
@@ -100,7 +100,7 @@ static int new_file_handle(int volume, uint8 *unixname, int task)
   fh->st_ino  = 0;
   fh->access  = 0;
   fh->inuse   = 0;
-  strcpy((char*)fh->fname, (char*)unixname);
+  xstrcpy(fh->fname, (char*)unixname);
   fh->fh_flags   = 0;
   fh->f       = NULL;
   fh->volume  = volume;
@@ -124,9 +124,14 @@ static int free_file_handle(int fhandle)
           fh->p_mmap = NULL;
           fh->size_mmap = 0;
         }
+        if (fh->st_ino) {
+          /* changed by: Ingmar Thiemann <ingmar@gefas.com> */
+          share_unlock_all( fh->st_dev, fh->st_ino, fh->fd );
+        }
         close(fh->fd);
         if (fh->st_ino) {
-          share_file(fh->st_dev, fh->st_ino, 0);
+          /* changed by: Ingmar Thiemann <ingmar@gefas.com> */
+          share_file(fh->st_dev, fh->st_ino, fh->access&0xff, 0);
           if (fh->modified) {
             fh->modified=0;
 #if NEW_ATTRIB_HANDLING
@@ -181,9 +186,9 @@ void init_file_module(int task)
       FILE_HANDLE  *fh=&(file_handles[k-1]);
       if (fh->task == task && fh->fd>-1) {
         MDEBUG(D_FH_OPEN, {
-          char fname[200];
+          char fname[400];
           int r=fd_2_fname(k, fname, sizeof(fname));
-          xdprintf(1,0,"init_file_m fd=%3d, task=%d, fn=`%s`,r=%d", 
+          xdprintf(1,0,"init_file_m fd=%3d, task=%d, fn=`%s`,r=%d",
                    k, task, fname, r);
         })
         free_file_handle(k);
@@ -195,17 +200,17 @@ void init_file_module(int task)
 static int open_with_root_access(char *path, int mode)
 /* open existing files */
 {
-  int fd=open(path, mode);
+  int fd = open(path, mode);
   if (fd < 0 && errno == EACCES) {
     seteuid(0);
-    fd=open(path, mode);
+    fd = open(path, mode);
     reseteuid();
   }
   return(fd);
 }
 
 #if 0 /* not used */
-static int reopen_file(int volume, uint8 *unixname, struct stat *stbuff, 
+static int reopen_file(int volume, uint8 *unixname, struct stat *stbuff,
                    int access, int task)
 /* look for file already open and try to use it */
 /* do not know whether this is real ok */
@@ -216,14 +221,12 @@ static int reopen_file(int volume, uint8 *unixname, struct stat *stbuff,
     FILE_HANDLE *fh=&(file_handles[fhandle]);
     if (fh->fd > -1 && fh->task == task && fh->volume == volume
        && fh->st_dev == stbuff->st_dev && fh->st_ino == stbuff->st_ino) {
-      if ((fh->access&4) && (access&4)) 
+      if ((fh->access&4) && (access&4))
          return(-0x80); /* share error */
-      if ((fh->access&8) && (access&8)) 
+      if ((fh->access&8) && (access&8))
          return(-0x80); /* share error */
-      if (access & 4) 
-        result=share_file(stbuff->st_dev, stbuff->st_ino, 0x5);
-      if ((access & 0x8) && !result)
-        result=share_file(stbuff->st_dev, stbuff->st_ino, 0x2);
+      /* changed by: Ingmar Thiemann <ingmar@gefas.com> */
+      result=share_file(stbuff->st_dev, stbuff->st_ino, fh->access&0xff, 1);
       if (result)
          return(-0x80); /* share error */
       if ((fh->access&2) || (access&2))
@@ -267,16 +270,23 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
  *
  */
 {
-  int dowrite       = ((access & 2) || (creatmode & 3) ) ? 1 : 0;
+
+ /*  int dowrite       = ((access & 2) || (creatmode & 3) ) ? 1 : 0; */
+  int dowrite;
   int completition  = 0;  /* first ok */
   int fhandle       = -1;
   int voloptions    = get_volume_options(volume);
-  int volnamlen     = get_volume_unixname(volume, NULL);
+  int volnamlen     = get_volume_unixnamlen(volume);
   int exist         = stat(unixname, stbuff) ? 0 : 1;
   int eff_rights    = 0;
   uint32 dwattrib;
 
-  /* first we test accesses 
+  if ( !(access&3) ) 
+    access |= 3; /* mst:04-Apr-00, default RW */
+
+  dowrite = ((access & 2) || (creatmode & 3) ) ? 1 : 0;
+
+  /* first we test accesses
    * if something is wrong completition will become != 0
    */
 
@@ -287,45 +297,75 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
     reseteuid();
   }
 
+#if 0  /* mst:04-Apr-00, not needed here */
+  if ((!access) && dowrite){  /* create without access set */
+    access = 2;   /* OK ? mst: 28-Sep-99 */
+    XDPRINTF((2,0,"file_creat_open creatmode=%d, access=0, fn=%s",
+                   creatmode, unixname));
+  }
+#endif
+
   if (exist) { /* file exists */
-    if (S_ISDIR(stbuff->st_mode)) 
+    if (S_ISDIR(stbuff->st_mode))
       completition = -0xff; /* directory is total wrong here */
     else {
+      eff_rights = tru_get_eff_rights(volume, unixname, stbuff);
+      dwattrib   = get_nw_attrib_dword(volume, unixname, stbuff);
+
+      /* mst: 12-Apr-00 */
+      if (access & 0x10) {
+        access &= ~0x10;
+        if (!(dwattrib & FILE_ATTR_SHARE)) {
+          access |= 0x8; /* deny write */
+          if (access & 2)
+            access |= 0x4; /* deny read */
+        }
+      }
+
+#if 0
+      if ( (dwattrib & FILE_ATTR_SHARE) && (access & 0x10) ) {
+        access &= ~0x10;
+        if (dowrite)
+          access |= 0x8;
+      }
+#endif
+
 #if 0  /* deaktivated in 0.99.pl16, 23-May-99 */
        /* because reopen_file do not handle share conditions correct */
       if (!(creatmode&1) && !(voloptions & VOL_OPTION_IS_PIPE)) {
         int fdx=reopen_file(volume, unixname, stbuff, access, task);
-        if (fdx != 0) 
+        if (fdx != 0)
             return(fdx);
       }
 #endif
-      eff_rights = tru_get_eff_rights(volume, unixname, stbuff);
-      dwattrib   = get_nw_attrib_dword(volume, unixname, stbuff);
+
       if (creatmode&0x2) { /* creat if not exist */
-        if (S_ISFIFO(stbuff->st_mode)||(voloptions&VOL_OPTION_IS_PIPE)) { 
+        if (S_ISFIFO(stbuff->st_mode)||(voloptions&VOL_OPTION_IS_PIPE)) {
           /* fifo or pipe command always must exist */
-          if ((dwattrib&FILE_ATTR_R)||!(eff_rights & TRUSTEE_W)){         
+          if ((dwattrib&FILE_ATTR_R)||!(eff_rights & TRUSTEE_W)){
             completition = -0x94; /* No write rights */
           }
         } else {
           XDPRINTF((5,0,"CREAT File exist!! :%s:", unixname));
           completition = -0x85; /* No Priv */
-        } 
-      } else if (creatmode&0x1) { /* creat always*/ 
+        }
+      } else if (creatmode&0x1) { /* creat always*/
         if (!(creatmode&0x8)){
           if ((dwattrib&FILE_ATTR_R)
-            || !(eff_rights & TRUSTEE_W))  
+            || !(eff_rights & TRUSTEE_W))
             completition = -0x86; /* creat file exists ro */
-          else if (!(eff_rights & TRUSTEE_E))         
+#if 0 // mst:14-Apr-00, for create no delete rights are necessary !?
+          else if (!(eff_rights & TRUSTEE_E))
             completition = -0x85; /* creat file no delete rights */
-          else if (!(eff_rights & TRUSTEE_C)){         
+#endif          
+          else if (!(eff_rights & TRUSTEE_C)){
             completition = -0x84; /* No creat rights */
           }
         }
-      } else { /* open */ 
+      } else { /* open */
         if (dowrite) {
           if (!(creatmode&0x8)) {
-            if ((dwattrib&FILE_ATTR_R)||!(eff_rights & TRUSTEE_W)){         
+            if ((dwattrib&FILE_ATTR_R)||!(eff_rights & TRUSTEE_W)){
               if ((entry8_flags&2) && (eff_rights & TRUSTEE_R) ) {
                 /* we use strange compatibility modus if file is readable */
                 dowrite=0;
@@ -337,19 +377,22 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
           }
         } else {  /* open to read */
           if (!(creatmode&0x8)) {
-            if (!(eff_rights & TRUSTEE_R)){         
+            if (!(eff_rights & TRUSTEE_R)){
               completition = -0x93; /* No read rights */
             }
           }
         }
       }
-      if ( (!completition) && dowrite && !S_ISFIFO(stbuff->st_mode) && 
+      if ( (!completition) && dowrite && !S_ISFIFO(stbuff->st_mode) &&
           !(voloptions&VOL_OPTION_IS_PIPE)) {
         /* is this file already opened write deny by other process */
-        if (-1 == share_file(stbuff->st_dev, stbuff->st_ino, 0x12|0x8))
-               completition=-0x80; /* lock fail */
+        /* changed by: Ingmar Thiemann <ingmar@gefas.com> */
+        /* if (-1 == share_file(stbuff->st_dev, stbuff->st_ino, 0x2, 2)) */
+        /* pcz: 14-Nov-99 */
+        if (-1 == share_file(stbuff->st_dev, stbuff->st_ino, access&0xff, 2))
+               completition=-0x80;
       }
-    }  
+    }
   } else { /* do not exist, must be created */
     if (voloptions&VOL_OPTION_IS_PIPE)
       completition=-0xff;  /* pipecommands always must exist */
@@ -363,39 +406,39 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
         if (!completition) {
           eff_rights = tru_get_eff_rights(volume, unixname, stbuff);
           dwattrib   = get_nw_attrib_dword(volume, unixname, stbuff);
-          if (creatmode&0x8) 
+          if (creatmode&0x8)
             eff_rights |= TRUSTEE_C|TRUSTEE_W|TRUSTEE_R;
-          if (!(eff_rights & TRUSTEE_C)){ /* no creat rights */        
+          if (!(eff_rights & TRUSTEE_C)){ /* no creat rights */
             completition=-0x84;
           }
-        } else 
+        } else
           completition=-0x9c;
         *p='/';
-      } else 
+      } else
         completition=-0x9c;
-      if (completition==-0x9c) 
-        errorp(0, "nwfile.c", "LINE=%d, unixname='%s', p-unx=%d, volnamlen=%d", 
+      if (completition==-0x9c)
+        errorp(0, "nwfile.c", "LINE=%d, unixname='%s', p-unx=%d, volnamlen=%d",
                   __LINE__, unixname, (p) ? (int)(p - unixname): 0, volnamlen );
     } else
      completition=-0xff; /* should, but do not exist */
   }
-  
-  /* 
-   * Here all access tests are made and we can do the open as 
+
+  /*
+   * Here all access tests are made and we can do the open as
    * root (open_with_root_access).
    */
-  if (!completition) {   
+  if (!completition) {
     fhandle = new_file_handle(volume, unixname, task);
     if (fhandle > HOFFS) {
       FILE_HANDLE *fh=&(file_handles[fhandle-1]);
       if (exist) {
         if (S_ISFIFO(stbuff->st_mode)) { /* named pipes */
           fh->fh_flags |= FH_IS_PIPE;
-          fh->fd = open_with_root_access(fh->fname, O_NONBLOCK  
-                                                       | (dowrite 
-                                                          ? O_WRONLY 
+          fh->fd = open_with_root_access(fh->fname, O_NONBLOCK
+                                                       | (dowrite
+                                                          ? O_WRONLY
                                                           : O_RDONLY));
-          if (fh->fd < 0) 
+          if (fh->fd < 0)
             completition=-0x9c;
         } else if (voloptions & VOL_OPTION_IS_PIPE) {  /* 'pipe' volume */
           fh->fh_flags |= FH_IS_PIPE;
@@ -411,7 +454,14 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
 #endif
           stbuff->st_atime = stbuff->st_mtime;
         } else { /* 'normal' file */
-          int acm = (dowrite) ? O_RDWR : O_RDONLY;
+                  /* Changed by: Ingmar Thiemann <ingmar@gefas.com>
+                   * always RDWR for doing flock() with F_WRLCK
+                   */
+#if 0
+          int acm = O_RDWR; /*(dowrite) ? O_RDWR : O_RDONLY;*/
+#else     /* mst:  26-Sep-99, readonly volumes must be opened O_RDONLY */
+          int acm = (voloptions & VOL_OPTION_READONLY) ? O_RDONLY : O_RDWR;
+#endif          
           if (dowrite && (creatmode&0x3))
             acm |= O_TRUNC;
           fh->fd  = open_with_root_access(fh->fname, acm);
@@ -423,6 +473,8 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
             }
           } else
             completition=-0x9c;
+          if (completition==-0x9c)
+            errorp(0, "nwfile.c", "LINE=%d, unixname='%s'", __LINE__, unixname);
         }
       } else { /* needs to be created */
         if (nw_creat_node(volume, fh->fname, 2|8))
@@ -444,20 +496,12 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
         int result=0;
         fh->st_dev=stbuff->st_dev;
         fh->st_ino=stbuff->st_ino;
-        if (((access & 0x4) || (access & 0x8)) ) {
-          if (access & 0x4) /* deny read */
-            result=share_file(stbuff->st_dev, stbuff->st_ino, 0x5);
-          if ((access & 0x8) && !result)
-            result=share_file(stbuff->st_dev, stbuff->st_ino, 0x2);
-          XDPRINTF(((result==-1)?2:5, 0,  "open shared lock:result=%d,fn='%s'",
-                    result, fh->fname));
-        } else {
-          result=share_file(stbuff->st_dev, stbuff->st_ino, 1);
-          if (result==-1) {
-            XDPRINTF((2, 0, "open share failed,fn='%s'", fh->fname));
-          }
-        }
+        /* changed by: Ingmar Thiemann <ingmar@gefas.com> */
+        result = share_file(stbuff->st_dev, stbuff->st_ino, access&0xff, 1);
+        
         if (result==-1) {
+          XDPRINTF((2, 0, "open share failed,fn='%s', access=0x%x, creatmode=0x%x, dowrite=%d", 
+                            fh->fname, access, creatmode, dowrite));
           close(fh->fd);
           fh->fd       = -1;
           completition = -0x80;
@@ -496,17 +540,17 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
         free_file_handle(fhandle);
         fhandle=completition;
       }
-      if (completition==-0x9c) 
+      if (completition==-0x9c)
         errorp(0, "nwfile.c", "LINE=%d, unixname='%s'", __LINE__, unixname);
     } else fhandle=-0x81; /* no more File Handles */
   } else fhandle=completition;
-  
+
   MDEBUG(D_FH_OPEN, {
     char fname[200];
     if (!fd_2_fname(fhandle, fname, sizeof(fname))){
       FILE_HANDLE *fh=fd_2_fh(fhandle);
       xdprintf(1,0,"Open/creat fd=%3d, task=%d, fn=`%s`, openmode=%s, access=0x%x, no reuse=%d",
-          fhandle, task, fname, (fh && (fh->fh_flags &FH_OPENED_RO)) ? "RO" : "RW", 
+          fhandle, task, fname, (fh && (fh->fh_flags &FH_OPENED_RO)) ? "RO" : "RW",
           access, fh->fh_flags & FH_DO_NOT_REUSE ? 1 :0 );
     }
   })
@@ -541,13 +585,13 @@ int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
 
 int nw_close_file(int fhandle, int reset_reuse, int task)
 {
-  XDPRINTF((5, 0, "nw_close_file handle=%d, count_fhandles",
+  XDPRINTF((5, 0, "nw_close_file handle=%d, count_fhandles=%d",
      fhandle, count_fhandles));
 
   MDEBUG(D_FH_OPEN, {
     char fname[200];
     int r=fd_2_fname(fhandle, fname, sizeof(fname));
-    xdprintf(1,0,"nw_close_f fd=%3d, task=%d, fn=`%s`,r=%d, rreuse=%d", 
+    xdprintf(1,0,"nw_close_f fd=%3d, task=%d, fn=`%s`,r=%d, rreuse=%d",
              fhandle, task, fname, r, reset_reuse);
   })
 
@@ -555,16 +599,17 @@ int nw_close_file(int fhandle, int reset_reuse, int task)
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (reset_reuse) fh->fh_flags &= (~FH_DO_NOT_REUSE);
     else if (fh->task != task) {
-    /* if close file's task is wrong the file will not be closed.   
+    /* if close file's task is wrong the file will not be closed.
      * I hope this is right !?
      */
        char fname[200];
-       int r=fd_2_fname(fhandle, fname, sizeof(fname));
-       xdprintf(2, 0,"%s close_file fd=%3d, task=%d differs fh->task=%d, fn=`%s`", 
+       fd_2_fname(fhandle, fname, sizeof(fname));
+       xdprintf( (task && fh->task) ? 2 : 3, 0,
+               "%s close_file fd=%3d, task=%d differs fh->task=%d, fn=`%s`",
              (task == 0 || fh->task == 0) ? "do" : "not",
              fhandle, task, fh->task, fname);
-    
-    /*  
+
+    /*
      * return(0); 24-May-98 , 0.99.pl9
      */
 
@@ -573,14 +618,14 @@ int nw_close_file(int fhandle, int reset_reuse, int task)
      *  and closes it with task <> 0.
      */
 
-    /*  23-May-99: 0.99.pl16 we only close file if task = 0 or 
+    /*  23-May-99: 0.99.pl16 we only close file if task = 0 or
      *  file open task = 0.
      */
-     
+
      if ( task && fh->task )
-        return(0); 
+        return(0);
     }
-    
+
     if (--fh->inuse > 0)  /* 03-Dec-98 */
        return(0);
 
@@ -599,9 +644,14 @@ int nw_close_file(int fhandle, int reset_reuse, int task)
           fh->p_mmap = NULL;
           fh->size_mmap = 0;
         }
+        if (fh->st_ino) {
+          /* changed by: Ingmar Thiemann <ingmar@gefas.com> */
+          share_unlock_all( fh->st_dev, fh->st_ino, fh->fd );
+        }
         result=close(fh->fd);
         if (fh->st_ino) {
-          share_file(fh->st_dev, fh->st_ino, 0);
+          /* changed by: Ingmar Thiemann <ingmar@gefas.com> */
+          share_file(fh->st_dev, fh->st_ino, fh->access&0xff, 0);
           if (fh->modified) {
             fh->modified=0;
 #if NEW_ATTRIB_HANDLING
@@ -720,7 +770,6 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
 #if 1
         fd_set fdin;
         struct timeval t;
-        int result;
         FD_ZERO(&fdin);
         FD_SET(fh->fd, &fdin);
         t.tv_sec  = 5;  /* should be enough */
@@ -756,21 +805,33 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
         }
 #endif
       } else if (use_mmap && fh->p_mmap) {
-        while (1) {
-          if (offset < fh->size_mmap) {
-            if (size + offset > fh->size_mmap)
-                 size =  fh->size_mmap - offset;
-            memcpy(data, fh->p_mmap+offset, size);
-            if (got_sig_bus) {
-              fh->size_mmap = lseek(fh->fd, 0L, SEEK_END);
-              got_sig_bus   = 0;
-            } else
+        /* added by: Ingmar Thiemann <ingmar@gefas.com>
+         * Netware allows no read/write on locked sections
+         */
+        /* check for lock */
+        struct flock flockd;
+        flockd.l_type   = F_WRLCK;
+        flockd.l_whence = SEEK_SET;
+        flockd.l_start  = offset;
+        flockd.l_len    = size;
+        fcntl(fh->fd, F_GETLK, &flockd);
+        if (flockd.l_type == F_UNLCK) {
+          while (1) {
+            if (offset < fh->size_mmap) {
+              if (size + offset > fh->size_mmap)
+                size =  fh->size_mmap - offset;
+              memcpy(data, fh->p_mmap+offset, size);
+              if (got_sig_bus) {
+                fh->size_mmap = lseek(fh->fd, 0L, SEEK_END);
+                got_sig_bus   = 0;
+              } else
+                break;
+            } else {
+              size=-1;
               break;
-          } else {
-            size=-1;
-            break;
-          }
-        } /* while */
+            }
+          } /* while */
+        } else size = -0x93; /* no read privileges */
       } else {
         if (fh->offd != (long)offset) {
           fh->offd=lseek(fh->fd, offset, SEEK_SET);
@@ -779,11 +840,23 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
           }
         }
         if (fh->offd > -1L) {
-          if ((size = read(fh->fd, data, size)) > -1) {
-            fh->offd+=(long)size;
-          } else {
-            XDPRINTF((5,0,"read-file failed in read"));
-          }
+          /* added by: Ingmar Thiemann <ingmar@gefas.com>
+          * Netware allows no read/write on locked sections
+          */
+          /* check for lock */
+          struct flock flockd;
+          flockd.l_type   = F_WRLCK;
+          flockd.l_whence = SEEK_SET;
+          flockd.l_start  = offset;
+          flockd.l_len    = size;
+          fcntl(fh->fd, F_GETLK, &flockd);
+          if (flockd.l_type == F_UNLCK) {
+            if ((size = read(fh->fd, data, size)) > -1) {
+              fh->offd+=(long)size;
+            } else {
+              XDPRINTF((5,0,"read-file failed in read"));
+            }
+          } else size = -0x93; /* no read privileges */
         } else size = -1;
       }
       if (size == -1) size=0;
@@ -830,10 +903,24 @@ int nw_write_file(int fhandle, uint8 *data, int size, uint32 offset)
             fh->offd = lseek(fh->fd, offset, SEEK_SET);
         if (size) {
           if (fh->offd > -1L) {
-            size = write(fh->fd, data, size);
-            fh->offd+=(long)size;
-            if (!fh->modified)
-              fh->modified++;
+            /* added by: Ingmar Thiemann <ingmar@gefas.com>
+             * Netware allows no read/write on locked sections
+             */
+            /* check for lock */
+            struct flock flockd;
+            flockd.l_type   = F_WRLCK;
+            flockd.l_whence = SEEK_SET;
+            flockd.l_start  = offset;
+            flockd.l_len    = size;
+            fcntl(fh->fd, F_GETLK, &flockd);
+            if (flockd.l_type == F_UNLCK) {
+             /*if (share_lock( fh->st_dev, fh->st_ino, fh->fd, 2, offset, size ) == 0) {*/
+              
+              size = write(fh->fd, data, size);
+              fh->offd+=(long)size;
+              if (!fh->modified)
+                fh->modified++;
+            } else size = -0x94; /* no write privileges */
           } else size = -1;
           return(size);
         } else {  /* truncate FILE */
@@ -892,48 +979,60 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
   return(-0x88); /* wrong filehandle */
 }
 
-int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock)
+int nw_log_physical_record(int fhandle, uint32 offset, 
+                           uint32 size, int lock_flag)
 {
   int result=-0x88;  /* wrong filehandle */
   if (fhandle > HOFFS && (fhandle <= count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
-      struct flock flockd;
       if (fh->fh_flags & FH_IS_PIPE) {
         result=0;
         goto leave;
       }
-      flockd.l_type   = (do_lock)
-                         ? ((fh->fh_flags & FH_OPENED_RO) ?  F_RDLCK
-                                                          :  F_WRLCK)
-                         : F_UNLCK;
-      flockd.l_whence = SEEK_SET;
-#if 0
-      flockd.l_start  = offset;
-#else
-      /* Hint from:Morio Taneda <morio@sozio.geist-soz.uni-karlsruhe.de>
+      /* Changed by: Ingmar Thiemann <ingmar@gefas.com>
+       * locks must be exclusiv, so it must always be F_WRLCK
+       *
+       * Hint from:Morio Taneda <morio@sozio.geist-soz.uni-karlsruhe.de>
        * dBase needs it
        * 03-Dec-96
+       *
+       * flockd.l_start  = (offset & 0x7fffffff);
+       *
+       * Changed by: Ingmar Thiemann <ingmar@gefas.com> to 0x0fffffff 
+       * Changed by mst: 05-Oct-99 to 0x7fffffff again.
+       *
+       * if (size == MAX_U32) 
+       * size = 0;
+       * This is only a guess, but a size of 0xffffffff means to lock
+       * the rest of the file, starting from the offset, to do this with
+       * linux, a size of 0 has to be passed to the fcntl function.
+       * ( Peter Gerhard )
        */
-      flockd.l_start  = (offset & 0x7fffffff);
-#endif
+      result = share_lock( fh->st_dev, 
+                           fh->st_ino, 
+                           fh->fd, 
+                           (lock_flag < 0) 
+                             ? 0   /* remove lock */
+                             : 1,  /* add lock    */
+                           
+                           (lock_flag < 0)
+                             ? lock_flag
+                             : ( (fh->fh_flags & FH_IS_READONLY)  
+                                    ? 3  /* no exclusiv lock */
+                                    : lock_flag ),
 
-      if (size == MAX_U32) {
-       /*  This is only a guess, but a size of 0xffffffff means to lock
-        *  the rest of the file, starting from the offset, to do this with
-        *  linux, a size of 0 has to be passed to the fcntl function.
-        *  ( Peter Gerhard )
-        *
-        */
-        flockd.l_len  = 0;
-      } else
-        flockd.l_len  = (size & 0x7fffffff);
+                             offset & 0x7fffffff,
 
-      result = fcntl(fh->fd, F_SETLK, &flockd);
-      XDPRINTF((4, 0,  "nw_%s_datei result=%d, fh=%d, offset=%d, size=%d",
-        (do_lock) ? "lock" : "unlock", result, fhandle, offset, size));
+                           (size==MAX_U32) 
+                             ?  0
+                             :  size & 0x7fffffff);
+              
+      XDPRINTF((4, 0,  "nw_log_phy_rec:flag=%2d, result=%d, fh=%d, offset=%d, size=%d",
+         lock_flag, result, fhandle, offset, size));
+      
       if (result)
-         result= (do_lock) ? -0xfe : -0xff;
+         result= (lock_flag > -1) ? -0xfe : -0xff;
        /* 0.99.pl0: changed -0xfd -> -0xfe, hint from Przemyslaw Czerpak */
     } else if (fh->fd == -3) result=0;
   }
@@ -941,9 +1040,8 @@ leave:
   MDEBUG(D_FH_LOCK, {
     char fname[200];
     (void)fd_2_fname(fhandle, fname, sizeof(fname));
-    xdprintf(1,0,"nw_%s_datei: fd=%d, fn=`%s`,r=0x%x, offs=%d, len=%d",
-              (do_lock) ? "lock" : "unlock",
-              fhandle, fname, -result, offset, size);
+    xdprintf(1,0,"nw_log_phy_rec:flag=%2d, fd=%d, fn=`%s`,r=0x%x, offs=%d, len=%d",
+              lock_flag, fhandle, fname, -result, offset, size);
   })
 
   return(result);
@@ -1000,8 +1098,9 @@ void log_file_module(FILE *f)
 
 /* quick and dirty hack for 0.99.pl17, 25-May-99 */
 
-
 typedef struct sLOCK_AREA {
+  int                 locks;     /* count locks       */
+  int                 exclusive; /* exclusive lock  ? */
   uint32              offset;
   struct sLOCK_AREA   *next;
 } LOCK_AREA;
@@ -1039,25 +1138,45 @@ static LOCK_FILE *find_lockfile(char *fn)
   return(lf);
 }
 
-int nw_log_record(int lock_flag,
-                  int timeout,
-                  int len,
-                  uint8 *data)
+int nw_log_logical_record(int lock_flag,
+                         int timeout,
+                         int len,
+                         uint8 *data)
+/*
+ *   lock_flag
+ *   -1 = remove lock
+ *   -2 = remove lock + log 
+ *    0 = log               
+ *    1 = lock exclusive
+ *    3 = shared lock
+*/
 {
   static char *path_share_lock_files=NULL;
-  uint8  fn[200];
-  uint8  fullpath[300];
+  uint8  fn[256];
+  uint8  fullpath[400];
   uint32 offset;
   LOCK_FILE  *lf  = NULL;
   LOCK_AREA  *la  = NULL;
   struct flock flockd;
   flockd.l_whence = SEEK_SET;
-  flockd.l_type   = (lock_flag!= -1)
-                         ? F_WRLCK
-                         : F_UNLCK;
-  flockd.l_whence = SEEK_SET;
   flockd.l_len    = 1;
-  
+
+  if (lock_flag != -1) {
+    if (share_set_logrec_add_rm(lock_flag, timeout, len, data))
+      return (-0xff);
+  }
+  if (!lock_flag) 
+     return(0);  /* log only */
+
+  if (lock_flag == -1 || lock_flag == -2)
+    flockd.l_type = F_UNLCK;
+  else if (lock_flag == 1)
+    flockd.l_type = F_WRLCK;   /* exclusive */
+  else if (lock_flag == 3)
+    flockd.l_type = F_RDLCK;  /* shared */
+  else
+    return(-0xfb);
+
   if (len < 4) {
     uint8 buf[4];
     memcpy(buf, data, len);
@@ -1068,25 +1187,33 @@ int nw_log_record(int lock_flag,
     offset=GET_BE32(data);
     len -= 4;
   }
-  
+
   flockd.l_start  = offset;
-  
+
   if (len > 0) {
-    int i;
+    int i=-1;
     if (len > sizeof(fn))
-      len=sizeof(fn-1);
+      len = sizeof(fn-1);
     memcpy(fn, data+4, len);
-    fn[len]='\0';
-    for (i=0; i< len; ++i) {
-      if (fn[i]=='/') fn[i]='-';
+    while (++i < len) {
+      if (fn[i]=='/') {
+        fn[i] = '-';
+        if (len < sizeof(fn-1))
+          fn[len++] = '_';
+      } else if (fn[i] == '\0') {
+        fn[i] = '_';
+        if (len < sizeof(fn-1))
+          fn[len++] = '_';
+      }
     }
+    fn[len]='\0';
   } else {
     strcpy(fn, "GENERIC_LOCKFILE");
   }
 
   if (NULL==path_share_lock_files) {
     char buff[300];
-    if (get_ini_entry(NULL, 41, buff, sizeof(buff)) && *buff) 
+    if (get_ini_entry(NULL, 41, buff, sizeof(buff)) && *buff)
       new_str(path_share_lock_files, buff);
     else
       new_str(path_share_lock_files, "/var/spool/nwserv/.locks");
@@ -1094,24 +1221,24 @@ int nw_log_record(int lock_flag,
     unx_xmkdir(path_share_lock_files, 0755);
     reseteuid();
   }
-  
+
   sprintf(fullpath,"%s/%s.k", path_share_lock_files, fn);
 
   lf = find_lockfile(fn);
 
   if (!lf) {
     int fd;
-    if (lock_flag == -1)  /* unlock */
+    if (lock_flag  < 0)  /* unlock */
       return(-0xff);
-    
+
     seteuid(0);
-    fd = open(fullpath, O_RDWR|O_CREAT, 0600); 
+    fd = open(fullpath, O_RDWR|O_CREAT, 0600);
     reseteuid();
-    
+
     if (fcntl(fd, F_SETLK, &flockd))
       /* already locked by other process */
       return(-0xfe);
-    
+
     lf=(LOCK_FILE*)xcmalloc(sizeof(LOCK_FILE));
     lf->fd = fd;
     new_str(lf->fn,  fn);
@@ -1122,33 +1249,41 @@ int nw_log_record(int lock_flag,
   }
 
   la = find_lockarea(lf, offset);
+
   if (!la) {
-    if (lock_flag == -1) /* unlock */
+    if (lock_flag < 0) /* unlock */
       return (-0xff);
-    
+
     if (fcntl(lf->fd, F_SETLK, &flockd))
       /* already locked by other process */
       return(-0xfe);
 
-    la=(LOCK_AREA*)xcmalloc(sizeof(LOCK_AREA));
+    la = (LOCK_AREA*)xcmalloc(sizeof(LOCK_AREA));
     la->offset=offset;
     if (last_la)
       last_la->next =  la;
     else
       lf->lock_area =  la;
-  } else if (lock_flag != -1) {
+    la->locks++;
+    if (lock_flag == 1)
+      la->exclusive++;
+  } else if (lock_flag >  -1) {
+    if (la->exclusive || lock_flag == 1)
     /* already locked */
-    return(-0xfe);
+      return(-0xfe);
+    la->locks++;
   }
 
-  if (lock_flag == -1) {  /* remove lock */
+  if (lock_flag < 0) {  /* remove lock */
+    if (--la->locks > 0)
+       return(0);
     (void) fcntl(lf->fd, F_SETLK, &flockd);
     if (last_la)
       last_la->next = la->next;
-    else 
+    else
       lf->lock_area = la->next;
     xfree(la);
-    
+
     if (!lf->lock_area) {
       /* no more locks by this file */
       close(lf->fd);
@@ -1158,7 +1293,7 @@ int nw_log_record(int lock_flag,
       unlink(fullpath);
       reseteuid();
 #endif
-      
+
       xfree(lf->fn);
       if (last_lf)
         last_lf->next = lf->next;

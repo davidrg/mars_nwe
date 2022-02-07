@@ -1,6 +1,6 @@
-/*  tools.h : 24-May-98    */
+/*  tools.h : 13-Apr-00   */
 
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993-2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -66,9 +66,6 @@ extern char *hex_str(char *buf, uint8 *s, int len);
 
 extern int name_match(uint8 *s, uint8 *p);
 
-extern uint8  *station_fn;
-extern int find_station_match(int entry, ipxAddr_t *addr);
-
 extern int    nw_debug;
 extern uint32 debug_mask;
 
@@ -92,6 +89,10 @@ extern time_t act_time;     /* actual time */
 extern int fixed_sprintf(char *buf, char *p, ...);
 #define sprintf fixed_sprintf
 #endif
+
+extern int slprintf(char *buf, int bufsize, char *p, ...);
+
+extern char *gettmpstr(char *qs, int len, int extralen);
 
 #endif /* _TOOLS_H_ */
 

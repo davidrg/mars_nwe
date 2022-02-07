@@ -1,5 +1,5 @@
-/* tools.c  31-May-99 */
-/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
+/* tools.c  13-Apr-00 */
+/* (C)opyright (C) 1993-2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -226,7 +226,7 @@ void errorp(int mode, char *what, char *p, ...)
   int errnum      = errno;
   FILE *lologfile = logfile;
   char errbuf[200];
-  char *errstr    = errbuf;
+  const char *errstr = errbuf;
   if (mode > 9) {
     errnum = -1;
     mode  -= 10;
@@ -714,41 +714,6 @@ int name_match(uint8 *s, uint8 *p)
   return ( (*s) ? 0 : 1);
 }
 
-uint8  *station_fn=NULL;
-
-int find_station_match(int entry, ipxAddr_t *addr)
-{
-  int matched = 0;
-  if (station_fn && *station_fn) {
-    FILE *f=fopen((char*)station_fn, "r");
-    if (f) {
-      uint8  buff[200];
-      uint8  addrstring[100];
-      int   what;
-      ipx_addr_to_adr((char*)addrstring, addr);
-      upstr(addrstring);
-      while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))){
-        if (what == entry) {
-          uint8  *p = buff + strlen((char*)buff);
-          while (p-- > buff && *p==32) *p='\0';
-          upstr(buff);
-          if (name_match(addrstring, buff)) {
-            matched=1;
-            break;
-          }
-        }
-      }
-      fclose(f);
-    } else {
-      XDPRINTF((3, 0, "find_station_match, cannot open '%s'",
-           station_fn));
-    }
-  }
-  XDPRINTF((3, 0, "find_station_match entry=%d, matched=%d, addr=%s",
-          entry, matched, visable_ipx_adr(addr)));
-  return(matched);
-}
-
 #ifndef LINUX
 /* UnixWare needs fixed sprintf function :-( */
 int fixed_sprintf(char *buf, char *p, ...)
@@ -761,5 +726,38 @@ int fixed_sprintf(char *buf, char *p, ...)
 }
 #endif
 
+/* to be compatible with new 'SAMBA trustee code' */
+int slprintf(char *buf, int bufsize, char *p, ...)
+{
+  va_list ap;
+  int len;
+  va_start(ap, p);
+  len = vsnprintf(buf, bufsize+1, p, ap);
+  va_end(ap);
+  if (len > bufsize || len < 0) {
+    buf[bufsize] = 0;
+    return(-1);
+  }
+  buf[len] = 0;
+  return(len);
+}
 
+#define MAX_TMP_STRINGS 3
+static char *tmpstr[MAX_TMP_STRINGS]={NULL};
+static int tmpstrcounter=0;
+
+char *gettmpstr(char *qs, int len, int extralen)
+{
+  char *s;
+  if (tmpstr[tmpstrcounter])
+    free(tmpstr[tmpstrcounter]);
+  extralen += (len+1);
+  s = tmpstr[tmpstrcounter] = xmalloc(extralen);
+  if (len)
+    memcpy(s, qs, len);
+  s[len] = '\0';
+  if (++tmpstrcounter==MAX_TMP_STRINGS)
+    tmpstrcounter=0;
+  return(s);
+}
 

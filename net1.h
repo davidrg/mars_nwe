@@ -1,6 +1,6 @@
-/* net1.h 25-Oct-96 */
+/* net1.h 19.09.99 */
 
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993-99 Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,5 +47,8 @@ extern int send_own_data(int fd, IPX_DATA *d, ipxAddr_t *toaddr);
 extern int send_own_reply(int fd, int result, int sequence, ipxAddr_t *toaddr);
 
 extern int get_ipx_addr(ipxAddr_t *addr);
+
+extern uint8  *station_fn;
+extern int find_station_match(int entry, ipxAddr_t *addr);
 
 #endif

@@ -1,4 +1,4 @@
-/* emutli.h 11-Jul-98 */
+/* emutli.h 18-Nov-99 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -35,7 +35,11 @@
 #else
 # include <linux/types.h>
 # include <netinet/in.h>
-# include <linux/ipx.h>
+# ifdef _GNU_SOURCE_
+#  include <netipx/ipx.h>
+# else
+#  include <linux/ipx.h>
+# endif
 #endif
 
 typedef unsigned char       uint8;

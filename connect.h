@@ -1,4 +1,4 @@
-/* connect.h 23-May-99 */
+/* connect.h 04-Apr-00 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
 
@@ -175,7 +175,7 @@ extern int alter_dir_handle(int targetdir, int volume, uint8 *path,
 extern int nw_set_dir_handle(int targetdir, int dir_handle,
                              uint8 *data, int len, int task);
 
-extern int nw_get_directory_path(int dir_handle, uint8 *name);
+extern int nw_get_directory_path(int dir_handle, uint8 *name, int size_name);
 
 extern int nw_get_vol_number(int dir_handle);
 
@@ -208,11 +208,13 @@ extern int     act_gid;
 extern int     act_obj_id;   /* not login == 0             */
 extern int     act_id_flags; /* &1 == supervisor equivalence !!! */
 extern int     entry8_flags; /* special flags, see examples nw.ini, entry 8 */
+extern int     entry31_flags; /* special flags, see examples nw.ini, entry 31 */
 
 extern int conn_get_full_path(int dirhandle, uint8 *data, int len,
-                          uint8 *fullpath);
+                          uint8 *fullpath, int size_fullpath);
 
 extern int conn_get_kpl_unxname(char *unixname,
+                         int size_unixname,
                          int dirhandle,
                          uint8 *data, int len);
 
@@ -277,5 +279,11 @@ extern int nw_scan_for_trustee( int    dir_handle,
                          uint32 *ids,
                          int    *trustees,
                          int     extended);
+
+extern int nw_log_file(int lock_flag,
+                  int timeout,
+                  int dir_handle,
+                  int len,
+                  char *data);
 
 #endif

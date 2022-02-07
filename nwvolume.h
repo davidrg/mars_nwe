@@ -1,5 +1,5 @@
-/* nwvolume.h  09-Nov-98 */
-/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
+/* nwvolume.h  09-Oct-99 */
+/* (C)opyright (C) 1993-1999  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -112,7 +112,7 @@ extern void nw_setup_vol_opts(int act_gid, int act_uid,
                        uint8 *unxlogin);
 
 extern int  nw_get_volume_number(uint8 *volname, int namelen);
-extern int  nw_get_volume_name(int volnr, uint8 *volname);
+extern int  nw_get_volume_name(int volnr, uint8 *volname, int size_volname);
 
 extern int  get_volume_umode_dir(int volnr);
 extern int  get_volume_umode_file(int volnr);
@@ -120,7 +120,7 @@ extern int  get_volume_umode_file(int volnr);
 extern int  nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu, int limit);
 extern int  get_volume_options(int volnr);
 extern int  get_volume_inode(int volnr, struct stat *stb);
-extern int  get_volume_unixname(int volnr, uint8 *unixname);
+extern int  get_volume_unixnamlen(int volnr);
 
 extern int  nw_set_vol_restrictions(uint8 volnr, int uid, uint32 quota);
 extern int  nw_get_vol_restrictions(uint8 volnr, int uid, uint32 *quota, uint32 *inuse);

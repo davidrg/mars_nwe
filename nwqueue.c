@@ -911,7 +911,7 @@ int nw_creat_queue(int q_typ, uint8 *q_name, int q_name_len,
       *path=0;
       upstr(q_directory);
     } else {
-      strcpy(q_directory, "SYS:SYSTEM");
+      xstrcpy(q_directory, "SYS:SYSTEM");
       path_len=10;
       path=q_directory+path_len;
     }
@@ -996,7 +996,7 @@ void init_queues(int entry18_flags_p)
   strmaxcpy(buf, sys_unixname, sys_unixnamlen);
   XDPRINTF((3,0, "init_queues:unixname='%s'", buf));
   obj.type = 3; /* queue */
-  strcpy(obj.name, wild);
+  xstrcpy(obj.name, wild);
   
   result = scan_for_obj(&obj, last_obj_id, 1);
   while (!result) {
@@ -1015,7 +1015,7 @@ void init_queues(int entry18_flags_p)
       r_w_queue_jobs(que, 0);
     }
     last_obj_id=obj.id;
-    strcpy(obj.name, wild);
+    xstrcpy(obj.name, wild);
     result = scan_for_obj(&obj, last_obj_id, 1);
   }
 }

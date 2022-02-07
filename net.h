@@ -20,15 +20,20 @@
 #ifndef _M_NET_H_
 #define _M_NET_H_
 
-#define _XOPEN_SOURCE  1
+#ifndef _XOPEN_SOURCE
+# define _XOPEN_SOURCE  1
+#endif
 #define _SVID_SOURCE   1
-
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>  /* moved 12-May-98 0.99.pl9 */
 
 #include <signal.h>
+#ifdef __USE_BSD
+# undef signal
+# define signal sysv_signal
+#endif
 #include <string.h>
 
 #ifndef LINUX

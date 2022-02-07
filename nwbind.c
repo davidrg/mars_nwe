@@ -1,9 +1,9 @@
 /* nwbind.c */
-#define REVISION_DATE "03-Jun-99"
+#define REVISION_DATE "15-Apr-00"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message and queue handling */
 
-/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993,2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1362,7 +1362,7 @@ static void handle_fxx(int gelen, int func)
      case 0x7B:   /* Change Queue Job Entry */
                   {
                     uint32 q_id   = GET_BE32(rdata);
-     		    uint32 job_id = GET_BE16(rdata+4);
+     		 /*   uint32 job_id = GET_BE16(rdata+4); */
                     int result    = nw_change_queue_job_entry(q_id, rdata+4);
                     if (result < 0)  
                       completition=(uint8)-result;
@@ -1545,7 +1545,8 @@ static void handle_fxx(int gelen, int func)
                   break;
     }  /* switch */
   } else if (func == 0x18) {  /* End of Job */
-    nw_close_connection_jobs(act_connection, ncprequest->task); /* close print jobs */
+    if (!(entry8_flags&0x200)) /* pcz: 14-Apr-00 */
+      nw_close_connection_jobs(act_connection, ncprequest->task); /* close print jobs */
   } else if (func == 0x19) {  /* logout */
     nw_close_connection_jobs(act_connection, -1);  /* close all print jobs */
     write_utmp(0, act_connection, act_c->pid_nwconn, &(act_c->client_adr), NULL);

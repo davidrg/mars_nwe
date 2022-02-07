@@ -1,5 +1,5 @@
-/* nwdbm.h 29-Apr-98 */
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* nwdbm.h 14-Apr-00 */
+/* (C)opyright (C) 1993,2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -78,6 +78,7 @@ extern uint8 *sys_sysname;  /* Name of first Volume, normally SYS */
 
 extern uint32 network_serial_nmbr;
 extern uint16 network_appl_nmbr;
+extern int entry8_flags; 
 
 #define PW_SCHEME_CHANGE_PW       1
 #define PW_SCHEME_LOGIN		  2
@@ -216,6 +217,7 @@ extern void nw_exit_dbm(void);
 
 extern int do_export_dbm(char *path);
 extern int do_import_dbm(char *path);
+extern int do_export_dbm_to_dir(void);
 
 
 #endif

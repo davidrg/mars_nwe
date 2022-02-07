@@ -1,6 +1,8 @@
 Sorry, beginning is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 23-May-99
+Aenderungen in mars_nwe bis zum: 
+Changes in mars_nwe till:
+=>  13-Apr-00 <=
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -419,7 +421,7 @@ Erste 'oeffentliche' Version
 - prop_delete_member changed to avoid holes (id==0) in a set section.
 - bindery function creat_new_db() now saves old files to xyz/nwdbm.sav/.
 <----- ^^^^^^^^^^ pl7 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-- queue code changed. WinNT did not print every job.  
+- queue code changed. WinNT did not print every job.
   should also solve some strange problems under W95 and dos clients.
 - old dos search routine is now reused again for namespace calls, because
   new dos search routine from Andrew did not work with this calls.
@@ -432,7 +434,7 @@ Erste 'oeffentliche' Version
 - nwqueue.c: nw_service_queue_job()
   queue files of length 0 are now deleted automaticly 1 minute
   after creation, if they are serviced by a queue server.
-- nwqueue.c: new: nw_close_connection_jobs() 
+- nwqueue.c: new: nw_close_connection_jobs()
 - nwqconn.c: new: free_connection_task_jobs()
 - added first simple trustee routines. ( new volume switch 't' )
   see doc/TRUSTEES
@@ -448,15 +450,15 @@ Erste 'oeffentliche' Version
 <----- ^^^^^^^^^^ pl9 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - changed call 0x17, 0x0f, to let it handle only files not directories.
   (mask 0x10 attrib flag )
-- new dos search routine (from pl7) changed to handle '*' correct, for 
-  example the call 0x17, 0x0f is called by syscons change file trustees 
-  with '*' as searchstring. Also changed to handle '*xyz.xyz' in a 
-  more restrictive way. I hope this is correct now. 
+- new dos search routine (from pl7) changed to handle '*' correct, for
+  example the call 0x17, 0x0f is called by syscons change file trustees
+  with '*' as searchstring. Also changed to handle '*xyz.xyz' in a
+  more restrictive way. I hope this is correct now.
 <----- ^^^^^^^^^^ pl10 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - ncp call 0x7a (read queue job entry (new)) is now availible.
 <----- ^^^^^^^^^^ pl11 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - changed default bindery directory location:
-  /etc  -> /var/nwserv/db  ( section 45 ) 
+  /etc  -> /var/nwserv/db  ( section 45 )
 - possibility to unset the print banner flag.
   ( some strange W95 printer drivers always set banner flag to TRUE )
 - port to FreeBSD by Boris Popov <bp@butya.kz>
@@ -473,35 +475,35 @@ Erste 'oeffentliche' Version
 - nw_close_file() now closes files again which were opened
   with different task. ( was inserted in pl9 )
 - open_creat_queue_file() routine only sets the file noreuse flag
-  if file is opened for writing.  
+  if file is opened for writing.
 - fn_dos_match routine corrected, was broken in pl7. ( ndir.exe works again )
 <----- ^^^^^^^^^^ pl13 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - now section 1 permissions works for '~' ('HOME') entries too
 - get_fs_usage now also sets fsu_bavail to limit.
-- new flag 'T' for volumes which has trustees & ignore the rights granted 
+- new flag 'T' for volumes which has trustees & ignore the rights granted
   in UN*X filesystem, added by Norbert Nemec <nobbi@cheerful.com>
 - added 'inherited_rights_mask handling' to some routines.
 - nwfile.c. Filehandle can now be used for more than one open.
-  Don't know whether this is correct. Under W95 client the dos 
+  Don't know whether this is correct. Under W95 client the dos
   programm 'blinker' needs it.
 - nw_rmdir() in connect.c now returns correct error code if directory
   cannot be removed because it is not empty.
 <----- ^^^^^^^^^^ pl14 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - doc/PIPE-FS.ger with new examples from Sascha Herrmann
-- added '#define _SVID_SOURCE' and '#define _XOPEN_SOURCE' 
+- added '#define _SVID_SOURCE' and '#define _XOPEN_SOURCE'
   in net.h to let mars_nwe work with glibc.
-- connect.c, free_dir_stuff(), correcting error when recursively deleting a 
+- connect.c, free_dir_stuff(), correcting error when recursively deleting a
   largish directory tree, hint from Boris Popov, 21-Feb-99.
 - Get Queue Job List (new) now returns info in right byte order.
-  Error appeared under Win9x with Novell Client32 when printing. 
+  Error appeared under Win9x with Novell Client32 when printing.
   ( segmentation error in spool32 ) bug corrected by georg@globaltrading.net.
 <----- ^^^^^^^^^^ pl15 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - docs from Mendel Mobach (xxx.nl)
 - some fixes to let mars_nwe compile under 2.2.x kernels.
 - some BSD fixes from Boris Popov
-- fix from Paolo Prandini for the wrong return code when an user without 
+- fix from Paolo Prandini for the wrong return code when an user without
   supervisory rights tries to shutdown the server
-- nw_open_creat_file_or_dir() now does not creat file if called with 
+- nw_open_creat_file_or_dir() now does not creat file if called with
   opencreatmode==8 and file already exist.  ( important for Win98 )
 - dos 'rename files' now works with wildcards on both side (source and dest)
 - nw_close_file() normally do not close files which were opened
@@ -516,4 +518,16 @@ Erste 'oeffentliche' Version
 - rename file corrected. Error inserted in 0.99.pl16
 - small patch in tools.c ( initialisation of logfile )
 <----- ^^^^^^^^^^ pl17 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- prevent some possible buffer overflows.
+  security hint from Przemyslaw Frasunek <venglin@FREEBSD.LUBLIN.PL>
+- better file share/lockings, with code from
+  Ingmar Thiemann <ingmar@gefas.com> and Przemyslaw Czerpak
+- function Log Logical Record (NCP 0x9) aktivated
+  and lock flag 0x2 ( sharable ro lock ) added.
+- function Log File (NCP 0x3) aktivated
+  and lock flag 0x2 ( sharable ro lock ) added.
+- Clear File / Release File added.
+- passwords with '-' at beginning should now be allowed in nwserv.conf.
+- better trustee handling.
+<----- ^^^^^^^^^^ pl18 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

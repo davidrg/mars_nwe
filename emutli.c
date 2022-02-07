@@ -1,4 +1,4 @@
-/* emutli.c 23-Jul-98 */
+/* emutli.c 04-Apr-00 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -31,7 +31,7 @@
 #include <errno.h>
 
 #ifndef DO_IPX_SEND_TEST 
-# define DO_IPX_SEND_TEST 2
+# define DO_IPX_SEND_TEST 0
 #endif
 
 /* DO_IPX_SEND_TEST is only needed if the ipx sendmsg() bug is not patched
@@ -215,15 +215,14 @@ int poll( struct pollfd *fds, unsigned long nfds, int timeout)
      p->revents=0;
      p++;
    }
-   if (timeout >= 1000) {
-     time_out.tv_sec    = timeout / 1000;
-     time_out.tv_usec   = 0;
-   } else {
-     time_out.tv_sec    = 0;
-     time_out.tv_usec   = timeout*1000;
-   }
-   if (0 > (result = select(high_f+1, &readfs, NULL, NULL, &time_out)))
+
+   /* mst:04-Apr-00, patch from (Jukka Ukkonen) */
+   time_out.tv_sec  = timeout / 1000;
+   time_out.tv_usec = (timeout % 1000) * 1000;
+   if (0 > (result = select(high_f+1, &readfs, NULL, NULL, 
+                        (timeout == -1) ? NULL : &time_out)))
      return(-1);
+
    if (result) {
      int rest=result;
      k = (int)nfds;

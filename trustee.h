@@ -1,4 +1,4 @@
-/* trustee.h  10-May-98 */
+/* trustee.h  13-Apr-00 */
 #ifndef _TRUSTEE_H_
 #define _TRUSTEE_H_
 
@@ -13,6 +13,9 @@
 #define TRUSTEE_M    0x80  /* Modify filename, attrib rights  */
 /* ......extended Trustees ................. */
 #define TRUSTEE_S   0x100  /* Supervisor rights     */
+
+/* mars_nwe only, idea and patches from Christoph Scheeder  */
+#define TRUSTEE_T   0x200  /* See this dir/file only */
 
 #define MAX_TRUSTEE_MASK  0x1FF
 

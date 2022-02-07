@@ -1,5 +1,5 @@
-/* trustee.c 09-Nov-98 */
-/* (C)opyright (C) 1998  Martin Stover, Marburg, Germany
+/* trustee.c 15-Apr-00 */
+/* (C)opyright (C) 1998,2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -278,12 +278,12 @@ void tru_init_trustees(int count, uint32 *grps)
 static void creat_trustee_path(int volume, int dev, ino_t inode, uint8 *path)
 /* is always called with uid = 0 */
 {
-  char   buf[255];
+  char   buf[256];
   uint8  buf_uc[4];
   char   volname[100];
-  if (nw_get_volume_name(volume, volname) < 1) return;
+  if (nw_get_volume_name(volume, volname, sizeof(volname) ) < 1) return;
   U32_TO_BE32(inode, buf_uc);
-  sprintf(buf, "%s/%s/%x/%x/%x/%x/n.%x", path_trustees, volname,
+  slprintf(buf, sizeof(buf)-1, "%s/%s/%x/%x/%x/%x/n.%x", path_trustees, volname,
             dev,
             (int) buf_uc[0],
             (int) buf_uc[1],
@@ -299,36 +299,69 @@ static int put_trustee_to_disk(int volume, int dev, ino_t inode, uint32 id, int 
 /* is always called with uid = 0 */
 /* if id=0, it means inherited_mask */
 {
-  char   buf[255];
-  char   btrustee[255];
+  char   buf[256];
+  char   btrustee[256];
   int    l;
   uint8  buf_uc[4];
   char   volname[100];
-  if (nw_get_volume_name(volume, volname) < 1) return(-0xff);
+  if (nw_get_volume_name(volume, volname, sizeof(volname) ) < 1) return(-0xff);
   U32_TO_BE32(inode, buf_uc);
-  l=sprintf(buf, "%s/%s/%x/%x/%x/%x/t.%x", path_trustees, volname,
+  l=slprintf(buf, sizeof(buf)-1, "%s/%s/%x/%x/%x/%x/t.%x", path_trustees, volname,
             dev,
             (int) buf_uc[0],
             (int) buf_uc[1],
             (int) buf_uc[2],
             (int) buf_uc[3]);
   unx_xmkdir(buf, 0755);
-  sprintf(buf+l, "/%x", (unsigned int) id);
+  slprintf(buf+l, sizeof(buf) -l -1,  "/%x", (unsigned int) id);
   unlink(buf);
-  l=sprintf(btrustee, "%04x", (unsigned int) trustee);
+  l=slprintf(btrustee, sizeof(btrustee)-1, "%04x", (unsigned int) trustee);
   return(symlink(btrustee, buf) ? -0xff : 0);
+}
+
+static int get_trustee_from_disk(int volume, int dev, ino_t inode, uint32 id, int *trustee)
+/* 
+ * if id=0, it means inherited_mask 
+ * return 0 if 0, < 0 if error
+ */
+{
+  char   buf[256];
+  char   btrustee[256];
+  int    l;
+  uint8  buf_uc[4];
+  char   volname[100];
+  if (nw_get_volume_name(volume, volname, sizeof(volname) ) < 1) 
+    return(-0xff);
+  U32_TO_BE32(inode, buf_uc);
+  slprintf(buf, sizeof(buf)-1, "%s/%s/%x/%x/%x/%x/t.%x/%x", path_trustees, volname,
+            dev,
+            (int) buf_uc[0],
+            (int) buf_uc[1],
+            (int) buf_uc[2],
+            (int) buf_uc[3],
+            (unsigned int)id);
+  l = readlink(buf, btrustee, 254);
+  if (l > 0) {
+    unsigned int utrustee=0;
+    btrustee[l]='\0';
+    if (1 == sscanf(btrustee, "%x", &utrustee)) {
+      *trustee = (int)utrustee;
+      return(0);
+    }
+  }
+  return(-0xff);
 }
 
 static int del_trustee_from_disk(int volume, int dev, ino_t inode, uint32 id)
 /* removes users id trustee */
 {
-  char   buf[255];
+  char   buf[256];
   int    result=-0xfe; /* no such trustee */
   uint8  buf_uc[4];
   char   volname[100];
-  if (nw_get_volume_name(volume, volname) < 1) return(result);
+  if (nw_get_volume_name(volume, volname, sizeof(volname) ) < 1) return(result);
   U32_TO_BE32(inode, buf_uc);
-  sprintf(buf, "%s/%s/%x/%x/%x/%x/t.%x/%x", path_trustees, volname,
+  slprintf(buf, sizeof(buf)-1, "%s/%s/%x/%x/%x/%x/t.%x/%x", path_trustees, volname,
             dev,
             (int) buf_uc[0],
             (int) buf_uc[1],
@@ -346,12 +379,12 @@ unsigned int tru_vol_sernum(int volume, int mode)
 /* mode == 0, reads sernum, else change sernum, returns new sernum */
 {
   char   volname[100];
-  char   buf[255];
+  char   buf[256];
   char   buf1[20];
   int    len;
   unsigned int sernum=0;
-  if (nw_get_volume_name(volume, volname) < 1) return(-1);
-  sprintf(buf, "%s/%s/ts", path_trustees, volname);
+  if (nw_get_volume_name(volume, volname, sizeof(volname) ) < 1) return(-1);
+  slprintf(buf, sizeof(buf)-1,  "%s/%s/ts", path_trustees, volname);
   len=readlink(buf, buf1, sizeof(buf1)-1);
   if (len>0) {
     buf1[len]='\0';
@@ -362,7 +395,7 @@ unsigned int tru_vol_sernum(int volume, int mode)
     if (++sernum==MAX_U32) sernum=1;
     seteuid(0);
     unlink(buf);
-    sprintf(buf1,"%x", sernum);
+    slprintf(buf1, sizeof(buf1)-1, "%x", sernum);
     if (symlink(buf1, buf)) 
       errorp(0, "rw_trustee_sernum", "symlink %s %s failed", buf1, buf);
     reseteuid();
@@ -374,22 +407,22 @@ unsigned int tru_vol_sernum(int volume, int mode)
 void tru_free_file_trustees_from_disk(int volume, int dev, ino_t inode)
 /* is called if directory/file is removed */
 {
-  char   buf[255];
+  char   buf[256];
   uint8  buf_uc[4];
   int    len;
   char   volname[100];
-  if (nw_get_volume_name(volume, volname) < 1) return;
+  if (nw_get_volume_name(volume, volname, sizeof(volname) ) < 1) return;
   U32_TO_BE32(inode, buf_uc);
-  len=sprintf(buf, "%s/%s/%x/%x/%x/%x/", path_trustees, volname,
+  len=slprintf(buf, sizeof(buf)-1, "%s/%s/%x/%x/%x/%x/", path_trustees, volname,
             dev,
             (int) buf_uc[0],
             (int) buf_uc[1],
             (int) buf_uc[2]);
-  sprintf(buf+len, "t.%x", (int)buf_uc[3]);
+  slprintf(buf+len, sizeof(buf) - len -1,  "t.%x", (int)buf_uc[3]);
   seteuid(0);
   unx_xrmdir(buf);
   /* now we remove the name of the dir/file */
-  sprintf(buf+len, "n.%x", (int)buf_uc[3]);
+  slprintf(buf+len, sizeof(buf) -len -1,  "n.%x", (int)buf_uc[3]);
   unlink(buf); 
   reseteuid();
 }
@@ -419,7 +452,7 @@ static FILE_TRUSTEE_NODE *create_trustee_node(int volume, int dev,
  * &0x10 dev differs from volumes dev.
  */
 {
-  char   buf[255];
+  char   buf[256];
   int    l;
   uint8  buf_uc[4];
   DIR    *d;
@@ -436,9 +469,9 @@ static FILE_TRUSTEE_NODE *create_trustee_node(int volume, int dev,
   tr->eff_rights        = -1;     /* not yet set  */
   U32_TO_BE32(inode, buf_uc);
   
-  (void)nw_get_volume_name(volume, volname);
+  (void)nw_get_volume_name(volume, volname, sizeof(volname) );
   
-  l=sprintf(buf, "%s/%s/%x/%x/%x/%x/t.%x", path_trustees, volname,
+  l=slprintf(buf, sizeof(buf)-1, "%s/%s/%x/%x/%x/%x/t.%x", path_trustees, volname,
             dev,
             (int) buf_uc[0],
             (int) buf_uc[1],
@@ -458,7 +491,8 @@ static FILE_TRUSTEE_NODE *create_trustee_node(int volume, int dev,
         int          len;
         unsigned int id;
         if (1 == sscanf(dirbuff->d_name, "%x", &id)) {
-          strcpy(p, dirbuff->d_name);
+          len = (int)(p - (uint8*)buf);
+          strmaxcpy(p, dirbuff->d_name, sizeof(buf) - len -1);
           len=readlink(buf, btrustee, 254);
           if (len > 0) {
             unsigned int utrustee=0;
@@ -518,7 +552,7 @@ int tru_get_id_trustee(int volume, uint8 *unixname, struct stat *stb, uint32 id)
   return(-0x85); 
 }
 
-int tru_add_trustee_set(int volume, uint8 *unixname, 
+static int local_tru_add_trustee_set(int volume, uint8 *unixname, 
                        struct stat *stb,
                        int count, NW_OIC *nwoic) 
 {
@@ -530,7 +564,7 @@ int tru_add_trustee_set(int volume, uint8 *unixname,
      || (act_id_flags&1) ))  {
     FILE_TRUSTEE_NODE *tr=find_trustee_node(volume, stb->st_dev, stb->st_ino);
     if (tr && (!(tr->mode_flags&0x18) || !act_uid)) {
-      int volumenamelen = get_volume_unixname(volume, NULL);
+      int volumenamelen = get_volume_unixnamlen(volume);
       uint8  ufnbuf[2];
       uint8  *ufn;
       seteuid(0);
@@ -559,7 +593,9 @@ int tru_add_trustee_set(int volume, uint8 *unixname,
       }
       creat_trustee_path(volume, stb->st_dev, stb->st_ino, ufn);
       reseteuid();
+#if 0  /* now in tru_add_trustee_set */    
       tru_vol_sernum(volume, 1);  /* trustee sernum needs updated */
+#endif      
       return(0);
     }
   }
@@ -568,6 +604,47 @@ func_err:
              act_obj_id, unixname, -result));
   tru_free_cache(-1);
   return(result); /* we say no privileges */
+}
+
+
+int tru_add_trustee_set(int volume, uint8 *unixname, 
+                       struct stat *stb,
+                       int count, NW_OIC *nwoic) 
+{
+  int result = local_tru_add_trustee_set(volume, unixname, stb, count, nwoic); 
+  if (!result) {  /* mst: 13-Apr-00 */
+    int len    = strlen(unixname);
+    int vollen = get_volume_unixnamlen(volume);
+    char *p    = unixname+len;
+    char *volp = unixname+vollen;
+    
+    seteuid(0);
+    while (--p > volp) {
+      if (*p == '/') {
+        struct stat statb;
+        *p='\0';
+        if (!stat(unixname, &statb)){
+          int i;
+          NW_OIC *poic=nwoic;
+          for (i=0; i < count; i++) {
+            int trustee = 0;
+            if (poic->id) {
+              get_trustee_from_disk(volume, statb.st_dev, statb.st_ino, poic->id, &trustee);
+              if ( !(trustee & (TRUSTEE_T|TRUSTEE_F)) ) {
+                trustee |= TRUSTEE_T;
+                put_trustee_to_disk(volume, statb.st_dev, statb.st_ino, poic->id, trustee);
+              }
+            }
+            poic++;
+          }
+        }
+        *p='/';
+      }
+    }
+    reseteuid();
+    tru_vol_sernum(volume, 1);  /* trustee sernum needs updated */
+  }
+  return (result);
 }
 
 int tru_get_trustee_set(int volume, uint8 *unixname, 
@@ -694,7 +771,7 @@ static int build_trustee_rights(FILE_TRUSTEE_NODE *tr,
 static int get_eff_rights_by_trustees(int volume, uint8 *unixname, struct stat *stb)
 /* returns the eff. rights the actual user has as real trustees */
 {
-  if ( (act_uid==1) && (act_id_flags&1))
+  if ( (act_obj_id == 1) && (act_id_flags&1))
     return(MAX_TRUSTEE_MASK); /* all rights */
   else {
     FILE_TRUSTEE_NODE *tr=find_creat_add_trustee_node(volume, unixname, stb);
@@ -706,7 +783,7 @@ static int get_eff_rights_by_trustees(int volume, uint8 *unixname, struct stat *
       (void)get_volume_inode(volume, &stb1);
       if (stb1.st_ino != stb->st_ino || stb1.st_dev != stb->st_dev) {
         /* is not volumes root */
-        int volumenamelen = get_volume_unixname(volume, NULL);
+        int volumenamelen = get_volume_unixnamlen(volume);
         char *p           = unixname+volumenamelen;
         int last_dev      = stb1.st_dev;
         int volumes_dev   = stb1.st_dev;
@@ -785,7 +862,7 @@ int tru_get_eff_rights(int volume, uint8 *unixname, struct stat *stb)
   int rights     = 0;
   int rights1    = 0;
   if (voloptions & VOL_OPTION_TRUSTEES){ 
-    rights=get_eff_rights_by_trustees(volume, unixname, stb);
+    rights=(get_eff_rights_by_trustees(volume, unixname, stb) & MAX_TRUSTEE_MASK);
   }    
   if (!(voloptions & VOL_OPTION_IGNUNXRIGHT)){
     rights1 = un_nw_rights(voloptions, unixname, stb);
@@ -799,24 +876,37 @@ int tru_get_eff_rights(int volume, uint8 *unixname, struct stat *stb)
 
 int tru_eff_rights_exists(int volume, uint8 *unixname, struct stat *stb,
                            int lookfor)
+/* 
+ * returns 0 if lookfor right exist, 
+ * otherwise returns the current rights
+ */
 {
   int voloptions = get_volume_options(volume);
   int rights = 0;
   int rights1 = 0;
+  int result = -1;
   if (voloptions & VOL_OPTION_TRUSTEES){ 
     /* we look for trustee rights first */
     rights=get_eff_rights_by_trustees(volume, unixname, stb);
     if ((rights & TRUSTEE_S)||((rights&lookfor)==lookfor))
-      return(0);
+      result = 0;
+    else if ((lookfor == TRUSTEE_T) && (rights&TRUSTEE_F) ) /* mst: 13-Apr-00 */
+      result=0;
   }
-  if (!(voloptions & VOL_OPTION_IGNUNXRIGHT)){
-    rights1=un_nw_rights(voloptions, unixname, stb);
+  if (result && !(voloptions & VOL_OPTION_IGNUNXRIGHT)){
+    rights1 = un_nw_rights(voloptions, unixname, stb);
   }
   MDEBUG(D_TRUSTEES, {
-    xdprintf(1,0, "%04x eff_rights_exists ? = %04x,%04x for`%s`", 
+    xdprintf(1,0, "lookfor=%04x, eff_rights_exists ? = %04x(tru),%04x(unx) for`%s`", 
      lookfor, rights, rights1, unixname);
   })
+  if (!result) return(0);
+  
   rights |= rights1;
+  
+  if ((lookfor == TRUSTEE_T) && (rights&TRUSTEE_F) ) /* mst: 13-Apr-00 */
+      return(0);
+  
   return(((rights & TRUSTEE_S)||((rights&lookfor)==lookfor)) ? 0 : -1);
 }
 

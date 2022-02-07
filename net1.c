@@ -1,6 +1,6 @@
-/* net1.c, 11-Mar-97 */
+/* net1.c, 19.09.99 */
 
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993-99  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -355,3 +355,42 @@ int get_ipx_addr(ipxAddr_t *addr)
   return(result);
 }
 #endif
+
+uint8  *station_fn=NULL;
+
+int find_station_match(int entry, ipxAddr_t *addr)
+{
+  int matched = 0;
+  if (station_fn && *station_fn) {
+    FILE *f=fopen((char*)station_fn, "r");
+    if (f) {
+      uint8  buff[200];
+      uint8  addrstring[100];
+      int   what;
+      ipx_addr_to_adr((char*)addrstring, addr);
+      upstr(addrstring);
+      while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))){
+        if (what == entry) {
+          uint8  *p = buff + strlen((char*)buff);
+          while (p-- > buff && *p==32) *p='\0';
+          upstr(buff);
+          if (name_match(addrstring, buff)) {
+            matched=1;
+            break;
+          }
+        }
+      }
+      fclose(f);
+    } else {
+      XDPRINTF((3, 0, "find_station_match, cannot open '%s'",
+           station_fn));
+    }
+  }
+  XDPRINTF((3, 0, "find_station_match entry=%d, matched=%d, addr=%s",
+          entry, matched, visable_ipx_adr(addr)));
+  return(matched);
+}
+
+
+
+
