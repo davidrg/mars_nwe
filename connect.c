@@ -16,6 +16,12 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+/* history since 01-Sep-00
+ * mst:01-Sep-00: pcz:added real unix rights patch from Przemyslaw Czerpak
+ *
+ */
+
+
 #include "net.h"
 #include "unxfile.h"
 
@@ -316,6 +322,45 @@ int in_act_groups(gid_t gid)
   }
   return(0);
 }
+
+/* pcz:01-Sep-00 */ 
+int get_unix_access_rights(struct stat *stb, uint8 *unixname)
+/* returns F_OK, R_OK, W_OK, X_OK  */
+/* ----- old ----------------------*/
+/* ORED with 0x10 if owner access  */
+/* ORED with 0x20 if group access  */
+/* ----- corrent-------------------*/
+/* ORED with 0x20 if W_OK  access  */
+/* --------------------------------*/
+{
+  int mode=0;
+  uid_t ruid, euid, rgid;
+
+  ruid=getuid();
+  euid=geteuid();
+  rgid=getgid();
+
+  setreuid(act_uid,0);
+  setgid(act_gid);
+  
+  if (!access(unixname, F_OK)) {
+
+    if (!access(unixname, R_OK))
+      mode |= R_OK;
+    if (!access(unixname, W_OK))
+      /* mode |= W_OK; */
+      mode |= W_OK | 0x20;
+    if (!access(unixname, X_OK))
+      mode |= X_OK;
+
+    /* mode |= get_unix_eff_rights(stb) & ~(R_OK|W_OK|X_OK); */
+  }
+  setgid(rgid);
+  setreuid(ruid, euid);
+
+  return(mode);
+}
+
 
 int get_unix_eff_rights(struct stat *stb)
 /* returns F_OK, R_OK, W_OK, X_OK  */

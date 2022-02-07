@@ -81,6 +81,7 @@ typedef struct {
 #define VOL_OPTION_TRUSTEES    0x0100  /* Volume use Trustees           */
 #define VOL_OPTION_ATTRIBUTES  0x0200  /* Volume use 'real' Attributes  */
 #define VOL_OPTION_IGNUNXRIGHT 0x0400  /* Ignore rights granted in UN*X FS */
+#define VOL_OPTION_UNX_RIGHT   0x0800  /* Use UN*X real rights */
 
 /* namespaces */
 #define VOL_NAMESPACE_DOS      0x1000

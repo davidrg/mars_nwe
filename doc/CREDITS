@@ -58,6 +58,9 @@ Ruedi Kneubuehler <pingu@satu.baboon.ch>
 Volker Lendecke <lendecke@math.uni-goettingen.de>
         helps distributing
 
+Sergey Lentsov <lenz@mark.scc.lg.ua>
+        patches
+
 Leslie <leslie@petra.hos.u-szeged.hu>
         fixed getpwnam/getspnam problem.
 

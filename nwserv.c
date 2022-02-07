@@ -357,8 +357,8 @@ static int start_nwbind(char *nwname)
 # define WDOG_TRIE_AFTER_SEC   1
 # define MAX_WDOG_TRIES        1
 #else
-# define WDOG_TRIE_AFTER_SEC   300  /* ca. 5 min.    */
-# define MAX_WDOG_TRIES        11   /* Standardtries */
+# define WDOG_TRIE_AFTER_SEC   60  /* ca. 1 min.    */
+# define MAX_WDOG_TRIES        3   /* should be enough */
 #endif
 
 static void modify_wdog_conn(int conn, int mode);
@@ -452,7 +452,7 @@ static void send_wdogs()
     if (c->last_time) {
       time_t t_diff = acttime_stamp - c->last_time;
       if (   (c->counter && t_diff > 50)
-          || t_diff > WDOG_TRIE_AFTER_SEC) { /* max. 5 minutes */
+          || t_diff > WDOG_TRIE_AFTER_SEC) { /* max. 1 minute */
         if (c->counter > MAX_WDOG_TRIES) {
           /* now its enough with trying */
           /* clear connection */

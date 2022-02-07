@@ -1,3 +1,4 @@
+
 /* nwshare.c, 13-Apr-00 */
 /* (C)opyright (C) 1993-2000  Martin Stover, Marburg, Germany
  *
@@ -260,25 +261,35 @@ int share_file(int dev, int inode, int open_mode, int action)
 
     if (open_mode & 0xff) {
       if (!(act_mode & 0x01)) {
+	/* do not set flockd.l_whence because after F_GETLK kernel
+	 * set it as SEEK_SET */
         flockd.l_type = F_WRLCK;
+	flockd.l_start  = inode;
+	flockd.l_len    = 1;
         fcntl(sd->fd_or, F_GETLK, &flockd);  /* read */
         if (flockd.l_type != F_UNLCK)
           act_mode |= 0x01;
       }
       if (!(act_mode & 0x04)) {
         flockd.l_type = F_WRLCK;
+	flockd.l_start  = inode;
+	flockd.l_len    = 1;
         fcntl(sd->fd_dr, F_GETLK, &flockd);  /* deny read */
         if (flockd.l_type != F_UNLCK)
           act_mode |= 0x04;
       }
       if (!(act_mode & 0x02)) {
         flockd.l_type = F_WRLCK;
+	flockd.l_start  = inode;
+	flockd.l_len    = 1;
         fcntl(sd->fd_ow, F_GETLK, &flockd);  /* write */
         if (flockd.l_type != F_UNLCK)
           act_mode |= 0x02;
       }
       if (!(act_mode & 0x08)) {
         flockd.l_type = F_WRLCK;
+	flockd.l_start  = inode;
+	flockd.l_len    = 1;
         fcntl(sd->fd_dw, F_GETLK, &flockd);  /* deny write */
         if (flockd.l_type != F_UNLCK)
           act_mode |= 0x08;
@@ -286,6 +297,8 @@ int share_file(int dev, int inode, int open_mode, int action)
 #if 0
       if (!(act_mode & 0x10)) {
         flockd.l_type = F_WRLCK;
+	flockd.l_start  = inode;
+	flockd.l_len    = 1;
         fcntl(sd->fd_cm, F_GETLK, &flockd);  /* compatible mode */
         if (flockd.l_type != F_UNLCK)
           act_mode |= 0x10;
@@ -295,6 +308,8 @@ int share_file(int dev, int inode, int open_mode, int action)
 
     if ((open_mode & 0x300) &&  !(act_mode & 0x100)) {
       flockd.l_type = F_WRLCK;
+      flockd.l_start  = inode;
+      flockd.l_len    = 1;
       fcntl(sd->fd_fl, F_GETLK, &flockd);  /* lock file */
       if (flockd.l_type != F_UNLCK)
         act_mode |= (flockd.l_type == F_WRLCK) ? 0x100|0x200 : 0x100;
@@ -331,31 +346,29 @@ int share_file(int dev, int inode, int open_mode, int action)
       result = -1;
 
     if (action==1 && !result) {         /* ADD */
-
+      flockd.l_type = F_RDLCK;
+      flockd.l_start  = inode;
+      flockd.l_len    = 1;
       if (open_mode & 0x01) {           /* read */
         if (!si->or) {
-          flockd.l_type = F_RDLCK;
           fcntl(sd->fd_or, F_SETLK, &flockd);
         }
         si->or ++;
       }
       if (open_mode & 0x04) {           /* deny read */
         if (!si->dr) {
-          flockd.l_type = F_RDLCK;
           fcntl(sd->fd_dr, F_SETLK, &flockd);
         }
         si->dr ++;
       }
       if (open_mode & 0x02) {           /* write */
         if (!si->ow) {
-          flockd.l_type = F_RDLCK;
           fcntl(sd->fd_ow, F_SETLK, &flockd);
         }
         si->ow ++;
       }
       if (open_mode & 0x08) {           /* deny write */
         if (!si->dw) {
-          flockd.l_type = F_RDLCK;
           fcntl(sd->fd_dw, F_SETLK, &flockd);
         }
         si->dw ++;
@@ -363,7 +376,6 @@ int share_file(int dev, int inode, int open_mode, int action)
 #if 0
       if (open_mode & 0x10) {           /* compatible mode */
         if (!si->cm) {
-          flockd.l_type = F_RDLCK;
           fcntl(sd->fd_cm, F_SETLK, &flockd);
         }
         si->cm ++;
@@ -380,6 +392,8 @@ int share_file(int dev, int inode, int open_mode, int action)
       }
     }
   } else if (action==0) {               /* REMOVE */
+    flockd.l_start  = inode;
+    flockd.l_len    = 1;
     flockd.l_type = F_UNLCK;
     if (open_mode & 0x01)               /* read */
       if (si->or && !(--si->or))
@@ -406,6 +420,8 @@ int share_file(int dev, int inode, int open_mode, int action)
   }
 
   flockd.l_type = F_UNLCK;
+  flockd.l_start  = inode;
+  flockd.l_len    = 1;
   fcntl(sd->fd_sm, F_SETLK, &flockd);   /* realise semaphor */
 
   if (!si->or && !si->ow && !si->dr && !si->dw 
@@ -454,8 +470,15 @@ static int _get_inode( int dev, int inode, ShareDev **psd, ShareINode **psi )
   return 0;
 }
 
+void catch_alarm (int sig)
+{
+  signal(sig, SIG_IGN);
+}
+
+#define OFFSET_MAX      0x7fffffff
+
 int share_lock( int dev, int inode, int fd, int action, 
-                int lock_flag, int l_start, int l_len )
+                int lock_flag, int l_start, int l_len, int timeout )
 /* 
  * action:
  *   0 = unlock
@@ -503,16 +526,33 @@ int share_lock( int dev, int inode, int fd, int action,
       fcntl( fd, F_SETLK, &flockd );
       *psl = sl->next;
       xfree( sl );
-    } else
-      result = -1;
+    } else {
+      XDPRINTF((2, 0, "unlock: can't find proper lock pid=%d uid=%d fd=%d %d, %d", getpid(), geteuid(), fd, l_start, l_len));
+      result = -0xff;
+    }
   } else {
     /* lock or test */
     if (sl && (l_start < sl->l_start + sl->l_len || !sl->l_len)
            && (sl->exclusive || lock_flag == 1) )
-      result = -1; /* collision */
+      result = -0xfd; /* collision */
     else {
       flockd.l_type = (lock_flag == 1) ? F_WRLCK : F_RDLCK;
+      if (action==1 && timeout > 17) {/* if timeout is relatively short
+                                       * do not set the alarm. /lenz */
+        signal( SIGALRM, catch_alarm );
+        alarm( timeout / 18 );
+        result = fcntl( fd, F_SETLKW, &flockd );
+        alarm( 0 );
+        signal( SIGALRM, SIG_IGN );
+      } else {
       result = fcntl( fd, (action==1) ? F_SETLK : F_GETLK, &flockd );
+      }
+      if (result) {
+	if (!timeout) /* my NW 3.12 returns 0xff if timeout == 0. /lenz */
+	  result = -0xff;
+	else
+	  result = -0xfe;
+      }
       if (!result) {
         if (action == 1) {
           /* add to list */
@@ -564,6 +604,25 @@ int share_unlock_all( int dev, int inode, int fd )
   }
   XDPRINTF((3, 0, "share_unlock_all,result=%d %s", result, tbuf));
   return result;
+}
+
+void dump_locks( int dev, int inode, int fd, FILE* f)
+{
+  ShareDev *sd;
+  ShareINode *si;
+  ShareLock *psl;
+  char tbuf[200];
+  sprintf(tbuf,"dev=0x%x,inode=%d,fd=%d", dev, inode, fd);
+
+  if (!_get_inode( dev, inode, &sd, &si )) {
+    XDPRINTF((1, 0, "Could not find share for unlock_all %s", tbuf));
+  }
+
+  for (psl=si->first_lock; psl; ) {
+    fprintf(f, "fd=%d %d-%d ", psl->fd, psl->l_start, psl->l_len);
+    psl = psl->next;
+  }
+  fprintf(f, "\n");
 }
 
 

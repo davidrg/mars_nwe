@@ -17,6 +17,10 @@
  */
 
 #include "net.h"
+#if !CALL_NWCONN_OVER_SOCKET
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#endif
 
 static  int        ncp_fd = -1;
 static  uint8      ipx_in_data[IPX_MAX_DATA];
@@ -37,6 +41,12 @@ static  int        highest_fd = 10;
 
 static  int        station_restrictions=0;
 static int         max_connections=MAX_CONNECTIONS;
+
+#if !CALL_NWCONN_OVER_SOCKET
+static char        *nwconn_state; /* shared memory segment will be 
+                                   * attached to this pointer */
+static int         nwconn_state_shm_id;
+#endif
 
 static void set_highest_fd(int fd)
 {
@@ -139,7 +149,6 @@ typedef struct {
    int        pid;          /* pid from son          */
    ipxAddr_t  client_adr;   /* address client        */
    int        sequence;     /* previous sequence     */
-   int        retry;	    /* one reply being serviced is sent */
    time_t     last_access;  /* time of last 0x2222 request */
 } CONNECTION;
 
@@ -312,7 +321,6 @@ static int find_get_conn_nr(ipxAddr_t *addr)
          /* new process */
 	  char *progname="nwconn";
 	  char pathname[300];
-	  char pidstr[20]; 
 	  char connstr[20];
 	  char addrstr[100];
           char divstr[50];
@@ -330,12 +338,16 @@ static int find_get_conn_nr(ipxAddr_t *addr)
           dup2(ncp_fd, 3); /* becomes 3 */
 	  while (j++ < highest_fd) close(j);  /* close all > 3 */
 
-	  sprintf(pidstr, "%d", akt_pid);
 	  sprintf(connstr, "%d", connection);
 	  ipx_addr_to_adr(addrstr, addr);
 
+#if !CALL_NWCONN_OVER_SOCKET
+          l=sprintf(divstr, "()INIT-:%08x,%04x,%04x,%08x-",
+                 akt_pid, sock_nwbind, sock_echo, nwconn_state_shm_id);
+#else
 	  l=sprintf(divstr, "()INIT-:%08x,%04x,%04x-", 
 	         akt_pid, sock_nwbind, sock_echo);
+#endif    
           
           if (l < 48) {
             memset(divstr+l, '-', 48-l);
@@ -549,12 +561,12 @@ static void handle_ncp_request(void)
 
 #if !CALL_NWCONN_OVER_SOCKET
               if (ncprequest->sequence == c->sequence
-                  && !c->retry++) {
-                /* perhaps nwconn is busy  */
+                  && nwconn_state[connection] > 0) { /* check, is nwconn
+                                                      * actually busy? */
                 ncp_response(0x9999, ncprequest->sequence,
     	                    connection, ncprequest->task,
     	                    0x0, 0, 0);
-                XDPRINTF((2, 0, "Send Request being serviced to connection:%d", connection));
+                XDPRINTF((2, 0, "Send Request being serviced, connection:%d, func=%x, difftime=%d, task=%d", connection, ncprequest->function, diff_time, ncprequest->task));
                 return;
               }
 #endif
@@ -569,7 +581,6 @@ static void handle_ncp_request(void)
                 XDPRINTF((10,0, "write to %d, anz = %d", c->fd, anz));
               }
               c->sequence    = ncprequest->sequence; /* save last sequence */
-              c->retry       = 0;
               return;
             } else {  /* 0x5555, close connection  */
 
@@ -720,6 +731,22 @@ int main(int argc, char *argv[])
   adr_to_ipx_addr(&my_addr, argv[2]);
   sscanf(argv[3], "%x", &sock_nwbind);
   sscanf(argv[4], "%x", &sock_echo);
+  
+#if !CALL_NWCONN_OVER_SOCKET
+  nwconn_state_shm_id = shmget(IPC_PRIVATE, MAX_CONNECTIONS, IPC_CREAT|0600);
+  if (nwconn_state_shm_id == -1) {
+    errorp(1, "Can't get shared memory", NULL);
+    return(1);
+  }
+  nwconn_state = shmat(nwconn_state_shm_id, NULL, SHM_R);
+  if ((int )(nwconn_state) == -1) {
+    errorp(1, "Can't attach shared memory segment", NULL);
+    return(1);
+  }
+  shmctl(nwconn_state_shm_id, IPC_RMID, NULL); /* mark shm as destroyed,
+                                                * it will actually be destroyed
+                                                * after program exit. /lenz */
+#endif
 
 #ifdef LINUX
   set_emu_tli();

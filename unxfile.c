@@ -1,6 +1,6 @@
-/* unxfile.c:  30-Apr-98*/
+/* unxfile.c:  15-Aug-00 */
 
-/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993,2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -96,6 +96,26 @@ int unx_xrmdir(char *unixname)
   }
   return(rmdir(unixname));
 }
+
+int unx_add_x_rights(char *unixname, int mode)
+/* set x permiss flag in upper (and current) dirs */
+{
+  char *p=unixname;
+  struct stat stb;
+  int result=0;
+  while ( (!result) && (NULL != (p=strchr(p+1, '/')))) {
+    *p = '\0';
+    if ((!stat(unixname, &stb)) && S_ISDIR(stb.st_mode))
+      chmod(unixname, stb.st_mode | (0111 & mode) );
+    else
+      result = -1;
+    *p='/';
+  }
+  if ( (!result) && (!stat(unixname, &stb)) && S_ISDIR(stb.st_mode) )
+    chmod(unixname, stb.st_mode | (0111 & mode) );
+  return(result);
+}
+
 
 #if  0
 int unx_mvdir(uint8 *oldname, uint8 *newname)

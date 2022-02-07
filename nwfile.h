@@ -53,7 +53,7 @@ extern int nw_server_copy(int qfhandle, uint32 qoffset,
                    int zfhandle, uint32 zoffset,
                    uint32 size);
 
-extern int nw_log_physical_record(int fhandle, uint32 offset, uint32 size, int do_lock);
+extern int nw_log_physical_record(int fhandle, uint32 offset, uint32 size, uint16 timeout, int do_lock);
 
 extern int fd_2_fname(int fhandle, char *buf, int bufsize);
 extern FILE_HANDLE *fd_2_fh(int fhandle);
@@ -65,5 +65,5 @@ extern  int nw_log_logical_record(int lock_flag,
                   int timeout,
                   int len,
                   uint8 *data);
-
+extern void dump_locks(int dev, int inode, int fd, FILE *f);
 #endif

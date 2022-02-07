@@ -1,5 +1,5 @@
-/* nwvolume.c  09-Oct-99 */
-/* (C)opyright (C) 1993-1999  Martin Stover, Marburg, Germany
+/* nwvolume.c  01-Sep-00 */
+/* (C)opyright (C) 1993-2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,6 +15,15 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+
+/* history since 13-Aug-00
+ *
+ * mst:13-Aug-00 logging in vol_trustee_scan() changed a little bit.
+ * mst:15-Aug-00 correction of unix rights of trustee and attrib directory.
+ * mst:01-Sep-00 added real unix right option from Przemyslaw Czerpak
+ *
+ */
+
 
 #include "net.h"
 
@@ -39,6 +48,7 @@
 #include "nwfname.h"
 #include "nwattrib.h"
 #include "trustee.h"
+#include "unxfile.h"
 #include "nwvolume.h"
 
 #define  VOLOPTIONS_DEFAULT  VOL_OPTION_ATTRIBUTES
@@ -108,11 +118,13 @@ void nw_init_volumes(FILE *f)
 /* f = inifile Pointer, must be opened !! */
 {
   static int volumes_is_init=0;
+  int    firstinit=0;
   int    what;
   uint8  buff[256];
   int    k = -1;
   if (!volumes_is_init) {
     volumes_is_init++;
+    firstinit++;
     rewind(f);
     if (get_ini_entry(f, 61, buff, sizeof(buff))) {
       max_nw_vols=atoi(buff);
@@ -214,6 +226,11 @@ void nw_init_volumes(FILE *f)
                          vol->options 
                          |= (VOL_OPTION_TRUSTEES | VOL_OPTION_IGNUNXRIGHT);
                          break;
+              
+              case 'x' : /* mst:01-Sep-00, option added by Przemyslaw Czerpak */
+                         vol->options
+                         |= VOL_OPTION_UNX_RIGHT;
+                         break;
 
               case 'O' : vol->options
                          |= VOL_NAMESPACE_OS2;
@@ -273,6 +290,12 @@ void nw_init_volumes(FILE *f)
       new_str(path_trustees, buff);
     }
   } /* while */
+  
+  if (firstinit) {
+   /* mst: 15-Aug-00, directory mode corrections */
+    unx_add_x_rights(path_attributes, 0111);
+    unx_add_x_rights(path_trustees, 0111);
+  }
 }
 
 static int get_unx_home_dir(uint8 *homedir, uint8 *unxlogin)
@@ -629,7 +652,13 @@ static void vol_trustee_scan(NW_VOL *v, int volume,
             memcpy(unixname, v->unixname, v->unixnamlen); /* first UNIXNAME VOLUME */
             memcpy(unixname+v->unixnamlen, path, l); 
             unixname[l+v->unixnamlen]='\0';
-            XDPRINTF((2, 0, "vol_trustee_scan, trustee path=`%s`", unixname));
+            
+            // XDPRINTF((2, 0, "vol_trustee_scan, trustee path=`%s`", unixname));
+            
+            MDEBUG(D_TRUSTEES,{
+              xdprintf(2,0, "vol_trustee_scan, trustee path=`%s`", unixname);
+            })
+            
             if (!stat(unixname, &stb)) {
               int trustee=tru_get_id_trustee(volume, unixname, &stb, 
                            v->trustee_id);
@@ -639,12 +668,14 @@ static void vol_trustee_scan(NW_VOL *v, int volume,
                   up_fn(path);
                 }
                 add_vol_trustee(v, path, l, trustee);
-                XDPRINTF((2, 0, "trustee=0x%x found", trustee));
+                MDEBUG(D_TRUSTEES,{
+                  xdprintf(1, 0, "path=`%s`,trustee=0x%x found", unixname, trustee);
+               })
               }
             } else {
-              XDPRINTF((1, 0, "trustee path=`%s` not found", 
-                unixname));
+              XDPRINTF((1, 0, "trustee path=`%s` not found", unixname));
             }
+
           }
         } else if ((!stat(trusteepath, &stb)) && S_ISDIR(stb.st_mode)) {
           int l=strlen(p);

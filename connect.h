@@ -223,6 +223,7 @@ extern void   set_guid(int gid, int uid);
 extern void   reset_guid(void);
 extern void   reseteuid(void);
 extern int    in_act_groups(gid_t gid);
+extern int    get_unix_access_rights(struct stat *stb, uint8 *unixname);
 extern int    get_unix_eff_rights(struct stat *stb);
 extern void set_nw_user(int gid, int uid,
                  int id_flags, 

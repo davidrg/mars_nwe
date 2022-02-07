@@ -1,8 +1,8 @@
-/* config.h: 11-Jul-98 */
+/* config.h: 22-Jun-00 */
 /* some of this config is needed by make, others by cc                     */
 
 #define DO_DEBUG      1              /* compile in debug code              */
-#define FUNC_17_02_IS_DEBUG 1        /* allow debugging with mars_dosutils */
+#define FUNC_17_02_IS_DEBUG 0        /* allow debugging with mars_dosutils */
 
 #define DO_TESTING    0              /* set this to "1" to test only       */
 
@@ -84,4 +84,7 @@
 
 #define SHADOW_PWD          0        /* change to '1' for shadow passwds   */
 #define QUOTA_SUPPORT       0        /* change to '1' for quota support    */
+
+/* for sending 'Request being serviced' replys, /lenz */
+#define CALL_NWCONN_OVER_SOCKET  0 
 

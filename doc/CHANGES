@@ -2,7 +2,7 @@ Sorry, beginning is in German only.
 User important notes are in the NEWS file.
 Aenderungen in mars_nwe bis zum: 
 Changes in mars_nwe till:
-=>  30-May-00 <=
+=>  01-Jun-00 <=
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -537,4 +537,12 @@ Erste 'oeffentliche' Version
   passwords beginning with '-'. ( tnx Przemyslaw Czerpak )
 - trustee fix
 <----- ^^^^^^^^^^ pl19 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- 01-Jun-00:trustee.c, SIG_SEGV error.
+- 22-Jun-00:added patches from Sergey Lentsov <lenz@mark.scc.lg.ua>  
+- 14-Aug-00:added patch from Paolo Prandini <prandini@spe.it>
+            (access to printerqueues,nwbind.c)
+- 15-Aug-00:correction for unix rights of trustee/attrib directory (x flag)
+            (hint: Nagy Zoltan Mark)
+- 01-Sep-00:added real unix acces rights patch from Przemyslaw Czerpak
+<----- ^^^^^^^^^^ pl20 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

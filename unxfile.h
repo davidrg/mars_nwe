@@ -21,6 +21,7 @@ extern int unx_mvdir(uint8  *oldname, uint8 *newname);
 extern int unx_mvfile(uint8 *oldname, uint8 *newname);
 extern int unx_mvfile_or_dir(uint8 *oldname, uint8 *newname);
 extern int unx_xmkdir(char *unixname, int mode);
+extern int unx_add_x_rights(char *unixname, int mode);
 extern int unx_xrmdir(char *unixname);
 
 extern int unx_ftruncate(int fd, uint32 size);

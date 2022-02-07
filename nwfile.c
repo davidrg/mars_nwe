@@ -318,7 +318,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
     else {
       eff_rights = tru_get_eff_rights(volume, unixname, stbuff);
       dwattrib   = get_nw_attrib_dword(volume, unixname, stbuff);
-
+#if 0 // removed by lenz
       /* mst: 12-Apr-00 */
       if (access & 0x10) {
         access &= ~0x10;
@@ -328,7 +328,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
             access |= 0x4; /* deny read */
         }
       }
-
+#endif
 #if 0
       if ( (dwattrib & FILE_ATTR_SHARE) && (access & 0x10) ) {
         access &= ~0x10;
@@ -779,7 +779,8 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
         struct timeval t;
         FD_ZERO(&fdin);
         FD_SET(fh->fd, &fdin);
-        t.tv_sec  = 5;  /* should be enough */
+        /* t.tv_sec  = 5; */ /* should be enough */
+        t.tv_sec  = 30;  /* sometimes more time needed */
         t.tv_usec = 0;
         size = select(fh->fd+1, &fdin, NULL, NULL, &t);
         if (size > 0)
@@ -817,12 +818,13 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
          */
         /* check for lock */
         struct flock flockd;
-        flockd.l_type   = F_WRLCK;
+        flockd.l_type   = F_RDLCK;  /* if file is not locked exclusive
+                                     * we should allow read it. /lenz */
         flockd.l_whence = SEEK_SET;
         flockd.l_start  = offset;
         flockd.l_len    = size;
         fcntl(fh->fd, F_GETLK, &flockd);
-        if (flockd.l_type == F_UNLCK) {
+        if (flockd.l_type != F_WRLCK) {
           while (1) {
             if (offset < fh->size_mmap) {
               if (size + offset > fh->size_mmap)
@@ -838,7 +840,7 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
               break;
             }
           } /* while */
-        } else size = -0x93; /* no read privileges */
+        } else size = -0xa2; /* I/O lock error. /lenz */
       } else {
         if (fh->offd != (long)offset) {
           fh->offd=lseek(fh->fd, offset, SEEK_SET);
@@ -863,7 +865,7 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
             } else {
               XDPRINTF((5,0,"read-file failed in read"));
             }
-          } else size = -0x93; /* no read privileges */
+          } else size = -0xa2; /* I/O lock error. /lenz */
         } else size = -1;
       }
       if (size == -1) size=0;
@@ -927,7 +929,7 @@ int nw_write_file(int fhandle, uint8 *data, int size, uint32 offset)
               fh->offd+=(long)size;
               if (!fh->modified)
                 fh->modified++;
-            } else size = -0x94; /* no write privileges */
+            } else size = -0xa2; /* I/O lock error. /lenz */
           } else size = -1;
           return(size);
         } else {  /* truncate FILE */
@@ -987,7 +989,7 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
 }
 
 int nw_log_physical_record(int fhandle, uint32 offset, 
-                           uint32 size, int lock_flag)
+                           uint32 size, uint16 timeout, int lock_flag)
 {
   int result=-0x88;  /* wrong filehandle */
   if (fhandle > HOFFS && (fhandle <= count_fhandles)) {
@@ -1033,14 +1035,13 @@ int nw_log_physical_record(int fhandle, uint32 offset,
 
                            (size==MAX_U32) 
                              ?  0
-                             :  size & 0x7fffffff);
+                             :  size & 0x7fffffff,
+                          
+                           timeout);
               
-      XDPRINTF((4, 0,  "nw_log_phy_rec:flag=%2d, result=%d, fh=%d, offset=%d, size=%d",
-         lock_flag, result, fhandle, offset, size));
+      XDPRINTF((4, 0,  "nw_log_phy_rec:pid=%d uid=%d flag=%2d, result=%d, fh=%d, offset=%d, size=%d, timeout=%d",
+         getpid(), geteuid(), lock_flag, result, fhandle, offset, size, timeout));
       
-      if (result)
-         result= (lock_flag > -1) ? -0xfe : -0xff;
-       /* 0.99.pl0: changed -0xfd -> -0xfe, hint from Przemyslaw Czerpak */
     } else if (fh->fd == -3) result=0;
   }
 leave:
@@ -1090,10 +1091,11 @@ void log_file_module(FILE *f)
     while (++k < count_fhandles) {
       FILE_HANDLE  *fh=&(file_handles[k]);
       if (fh && fh->fd != -1) {
-        fprintf(f,"%4d %2d %d %4d 0x%04x 0x%04x %2d '%s'\n",
+        fprintf(f,"%4d %2d %d %4d 0x%04x 0x%04x %2d %04d '%s'\n",
                k+1, fh->inuse, fh->modified, fh->task,
                   fh->fh_flags, fh->access, fh->volume,
-                  fh->fname);
+                  fh->fd, fh->fname);
+	dump_locks(fh->st_dev, fh->st_ino, fh->fd, f);
         handles++;
       }
     }

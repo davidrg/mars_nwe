@@ -18,6 +18,16 @@
 
  /* Trusttee routines for mars_nwe */
 
+/* history since 01-Jun-00 
+ *
+ * mst:01-Jun-00: removed SIG_SEGV in get_eff_rights_by_trustees(), 
+ *                when stat error
+ * mst:01-Sep-00: pcz:added real unix rights patch from Przemyslaw Czerpak
+ *
+ *
+ */
+
+
 #include "net.h"
 #include <dirent.h>
 #include "unxfile.h"
@@ -37,12 +47,20 @@ static int un_nw_rights(int voloptions, uint8 *unixname, struct stat *stb)
   
   if (act_uid || is_pipe_command || (voloptions & VOL_OPTION_READONLY)) {
     int is_dir        = S_ISDIR(stb->st_mode);
-    int acc           = get_unix_eff_rights(stb);
     int norights      = TRUSTEE_A;  /* no access control rights */
+    int acc; 
+    int accp=0; 
+    int isaccp=0;
 
     struct stat stbp;
     uint8 *p          = unixname+strlen(unixname);
     
+    /* pcz:01-Sep-00 */
+    if (voloptions & VOL_OPTION_UNX_RIGHT)
+      acc=get_unix_access_rights(stb,unixname);
+    else
+      acc=get_unix_eff_rights(stb);
+
     memset(&stbp, 0, sizeof(struct stat));
     if (p > unixname){  /* now we must get parent rights */
       --p;
@@ -56,20 +74,27 @@ static int un_nw_rights(int voloptions, uint8 *unixname, struct stat *stb)
             || !S_ISDIR(stbp.st_mode) ){
           /* something wrong here, clear rights */
           errorp(0,"un_nw_rights", "wrong path=%s", unixname);
-          memset(&stbp, 0, sizeof(struct stat));
-        }
+        } else {  /* pcz:01-Sep-00 */
+          if (voloptions & VOL_OPTION_UNX_RIGHT)
+            accp=get_unix_access_rights(&stbp,unixname);
+          else
+            accp=get_unix_eff_rights(&stbp);
+	  isaccp=1;
+	}  
         *(p+1)='/';
-      } else {
-        if (stat("/.", &stbp)) 
-          memset(&stbp, 0, sizeof(struct stat));
+      } else if (!stat("/.", &stbp)) {  /* pcz:01-Sep-00 */
+        if (voloptions & VOL_OPTION_UNX_RIGHT)
+          accp=get_unix_access_rights(&stbp,"/.");
+        else
+          accp=get_unix_eff_rights(&stbp);	
+        isaccp=1;
       }
     }
     
-    if (!stbp.st_mode) {
+    if (isaccp == 0) { /* pcz:01-Sep-00 */
       XDPRINTF((1,0, "no rights to parentdir of %s", unixname));
       norights=rights;
     } else {
-      int accp=get_unix_eff_rights(&stbp);
       if (!(accp & X_OK))  
         norights=rights;
       else if (!(accp & W_OK)) {
@@ -834,7 +859,7 @@ static FILE_TRUSTEE_NODE *find_build_trustee_node(int volume, uint8 *unixname, s
           errorp(10, "tru_get_eff_rights", "stat error `%s`", unixname);
           *p='/';
           xfree(ugid_trustees);
-          return(0);
+          return(NULL);
         }
         *p='/';
         while (*p=='/')++p;
@@ -861,7 +886,7 @@ static int get_eff_rights_by_trustees(int volume, uint8 *unixname, struct stat *
     return(MAX_TRUSTEE_MASK); /* all rights */
   else {
     FILE_TRUSTEE_NODE *tr = find_build_trustee_node(volume, unixname, stb);
-    return( (tr->eff_rights > -1) ? tr->eff_rights : 0);
+    return( (tr && tr->eff_rights > -1) ? tr->eff_rights : 0);
   }
 }
 

@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "25-Apr-00"
+#define REVISION_DATE "14-Aug-00"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message and queue handling */
 
@@ -24,6 +24,7 @@
  *
  * mst:25-Apr-00: added login control routines from Paolo Prandini
  * mst:25-Apr-00: added simple example for getting nwconn data
+ * mst:14-Aug-00: added patch from Poalo Prandini
  *
  */
 
@@ -777,7 +778,11 @@ static void handle_fxx(int gelen, int func)
                         result=-0xff;
                       }
                     }
-                    if (!result) {
+                    if ( (!result) && obj.type == 1  ) {
+                     /* ..............^^^^^^^^^^^^^^^
+                      * This check is necessary to avoid restriction on objects
+		      * other than users!  Paolo Prandini,mst:14-Aug-00
+                      */
                       internal_act = 1;
                       result = nw_test_adr_time_access(obj.id, &(act_c->client_adr));
                       internal_act = 0;
@@ -884,11 +889,17 @@ static void handle_fxx(int gelen, int func)
                       result=nw_test_passwd(obj.id, act_c->crypt_key, rdata);
                       internal_act = 0;
                     }
-                    if (result > -1) {
+                    
+                    if ( (result>-1) && obj.type == 1  ) {
+                     /* ..............^^^^^^^^^^^^^^^
+                      * This check is necessary to avoid restriction on objects
+		      * other than users!  Paolo Prandini,mst:14-Aug-00
+                      */
                       internal_act = 1;
                       result = nw_test_adr_time_access(obj.id, &(act_c->client_adr));
                       internal_act = 0;
                     }
+
                     if (result > -1)
                       data_len = build_login_response(responsedata, obj.id);
                     else {

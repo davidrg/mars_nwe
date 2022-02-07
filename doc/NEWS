@@ -1,3 +1,5 @@
+------01-Sep-00--- 0.99.pl20 ---------
+- section 1: new volume flag 'x' to work with unix ACLs
 ------23-Jul-98--- 0.99.pl12 ---------
 - changed default bindery directory location:
   /etc  -> /var/nwserv/db  ( section 45 ) 

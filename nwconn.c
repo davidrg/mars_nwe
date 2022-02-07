@@ -32,6 +32,11 @@
 # define LOC_RW_BUFFERSIZE 512
 #endif
 #include <dirent.h>
+#if !CALL_NWCONN_OVER_SOCKET
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#endif
+
 #include "nwvolume.h"
 #include "nwfile.h"
 #include "connect.h"
@@ -70,6 +75,11 @@ static int          sock_echo  =-1;
 static char         *prog_title;
 
 static int req_printed=0;
+
+#if !CALL_NWCONN_OVER_SOCKET
+static  char*      nwconn_state; /* shared memory segment will be 
+                                  * attached to this pointer */
+#endif
 
 #if ENABLE_BURSTMODE
 typedef struct {
@@ -1471,17 +1481,20 @@ static int handle_ncp_serv(void)
                     int fhandle  = GET_32  (input->fhandle);
                     uint32 offset= GET_BE32(input->offset);
                     uint32 size  = GET_BE32(input->size);
+                    uint16 timeout = GET_BE16(input->timeout);
                     if (function == 0x1a) /* lockfile */
                       completition = (uint8)(-nw_log_physical_record(
                                                   fhandle,
                                                    offset, 
                                                    size,
+                                                   timeout,
                                             (int)input->lock_flag));
                     else
                       completition = (uint8)(-nw_log_physical_record(
                                                   fhandle,
                                                    offset, 
                                                    size,
+                                                   timeout,
                                                    -2  /* unlock + unlog */
                                                    ));
                   }
@@ -2622,16 +2635,34 @@ static void set_sig(void)
 
 int main(int argc, char **argv)
 {
+#if !CALL_NWCONN_OVER_SOCKET  
+  int shm_id;
+#endif
   time_t last_time=time(NULL);
+#if CALL_NWCONN_OVER_SOCKET  
   if (argc != 4 || 3!=sscanf(argv[3], "()INIT-:%x,%x,%x-",
      &father_pid, &sock_nwbind, &sock_echo)) {
     fprintf(stderr, "usage nwconn connid FROM_ADDR ()INIT-:pid,nwbindsock,echosock-\n");
     exit(1);
   }
+#else
+  if (argc != 4 || 4!=sscanf(argv[3], "()INIT-:%x,%x,%x,%x-",
+     &father_pid, &sock_nwbind, &sock_echo, &shm_id)) {
+    fprintf(stderr, "usage nwconn connid FROM_ADDR ()INIT-:pid,nwbindsock,echosock,shm_id-\n");
+    exit(1);
+  }
+#endif
   prog_title=argv[3];
   setuid(0);
   setgid(0);
   act_connection = atoi(*(argv+1));
+#if !CALL_NWCONN_OVER_SOCKET
+  nwconn_state = shmat(shm_id, NULL, SHM_W);
+  if ((int )(nwconn_state) == -1) {
+    errorp(0, "Can't attach shared memory segment", NULL);
+    exit(1);
+  }
+#endif
   init_tools(NWCONN, 0);
   memset(saved_readbuff, 0, sizeof(saved_readbuff));
   XDPRINTF((3, 0, "FATHER PID=%d, ADDR=%s CON:%d",
@@ -2679,8 +2710,19 @@ int main(int argc, char **argv)
   set_sig();
 
   while ( !(fl_get_int&1) ) {
-    int data_len = read(0, readbuff, sizeof(readbuff));
-
+    int data_len;
+    /* We should reply 'Request Being Processed' if request arrived twice
+     * or more and nwconn actually busy, if nwconn is free, we are simply
+     * resend previous reply.
+     * We are set the flag in shared memory indicating what nwconn is busy 
+     * and check it later in ncpserv. /lenz */
+#if !CALL_NWCONN_OVER_SOCKET
+    nwconn_state[act_connection] = 0; /* nwconn is free */
+#endif    
+    data_len = read(0, readbuff, sizeof(readbuff));
+#if !CALL_NWCONN_OVER_SOCKET
+    nwconn_state[act_connection] = 1; /* nwconn is busy */
+#endif
     /* this read is a pipe or a socket read,
      * depending on CALL_NWCONN_OVER_SOCKET
      */
@@ -2724,8 +2766,8 @@ int main(int argc, char **argv)
         act_time=time(NULL);
         act_ncpsequence=(int)(ncprequest->sequence);
 
-        if (act_time > last_time+300 && saved_sequence == -1) {
-           /* ca. 5 min. reset wdogs */
+        if (act_time > last_time+60 && saved_sequence == -1) {
+           /* ca. 0.5 min. reset wdogs, 5 min as in original is too long for me. /lenz*/
            call_nwbind(1);
            last_time=act_time;
         }
