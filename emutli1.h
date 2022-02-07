@@ -1,4 +1,4 @@
-/* emutli1.h 28-Apr-96 */
+/* emutli1.h 24-Jun-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -21,7 +21,12 @@
 #define _EMUTLI1_H_
 
 extern void set_locipxdebug(int debug);
+
+extern int read_interface_data(uint8* data, uint32 *rnet, uint8 *node,
+                          int *flags, uint8 *name);
+
 extern int  get_interface_frame_name(char *name, uint32 net);
+
 extern int  get_frame_name(uint8 *framename, int frame);
 extern int  init_ipx(uint32 network, uint32 node, int ipx_debug);
 extern void exit_ipx(int full);

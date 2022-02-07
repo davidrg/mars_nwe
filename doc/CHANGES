@@ -1,5 +1,5 @@
 Sorry, this is in German only.
-Aenderungen in mars_nwe bis zum : 20-Jun-96
+Aenderungen in mars_nwe bis zum : 24-Jun-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -138,10 +138,21 @@ Erste 'oeffentliche' Version
 - Bug beim Listen von grossen Direktories korrigiert. (Fritz Elfert)
 - CRYPTED CHANGE PASSWORD Routine implementiert. (Guntram Blohm)
 <----- ^^^^^^^^^^ pl7 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-
-
+- automatische Registrierung von extern angelegten IPX-Interfaces
+  bzw. Loeschung eines Interfaces. (z.B. fuer ppp )
+- nw.routes nun mit Uhrzeitangabe
+- Code fuer Linux/Sparc bereinigt und macros angepasst. (Ruedi Kneubuehler)
+- Locking Code erweitert / korrigiert.
+- watchdog BUG beseitigt. ( > MAX_CONNECTIONS )
+- workaround fuer sendto haenger eingebaut.
+- pipe files nun mit connnection und pid parameter.
+- Accesshandling erweitert.
+<----- ^^^^^^^^^^ pl8 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Problem ( 0 byte free ) bei grosen Volumes korrigiert. (Botond K. Szabo)
+- Wildcard Handling veraendert/korrigiert ?
+- Dateien werden nun mittels mmap gelesen.
+  neuer config.h Schalter USE_MMAP
+<----- ^^^^^^^^^^ pl9 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 

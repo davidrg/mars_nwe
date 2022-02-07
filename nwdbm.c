@@ -1,4 +1,4 @@
-/* nwdbm.c  20-Jun-96  data base for mars_nwe */
+/* nwdbm.c  12-Jul-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,7 +42,7 @@
 #define DBM_REMAINS_OPEN  1
 
 int tells_server_version=0;
-int password_scheme=PW_SCHEME_CHANGE_PW;
+int password_scheme=0; /* PW_SCHEME_CHANGE_PW; */
 
 static datum key;
 static datum data;
@@ -1185,10 +1185,13 @@ int nw_set_passwd(uint32 obj_id, char *password, int dont_ch)
  */
 int nw_keychange_passwd(uint32 obj_id, uint8 *cryptkey, uint8 *oldpass,
 			 int cryptedlen, uint8 *newpass, uint32 act_id)
+/* returns 1 if new password is zero */
 {
   uint8 storedpass[200];
   uint8 keybuff[8];
   char  buf[100];
+  uint8 s_uid[4];
+
   int   len;
   int   result = loc_nw_test_passwd(keybuff, storedpass,
                                   obj_id, cryptkey, oldpass);
@@ -1205,8 +1208,6 @@ int nw_keychange_passwd(uint32 obj_id, uint8 *cryptkey, uint8 *oldpass,
 
   if (result < 0) {     /* wrong passwd */
     if (1 == act_id) {  /* supervisor is changing passwd   */
-      uint8 buf[8];
-      uint8 s_uid[4];
       U32_TO_BE32(obj_id, s_uid);
       shuffle(s_uid, buf, 0, storedpass);
       nw_encrypt(cryptkey, storedpass, keybuff);
@@ -1223,7 +1224,10 @@ int nw_keychange_passwd(uint32 obj_id, uint8 *cryptkey, uint8 *oldpass,
   nw_decrypt_newpass(storedpass+8, newpass+8, newpass+8);
   XDPRINTF((5, 0, "realnew: %s", hex_str(buf,newpass,     16)));
   nw_set_enpasswd(obj_id, newpass, 0);
-  return(0);
+  /* testing for zero password */
+  U32_TO_BE32(obj_id, s_uid);
+  shuffle(s_uid, buf, 0, storedpass);
+  return(memcmp(newpass, storedpass, 16) ? 0 : 1);
 }
 
 int prop_add_new_member(uint32 obj_id, int prop_id, uint32 member_id)
@@ -1321,7 +1325,15 @@ static void add_user_to_group(uint32 u_id,  uint32 g_id)
 
 }
 
-static void add_user(uint32 u_id,   uint32 g_id,
+static void add_user_2_unx(uint32 u_id,  char  *unname)
+{
+  if (unname && *unname)
+    nw_new_obj_prop(u_id, NULL,                 0  ,   0  ,   0 ,
+      	             "UNIX_USER",        P_FL_ITEM,    0x33,
+	             (char*)unname,  strlen(unname));
+}
+
+static void add_user_g(uint32 u_id,   uint32 g_id,
                   char   *name,  char  *unname,
                   char *password, int dont_ch)
 {
@@ -1331,11 +1343,7 @@ static void add_user(uint32 u_id,   uint32 g_id,
   XDPRINTF((1, 0, "Add/Change User='%s', UnixUser='%s'",
      	       	  name, unname));
   add_user_to_group(u_id, g_id);
-  if (unname && *unname)
-    nw_new_obj_prop(u_id, NULL,                 0  ,   0  ,   0 ,
-      	             "UNIX_USER",        P_FL_ITEM,    0x33,
-	             (char*)unname,  strlen(unname));
-
+  add_user_2_unx(u_id, unname);
   if (password && *password) {
     if (*password == '-') *password='\0';
     nw_set_passwd(u_id, password, dont_ch);
@@ -1408,6 +1416,20 @@ static uint8 *test_add_dir(uint8 *unixname, uint8 *pp, int shorten,
   return(pp);
 }
 
+void test_ins_unx_user(uint32 id)
+{
+  NETOBJ obj;
+  obj.id = id;
+  if ((MYPASSWD*)NULL == nw_getpwnam(id) && !nw_get_obj(&obj)){
+    struct passwd *pw;
+    uint8 unxname[50];
+    xstrcpy(unxname, obj.name);
+    downstr(unxname);
+    pw = getpwnam(unxname);
+    if (NULL != pw && pw->pw_uid)  /* only non root user */
+       add_user_2_unx(id, unxname);
+  }
+}
 
 int nw_fill_standard(char *servername, ipxAddr_t *adr)
 /* fills the standardproperties */
@@ -1416,13 +1438,15 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   uint32 su_id    = 0x00000001;
   uint32 ge_id    = 0x01000001;
   uint32 serv_id  = 0x03000001;
-  uint32 pserv_id = 0L;
   uint32 q1_id    = 0x0E000001;
 #if 0
   uint32 guest_id = 0x02000001;
   uint32 nbo_id   = 0x0B000001;
   uint32 ngr_id   = 0x0C000001;
   uint32 ps1_id   = 0x0D000001;
+#endif
+#if _MAR_TESTS_
+  uint32 pserv_id = 0L;
 #endif
   FILE *f	     = open_nw_ini();
   int  auto_ins_user = 0;
@@ -1500,7 +1524,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
           if (what == 14)
             add_group(nname, uname, password);
           else
-            add_user((12 == what) ? su_id : 0L, ge_id, nname,
+            add_user_g((12 == what) ? su_id : 0L, ge_id, nname,
                             uname, password, 0);
         }
       } else if (15 == what) {
@@ -1539,7 +1563,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
           char nname[100];
           xstrcpy(nname, pw->pw_name);
           upstr(nname);
-          add_user(0L, ge_id, nname, pw->pw_name, auto_ins_passwd,
+          add_user_g(0L, ge_id, nname, pw->pw_name, auto_ins_passwd,
             (auto_ins_user == 99) ? 0 : 99);
         } else {
           XDPRINTF((1,0, "Unix User:'%s' not added because passwd='%s'",

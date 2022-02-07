@@ -125,7 +125,7 @@ void get_servers(void)
 #endif
 }
 
-void print_routing_info(void)
+void print_routing_info(int force)
 {
 ;; /* DUMMY */
 }

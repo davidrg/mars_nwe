@@ -406,9 +406,9 @@ static void send_bcast_packet(ipxAddr_t *addr, int conn, int signature)
 }
 
 typedef struct {
-  ipxAddr_t  addr;        /* address of client     */
-  time_t     last_time;   /* last wdog packet sent */
-  int        counter;     /* max. 11 packets       */
+  ipxAddr_t  addr;        /* address of client             */
+  time_t     last_time;   /* time of last wdog packet sent */
+  int        counter;     /* max. 11 packets               */
 } CONN;
 
 static CONN conns[MAX_CONNECTIONS];
@@ -422,7 +422,7 @@ static void insert_wdog_conn(int conn, ipxAddr_t *adr)
       c=&(conns[hi_conn++]);
       memset(c, 0, sizeof(CONN));
     }
-    c=&(conns[--conn]);
+    c=&(conns[conn-1]);
     c->last_time = akttime_stamp;
     c->counter   = 0;
     if (NULL != adr) memcpy(&(c->addr), adr, sizeof(ipxAddr_t));
@@ -431,22 +431,21 @@ static void insert_wdog_conn(int conn, ipxAddr_t *adr)
 
 static void modify_wdog_conn(int conn, int mode)
 /* mode =  0  : reset        */
-/* mode =  1  : force test 1 */
-/* mode =  2  : force test 2 */
+/* mode =  1  : activate     */
 /* mode = 99  : remove wdog  */
 {
   if (conn > 0 && --conn < hi_conn) {
     CONN *c=&(conns[conn]);
     if (mode < 99) {
-      c->last_time = akttime_stamp;
       switch (mode) {
-        case 1  : c->counter      =  MAX_WDOG_TRIES;         /* quick test */
-                  break;
-
-        case 2  : c->counter      =  max(2, MAX_WDOG_TRIES); /* slow test (activate)*/
+        case 1  : /* activate Wdog */
+                  if (!c->counter) c->counter=1;
+                  c->counter = max(c->counter, MAX_WDOG_TRIES-1);
+                  c->last_time    =  1;
                   break;
 
         default : c->counter      =  0;  /* reset */
+                  c->last_time    = akttime_stamp;
                   break;
       } /* switch */
     } else if (mode == 99) {  /* remove */
@@ -462,14 +461,14 @@ static void modify_wdog_conn(int conn, int mode)
   }
 }
 
-static void send_wdogs(int force)
+static void send_wdogs()
 {
   int  k  = hi_conn;
   while (k--) {
     CONN  *c = &(conns[k]);
     if (c->last_time) {
       time_t t_diff = akttime_stamp - c->last_time;
-      if ( (c->counter && (t_diff > 50 || force))
+      if (   (c->counter && t_diff > 50)
           || t_diff > WDOG_TRIE_AFTER_SEC) { /* max. 5 minutes */
         if (c->counter > MAX_WDOG_TRIES) {
           /* now its enough with trying */
@@ -1016,7 +1015,7 @@ static void get_ini(int full)
     } else if (!anz_net_devices) {
       errorp(10, "WARNING:No external devices specified", NULL);
     }
-    print_routing_info();
+    print_routing_info(1);
 #endif
 
     XDPRINTF((1, 0, "%s name='%s', INTERNAL NET=0x%lx, NODE=0x%02x:%02x:%02x:%02x:%02x:%02x",
@@ -1119,6 +1118,7 @@ static void handle_hup_reqest(void)
   get_ini(0);
   write_to_ncpserv(0xeeee, 0, NULL, 0); /* inform ncpserv */
   write_to_nwbind( 0xeeee, 0, NULL, 0); /* inform nwbind  */
+  send_sap_rip_broadcast(1);  /* firsttime broadcast */
   fl_get_int=0;
 }
 
@@ -1268,15 +1268,18 @@ int main(int argc, char **argv)
                             break;
 
                       case  0x4444 :  /* reset wdog connection   =  0 */
-                                      /* force test wdog conn 1  =  1 */
-                                      /* force test wdog conn 2  =  2 */
+                                      /* activate wdogs          =  1 */
                                       /* remove wdog             = 99 */
                             if (sizeof(int) == read(p->fd,
                                  (char*)&conn, sizeof(int))
                             &&   sizeof(int) == read(p->fd,
                                  (char*)&what, sizeof(what)))
+                            if (what == 1) {
+                              while (conn++ < hi_conn) {
                                 modify_wdog_conn(conn, what);
-                            if (what > 0 && what < 99) call_wdog++;
+                              }
+                              call_wdog++;
+                            }
                             break;
 
                       case  0x5555 :  /* close connection */
@@ -1330,7 +1333,7 @@ int main(int argc, char **argv)
                 bsecs=server_broadcast_secs;
             broadmillisecs = bsecs*1000+10;
           }
-          send_wdogs(call_wdog);
+          send_wdogs();
           broadtime = akttime_stamp;
         } else {
           if (call_wdog) send_wdogs(1);

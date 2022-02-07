@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 20-May-96
+#makefile.unx 10-Jul-96
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=97
-P_L=7
+P_L=9
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -39,6 +39,9 @@ distclean:  $(DESTMAKEFILE)
 
 install:  $(DESTMAKEFILE)
 	$(MAKE) -f $(DESTMAKEFILE) n_$@
+
+reboot:  $(DESTMAKEFILE)
+	 $(MAKE) -f $(DESTMAKEFILE) n_$@
 
 install_ini:  $(DESTMAKEFILE)
 	$(MAKE) -f $(DESTMAKEFILE) n_$@
@@ -184,6 +187,11 @@ echo "********************************************************"; \
 echo ""; \
 fi; cd $(OBJDIR) )
 
+n_reboot: n_install
+	  -nwserv -k
+	  sleep  5
+	  nwserv
+
 clean_d:
 	cd $(VPATH) && (\
    find $(DISTRIB) \( -name .e.pck -o -name '~*' -o -name '*~' -o -name core \) \
@@ -220,7 +228,7 @@ make_dir:
 
 n_diff: make_dir clean_d
 	cd $(VPATH) && ( \
- makepatch $(DISTRIB).org $(DISTRIB) > $(PATCHF) \
+ makepatch org/$(DISTRIB) $(DISTRIB) > $(PATCHF) \
 ; gzip -9 -f $(PATCHF) \
 ; cd $(OBJDIR) )
 

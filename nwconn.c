@@ -26,6 +26,8 @@
 #include "nwqueue.h"
 #include "namspace.h"
 
+int act_connection = 0;
+int act_pid        = 0;
 
 #define  FD_NCP_OUT    3
 
@@ -179,7 +181,7 @@ static int handle_ncp_serv(void)
 	                 if (!nw_get_fs_usage(xdata->name, &fsp)) {
 	                   int sector_scale=1;
 	                   while (fsp.fsu_blocks/sector_scale > 0xffff)
-                                  sector_scale*=2;
+                                  sector_scale+=2;
 	                   U16_TO_BE16(sector_scale, xdata->sec_per_block);
 	                   U16_TO_BE16(fsp.fsu_blocks/sector_scale, xdata->total_blocks);
 	                   U16_TO_BE16(fsp.fsu_bavail/sector_scale, xdata->avail_blocks);
@@ -384,7 +386,7 @@ static int handle_ncp_serv(void)
 	           /******** Allocate Permanent DIR Handle **/
 	                  || *p == 0x13     /* Allocate Temp Dir Handle */
 	           /******** Allocate Temp DIR Handle **/
-	                  || *p == 0x16)  {   /* Allocate spez Temp Dir Handle */
+	                  || *p == 0x16)  {   /* Allocate Special Temp Dir Handle */
 	           /******** Allocate spez temp  DIR Handle **/
 	                 struct XDATA {
 	                   uint8 dirhandle;   /* new Dir Handle   */
@@ -406,7 +408,8 @@ static int handle_ncp_serv(void)
 
 	               } else  if (*p == 0x14){ /* deallocate Dir Handle */
 	           /******** Free DIR Handle ****************/
-	                 int err_code = nw_free_dir_handle((int)*(p+1));
+	                 int err_code = nw_free_dir_handle((int)*(p+1),
+	                                 (int)(ncprequest->task));
 	                 if (err_code) completition = (uint8) -err_code;
 	               } else if (*p == 0x15){ /* liefert Volume Information */
 	           /******** Get Volume Info with Handle ****/
@@ -429,7 +432,7 @@ static int handle_ncp_serv(void)
                              if (!nw_get_fs_usage(xdata->name, &fsp)) {
                                int sector_scale=1;
                                while (fsp.fsu_blocks/sector_scale > 0xffff)
-                                  sector_scale*=2;
+                                  sector_scale+=2;
                                U16_TO_BE16(sector_scale, xdata->sectors);
                                U16_TO_BE16(fsp.fsu_blocks/sector_scale, xdata->total_blocks);
                                U16_TO_BE16(fsp.fsu_bavail/sector_scale, xdata->avail_blocks);
@@ -537,6 +540,8 @@ static int handle_ncp_serv(void)
 
 	               } else  if (*p == 0x25){ /* setting FILE INFO ??*/
 	                  /* TODO !!!!!!!!!!!!!!!!!!!!  */
+
+
 	                 do_druck++;
 
 	               } else  if (*p == 0x26) { /* Scan file or Dir for ext trustees */
@@ -798,13 +803,11 @@ static int handle_ncp_serv(void)
          break;
 
 	 case 0x18 : /* End of Job */
-                     nw_free_handles((ncprequest->task > 0) ?
-                                      (int) (ncprequest->task) : 1);
-
+                     nw_free_handles(ncprequest->task);
                      break;
 
 	 case 0x19 : /* logout, some of this call is handled in ncpserv. */
-                     nw_free_handles(0);
+                     nw_free_handles(-1);
                      set_default_guid();
                      nw_setup_home_vol(-1, NULL);
                      return(-1); /* nwbind must do rest */
@@ -1095,21 +1098,22 @@ static int handle_ncp_serv(void)
 	             }
 	             break;
 
-	 case 0x46 : /* chmod file ??? */
+	 case 0x46 : /* set file attributes */
 	             {
 	               struct INPUT {
 	                 uint8   header[7];     /* Requestheader */
-	                 uint8   attrib;        /*  0x80, od 0x0 */
-	                 /* 0x80 for example for sharable */
-	                 uint8   dir_handle;    /*  ??? z.B.0x1 */
-	                 uint8   modus;         /* z.B.0x6  */
+	                 uint8   access;        /*  0x80, od 0x0 */
+	                 /* 0x80 for example is shared */
+	                 uint8   dir_handle;
+	                 uint8   attrib;         /* search attrib */
 	                 uint8   len;
-	                 uint8   data[2];        /* Name */
+	                 uint8   data[2];        /* filename */
 	               } *input = (struct INPUT *)ncprequest;
 	               completition =
 	                 (uint8) (-nw_chmod_datei((int)input->dir_handle,
 	                                   input->data, (int)input->len,
-	                                   (int)input->modus));
+	                                   (int)input->attrib,
+	                                   (int)input->access));
 	             }
 	             break;
 
@@ -1454,7 +1458,7 @@ static int  fl_get_int=0;
 static void sig_quit(int rsig)
 {
   XDPRINTF((2, 0, "Got Signal=%d", rsig));
-  fl_get_int=2;
+  fl_get_int=-1;
 }
 
 static void sig_pipe(int rsig)
@@ -1465,14 +1469,14 @@ static void sig_pipe(int rsig)
 
 static void sig_hup(int rsig)
 {
-  fl_get_int=1;
+  if (!fl_get_int) fl_get_int=1;
   signal(SIGHUP,   sig_hup);
 }
 
 static void get_new_debug(void)
 {
   get_ini_debug(3);
-  fl_get_int=0;
+  if (fl_get_int > 0) fl_get_int=0;
 }
 
 static void set_sig(void)
@@ -1500,8 +1504,9 @@ int main(int argc, char **argv)
                   father_pid, *(argv+2), *(argv+3)));
 
   adr_to_ipx_addr(&from_addr,   *(argv+2));
-
+  act_connection = atoi(*(argv+3));
   if (nw_init_connect()) exit(1);
+  act_pid = getpid();
 
   sscanf(argv[4], "%x", &sock_nwbind);
 
@@ -1537,11 +1542,11 @@ int main(int argc, char **argv)
   U16_TO_BE16(0x3333, ncpresponse->type);
   ncpresponse->task           = (uint8) 1;    /* allways 1 */
   ncpresponse->reserved       = (uint8) 0;    /* allways 0 */
-  ncpresponse->connection     = (uint8) atoi(*(argv+3));
+  ncpresponse->connection     = (uint8)act_connection;
 
   set_sig();
 
-  while (1) {
+  while (fl_get_int >= 0) {
     int data_len = read(0, readbuff, sizeof(readbuff));
     /* this read is a pipe or a socket read,
      * depending on CALL_NWCONN_OVER_SOCKET
@@ -1549,8 +1554,8 @@ int main(int argc, char **argv)
     ncpresponse->connect_status = (uint8) 0;
 
     if (fl_get_int) {
-      if (fl_get_int      == 1) get_new_debug();
-      else if (fl_get_int == 2) break;
+      if (fl_get_int == 1) get_new_debug();
+      else if (fl_get_int < 0) break;
     }
 
     if (data_len > 0) {

@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "19-Jun-96"
+#define REVISION_DATE "12-Jul-96"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -44,22 +44,6 @@ static void write_to_nwserv(int what, int connection, int mode,
                                 char *data, int size)
 {
   switch (what) {
-    case 0x2222  : /* insert wdog connection */
-                   write(FD_NWSERV, &what,       sizeof(int));
-                   write(FD_NWSERV, &connection, sizeof(int));
-                   write(FD_NWSERV, &size,       sizeof(int));
-                   write(FD_NWSERV, data,        size);  /* ipxAddr_t */
-                   break;
-
-    case 0x4444  : /* tell the wdog there's no need to look  0 */
-                   /* fast activate wdog to free connection  1 */
-                   /* slow activate wdog to free connection  2 */
-                   /* the connection ist closed             99 */
-                   write(FD_NWSERV, &what,       sizeof(int));
-                   write(FD_NWSERV, &connection, sizeof(int));
-                   write(FD_NWSERV, &mode,       sizeof(int));
-                   break;
-
     case 0x6666  : /* send to client that server holds message */
                    write(FD_NWSERV, &what,       sizeof(int));
                    write(FD_NWSERV, &connection, sizeof(int));
@@ -1058,6 +1042,7 @@ static void handle_fxx(int gelen, int func)
 		      internal_act=1;
 		      result=nw_keychange_passwd(obj.id, act_c->crypt_key,
 				rdata, (int)*p, p+1, act_c->object_id);
+                      if (!result) test_ins_unx_user(obj.id);
 		      internal_act = 0;
 		    }
 

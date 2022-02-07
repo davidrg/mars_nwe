@@ -529,12 +529,12 @@ static void send_sap_broadcast(int mode)
   }
 }
 
-static FILE *open_route_info_fn(void)
+static FILE *open_route_info_fn(int force)
 {
   static int tacs=0;
   FILE   *f=NULL;
   if (print_route_tac > 0) {
-    if (!tacs) {
+    if (!tacs || force) {
       if (NULL != (f=fopen(pr_route_info_fn,
                            (print_route_mode) ? "w" : "a"))) {
         tacs = print_route_tac-1;
@@ -544,11 +544,14 @@ static FILE *open_route_info_fn(void)
   return(f);
 }
 
-void print_routing_info(void)
+void print_routing_info(int force)
 {
-  FILE *f= open_route_info_fn();
+  FILE *f= open_route_info_fn(force);
   if (f) {
     int k=-1;
+    time_t xtime;
+    time(&xtime);
+    fprintf(f, "%s", ctime(&xtime) );
     fprintf(f, "<--------- Devices ---------------->\n");
     fprintf(f, "%-15s %-15s %5s  Network Status\n", "DevName", "Frame", "Ticks");
     while (++k < anz_net_devices) {
@@ -589,12 +592,18 @@ void print_routing_info(void)
   }
 }
 
+static int look_for_interfaces(void);
+
+
 void send_sap_rip_broadcast(int mode)
 /* mode=0, standard broadcast */
 /* mode=1, first trie         */
 /* mode=2, shutdown           */
 {
 static int flipflop=1;
+  int force_print_routes=(mode == 1);
+  if (auto_creat_interfaces)
+    force_print_routes = look_for_interfaces();
   if (mode) {
     send_rip_broadcast(mode);
     send_sap_broadcast(mode);
@@ -607,7 +616,8 @@ static int flipflop=1;
       flipflop=1;
     }
   }
-  if (flipflop) print_routing_info(); /* every second time */
+  if (flipflop || force_print_routes)
+    print_routing_info(force_print_routes); /* every second time */
 }
 
 static void query_sap_on_net(uint32 net)
@@ -667,6 +677,7 @@ int test_ins_device_net(uint32 rnet)
         foundfree = k;
     } else if (nd->net == rnet) return(0);
   }
+
   if ((rnetframe=get_interface_frame_name(rnetdevname, rnet)) < 0)
     return(0);
 
@@ -736,4 +747,50 @@ int test_ins_device_net(uint32 rnet)
     }
   }
   return(1);
+}
+
+static int look_for_interfaces(void)
+{
+  FILE *f=fopen("/proc/net/ipx_interface", "r");
+  int  find_diffs=0;
+  if (f) {
+    char buff[200];
+    NW_NET_DEVICE *nd;
+    int  k = -1;
+
+    while (++k < anz_net_devices) {
+      nd=net_devices[k];
+      if (nd->is_up == 2) nd->is_up = -2; /* this will be put DOWN */
+    }
+
+    while (fgets((char*)buff, sizeof(buff), f) != NULL){
+      uint32   rnet;
+      uint8    dname[25];
+      int      flags;
+      int fframe = read_interface_data((uint8*) buff, &rnet, NULL, &flags, dname);
+      if (fframe < 0) continue;
+      if (rnet > 0L && !(flags & 2)) {
+        int found=0;
+        k=-1;
+        while (++k < anz_net_devices) {
+          nd=net_devices[k];
+          if (nd->net == rnet) {
+            found++;
+            break;
+          }
+        }
+        if (found && nd->is_up) {
+          if (nd->is_up == -2) nd->is_up=2; /* reset  */
+        } else find_diffs=test_ins_device_net(rnet);
+      }
+    }
+    fclose(f);
+
+    k = -1;
+    while (++k < anz_net_devices) {
+      nd=net_devices[k];
+      if (nd->is_up < 0) nd->is_up = 0; /* this will be put DOWN */
+    }
+  }
+  return(find_diffs);
 }

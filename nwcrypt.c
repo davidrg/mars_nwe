@@ -212,7 +212,7 @@ nw_encrypt(unsigned char *fra,unsigned char *buf,unsigned char *til)
 
 
 /* =========== next is from Guntram Blohm ! =============== */
-char newshuffle[256+16] = {
+static char newshuffle[256+16] = {
 	0x0f, 0x08, 0x05, 0x07, 0x0c, 0x02, 0x0e, 0x09,
 	0x00, 0x01, 0x06, 0x0d, 0x03, 0x04, 0x0b, 0x0a,
 	0x02, 0x0c, 0x0e, 0x06, 0x0f, 0x00, 0x01, 0x08,
@@ -258,7 +258,7 @@ char newshuffle[256+16] = {
 };
 
 
-int nw_decrypt_newpass(char *oldpwd, char *newpwd, char *undecr)
+void nw_decrypt_newpass(char *oldpwd, char *newpwd, char *undecr)
 {
 	int i, j, n;
 	unsigned char ch, cl;
@@ -295,5 +295,45 @@ int nw_decrypt_newpass(char *oldpwd, char *newpwd, char *undecr)
 		memcpy(newpwd, copy, 8);
 	}
 	memcpy(undecr, copy, 8);
+}
+
+
+void newpassencrypt(char *old, char *new, char *out)
+{
+	char *p, *bx;
+	char copy[8];
+	int i, di, ax;
+	char cl, dl, ch;
+
+	memcpy(copy, new, 8);
+
+	for (i=0; i<16; i++)
+	{
+		for (di=0, ax=0, p=old; di<8; di++, ax+=0x20, p++)
+		{
+			cl=newshuffle[(((copy[di]^*p)>>4)&0x0f)+ax+0x10]<<4;
+			dl=newshuffle[((copy[di]^*p)&0xf)+ax];
+			copy[di]=cl|dl;
+		}
+
+		ch=old[7];
+		for (bx=old+7; bx>old; bx--)
+		{
+			*bx=((bx[-1]>>4)&0x0f)|((*bx)<<4);
+		}
+		*old=((ch>>4)&0x0f)|(*old)<<4;
+
+		memset(out, '\0', 8);
+
+		for (di=0; di<16; di++)
+		{
+			if (newshuffle[di+0x100]&1)
+				ch=((copy[newshuffle[di+0x100]/2]>>4)&0x0f);
+			else
+				ch=copy[newshuffle[di+0x100]/2]&0x0f;
+			out[di/2]|=((di&1) ? ch<<4 : ch);
+		}
+		memcpy(copy, out, 8);
+	}
 }
 

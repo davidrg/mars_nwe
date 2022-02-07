@@ -65,19 +65,39 @@ extern int errno;
 #define min(a,b)        (((a) < (b)) ? (a) : (b))
 #endif
 
-#define U16_TO_BE16(u, b) { uint16 a=(u); \
+#ifdef SPARC
+# define  U16_TO_BE16  X_U16_TO_16
+# define  U32_TO_BE32  X_U32_TO_32
+# define  U16_TO_16    X_U16_TO_BE16
+# define  U32_TO_32    X_U32_TO_BE32
+#else
+# define  U16_TO_BE16  X_U16_TO_BE16
+# define  U32_TO_BE32  X_U32_TO_BE32
+# define  U16_TO_16    X_U16_TO_16
+# define  U32_TO_32    X_U32_TO_32
+#endif
+
+#define X_U16_TO_BE16(u, b) { uint16 a=(uint16)(u); \
                *(  (uint8*) (b) )    = *( ((uint8*) (&a)) +1); \
                *( ((uint8*) (b)) +1) = *(  (uint8*) (&a)); }
 
-
-#define U32_TO_BE32(u, ar) { uint32 a= (u); uint8 *b= ((uint8*)(ar))+3; \
+#if 0
+/* I don't know anymore why I did coded it in this form */
+#define X_U32_TO_BE32(u, ar) { uint32 a= (uint32)(u); uint8 *b= ((uint8*)(ar))+3; \
                *b-- = (uint8)a; a >>= 8;  \
                *b-- = (uint8)a; a >>= 8;  \
                *b-- = (uint8)a; a >>= 8;  \
                *b   = (uint8)a; }
+#else
+#define X_U32_TO_BE32(u, b) { uint32 a=(uint32)(u); \
+               *( (uint8*) (b))  = *( ((uint8*) (&a))+3); \
+               *( ((uint8*) (b)) +1) = *( ((uint8*) (&a))+2); \
+               *( ((uint8*) (b)) +2) = *( ((uint8*) (&a))+1); \
+               *( ((uint8*) (b)) +3) = *(  (uint8*) (&a)); }
+#endif
 
-#define U16_TO_16(u, b) { uint16 a=(u); memcpy(b, &a, 2); }
-#define U32_TO_32(u, b) { uint32 a=(u); memcpy(b, &a, 4); }
+#define X_U16_TO_16(u, b) { uint16 a=(uint16)(u); memcpy(b, &a, 2); }
+#define X_U32_TO_32(u, b) { uint32 a=(uint32)(u); memcpy(b, &a, 4); }
 
 #define GET_BE16(b)  (     (int) *(((uint8*)(b))+1)  \
                      | ( ( (int) *( (uint8*)(b)   )  << 8) ) )
@@ -95,6 +115,7 @@ extern int errno;
                    | (  ((uint32)   *(((uint8*)(b))+1) ) << 8)  \
                    | (  ((uint32)   *(((uint8*)(b))+2) ) << 16) \
                    | (  ((uint32)   *(((uint8*)(b))+3) ) << 24) )
+
 
 #define MAX_U32    ((uint32)0xffffffffL)
 #define MAX_U16    ((uint16)0xffff)
@@ -179,6 +200,10 @@ extern int errno;
 
 #ifndef IPX_DATA_GR_546
 # define IPX_DATA_GR_546 1
+#endif
+
+#ifndef USE_MMAP
+# define USE_MMAP 1
 #endif
 
 #ifndef WITH_NAME_SPACE_CALLS

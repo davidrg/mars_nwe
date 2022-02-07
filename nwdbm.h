@@ -188,6 +188,8 @@ extern int nw_keychange_passwd(uint32 obj_id,
 extern int nw_get_q_dirname(uint32 q_id, uint8 *buff);
 extern int nw_get_q_prcommand(uint32 q_id, uint8 *buff);
 
+extern void test_ins_unx_user(uint32 id);
+
 extern int  nw_fill_standard(char *servername, ipxAddr_t *adr);
 extern int  nw_init_dbm(char *servername, ipxAddr_t *adr);
 #endif

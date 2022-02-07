@@ -26,6 +26,10 @@
 #include "nwvolume.h"
 #include "nwfile.h"
 #include "connect.h"
+#include "nwconn.h"
+#if USE_MMAP
+# include <sys/mman.h>
+#endif
 
 static FILE_HANDLE  file_handles[MAX_FILE_HANDLES_CONN];
 static int anz_fhandles=0;
@@ -68,7 +72,16 @@ static int free_file_handle(int fhandle)
       if (fh->fh_flags & FH_IS_PIPE_COMMAND) {
         if (fh->f) ext_pclose(fh->f);
         fh->f = NULL;
-      } else close(fh->fd);
+      } else {
+#if USE_MMAP
+        if (fh->p_mmap) {
+          munmap(fh->p_mmap, fh->size_mmap);
+          fh->p_mmap = NULL;
+          fh->size_mmap = 0;
+        }
+#endif
+        close(fh->fd);
+      }
       if (fh->tmodi > 0L && !(FH_IS_PIPE_COMMAND & fh->fh_flags)
                          && !(FH_IS_READONLY     & fh->fh_flags) ) {
       /* now set date and time */
@@ -105,15 +118,29 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
 /*
  * creatmode: 0 = open | 1 = creat | 2 = creatnew  & 4 == save handle
  * attrib ??
- * access: 0x1=readonly, 0x2=writeonly, 0x4=deny read, 0x5=deny write
+ *
+ * access: 0x1=read,
+ *         0x2=write,
+ *         0x4=deny read,   -> F_WRLCK
+ *         0x8=deny write   -> F_RDLCK
+ *        0x10=SH_COMPAT
+ *
+ * 0x09    (O_RDONLY | O_DENYWRITE);
+ * 0x05    (O_RDONLY | O_DENYREAD);
+ *
+ * 0x0b    (O_RDWR   | O_DENYWRITE);
+ * 0x07    (O_RDWR   | O_DENYREAD);
+ *
+ * 0x05    (O_RDONLY | O_DENYREAD | O_DENYWRITE);
+ * 0x07    (O_RDWR   | O_DENYREAD | O_DENYWRITE);
  *
  */
 {
    int fhandle=new_file_handle(unixname);
+   int dowrite      = (access & 2) || creatmode ;
    if (fhandle > 0){
      FILE_HANDLE *fh=&(file_handles[fhandle-1]);
      int completition = -0xff;  /* no File  Found */
-     int dowrite      = (access & 2) || creatmode ;
      int voloptions   = get_volume_options(volume, 1);
      if (dowrite && (voloptions & VOL_OPTION_READONLY)) {
        completition = (creatmode) ? -0x84 : -0x94;
@@ -125,7 +152,9 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          char *topipe             = "READ";
          if (creatmode) topipe    = "CREAT";
          else if (dowrite) topipe = "WRITE";
-         sprintf(pipecommand, "%s %s", fh->fname, topipe);
+         sprintf(pipecommand, "%s %s %d %d",
+                               fh->fname, topipe,
+                               act_connection, act_pid);
          fh->f  = ext_popen(pipecommand, geteuid(), getegid());
          fh->fd = (fh->f) ? fileno(fh->f->fildes[1]) : -1;
          if (fh->fd > -1) {
@@ -178,6 +207,43 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          }
        }
        if (fh->fd > -1) {
+         if (!(fh->fh_flags & FH_IS_PIPE)) {
+           /* Not a PIPE */
+           if ((access & 0x4) || (access & 0x8)) {
+             struct flock flockd;
+             int result;
+             flockd.l_type   = (access & 0x8) ? F_RDLCK : F_WRLCK;
+             flockd.l_whence = SEEK_SET;
+             flockd.l_start  = 0;
+             flockd.l_len    = 0;
+             result = fcntl(fh->fd, F_SETLK, &flockd);
+             XDPRINTF((5, 0,  "open shared lock:result=%d", result));
+             if (result == -1) {
+               close(fh->fd);
+               fh->fd = -1;
+               completition=-0xfe;
+             }
+           }
+#if USE_MMAP
+           if (fh->fd > -1 && !dowrite) {
+             fh->size_mmap = fh->offd=lseek(fh->fd, 0L, SEEK_END);
+             if (fh->size_mmap > 0) {
+               fh->p_mmap = mmap(NULL,
+                                 fh->size_mmap,
+                                 PROT_READ,
+                                 MAP_SHARED,
+                                 fh->fd, 0);
+               if (fh->p_mmap == (uint8*) -1) {
+                 fh->p_mmap = NULL;
+                 fh->size_mmap=0;
+               }
+             }
+           }
+#endif
+         }
+       }
+       if (fh->fd > -1) {
+         if (!dowrite)      fh->fh_flags |= FH_IS_READONLY;
          if (creatmode & 4) fh->fh_flags |= FH_DO_NOT_REUSE;
          return(fhandle);
        }
@@ -218,7 +284,16 @@ int nw_close_datei(int fhandle, int reset_reuse)
           if (result > 0) result = 0;
         }
         fh->f = NULL;
-      } else result=close(fh->fd);
+      } else {
+#if USE_MMAP
+        if (fh->p_mmap) {
+          munmap(fh->p_mmap, fh->size_mmap);
+          fh->p_mmap = NULL;
+          fh->size_mmap = 0;
+        }
+#endif
+        result=close(fh->fd);
+      }
       fh->fd = -1;
       if (fh->tmodi > 0L && !(fh->fh_flags & FH_IS_PIPE)
                          && !(fh->fh_flags & FH_IS_READONLY)) {
@@ -265,19 +340,31 @@ int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
           }
         }
       } else {
-        if (fh->offd != (long)offset) {
-          fh->offd=lseek(fh->fd, offset, SEEK_SET);
-          if (fh->offd < 0) {
-            XDPRINTF((5,0,"read-file failed in lseek"));
+#if USE_MMAP
+        if (fh->p_mmap) {
+          if (offset < fh->size_mmap) {
+            if (size + offset > fh->size_mmap)
+                 size =  fh->size_mmap - offset;
+            memcpy(data, fh->p_mmap+offset, size);
+          } else size=-1;
+        } else {
+#endif
+          if (fh->offd != (long)offset) {
+            fh->offd=lseek(fh->fd, offset, SEEK_SET);
+            if (fh->offd < 0) {
+              XDPRINTF((5,0,"read-file failed in lseek"));
+            }
           }
+          if (fh->offd > -1L) {
+            if ((size = read(fh->fd, data, size)) > -1)
+              fh->offd+=(long)size;
+            else {
+              XDPRINTF((5,0,"read-file failed in read"));
+            }
+          } else size = -1;
+#if USE_MMAP
         }
-        if (fh->offd > -1L) {
-          if ((size = read(fh->fd, data, size)) > -1)
-            fh->offd+=(long)size;
-          else {
-            XDPRINTF((5,0,"read-file failed in read"));
-          }
-        } else size = -1;
+#endif
       }
       if (size == -1) size=0;
       return(size);
@@ -402,7 +489,10 @@ int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
       struct flock flockd;
       int result;
       if (fh->fh_flags & FH_IS_PIPE) return(0);
-      flockd.l_type   = (do_lock) ? F_WRLCK : F_UNLCK;
+      flockd.l_type   = (do_lock)
+                         ? ((fh->fh_flags & FH_IS_READONLY) ?  F_RDLCK
+                                                            :  F_WRLCK)
+                         : F_UNLCK;
       flockd.l_whence = SEEK_SET;
       flockd.l_start  = offset;
       flockd.l_len    = size;

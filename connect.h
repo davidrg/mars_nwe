@@ -67,7 +67,8 @@ extern int nw_delete_datei(int dir_handle,  uint8 *data, int len);
 extern int nw_set_file_information(int dir_handle, uint8 *data, int len,
                              int searchattrib, NW_FILE_INFO *f);
 
-extern int nw_chmod_datei(int dir_handle, uint8 *data, int len, int modus);
+extern int nw_chmod_datei(int dir_handle, uint8 *data, int len,
+                          int attrib, int access);
 
 extern int mv_file(int qdirhandle, uint8 *q, int qlen,
             int zdirhandle, uint8 *z, int zlen);
@@ -111,7 +112,7 @@ extern int nw_open_dir_handle( int        dir_handle,
                         int        *searchsequence);
 
 
-extern int nw_free_dir_handle(int dir_handle);
+extern int nw_free_dir_handle(int dir_handle, int task);
 
 extern int nw_set_dir_handle(int targetdir, int dir_handle,
                              uint8 *data, int len, int task);
@@ -154,12 +155,9 @@ extern int nw_scan_a_root_dir(uint8   *rdata,
 
 extern int fn_match(uint8 *s, uint8 *p, int options);
 
-
-extern uint16 un_date_2_nw(time_t time, uint8 *d);
+extern void   un_date_2_nw(time_t time, uint8 *d, int high_low);
 extern time_t nw_2_un_time(uint8 *d, uint8 *t);
-extern uint16 un_time_2_nw(time_t time, uint8 *d);
 
-extern void xun_date_2_nw(time_t time, uint8 *d);
-extern void xun_time_2_nw(time_t time, uint8 *d);
+extern void   un_time_2_nw(time_t time, uint8 *d, int high_low);
 
 #endif

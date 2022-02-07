@@ -567,27 +567,27 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     p      +=2;
   } else p+=6;
   if (infomask & INFO_MSK_CREAT_INFO) {
-    xun_time_2_nw(stb->st_mtime, p);
+    un_time_2_nw(stb->st_mtime, p, 0);
     p      +=2;
-    xun_date_2_nw(stb->st_mtime, p);
+    un_date_2_nw(stb->st_mtime, p, 0);
     p      +=2;
     U32_TO_32(1, p);
     p      +=4;
   } else  p+=8;
   if (infomask & INFO_MSK_MODIFY_INFO) {
-    xun_time_2_nw(stb->st_mtime, p);
+    un_time_2_nw(stb->st_mtime, p, 0);
     p      +=2;
-    xun_date_2_nw(stb->st_mtime, p);
+    un_date_2_nw(stb->st_mtime, p, 0);
     p      +=2;
     U32_TO_32(1, p);
     p      +=4;
-    xun_date_2_nw(stb->st_atime, p);  /* access date */
+    un_date_2_nw(stb->st_atime, p, 0);  /* access date */
     p      +=2;
   } else p+=10;
   if (infomask & INFO_MSK_ARCHIVE_INFO) {
-    xun_time_2_nw(0, p);
+    un_time_2_nw(0, p, 0);
     p      +=2;
-    xun_date_2_nw(0, p);
+    un_date_2_nw(0, p, 0);
     p      +=2;
     U32_TO_32(0, p);
     p      +=4;

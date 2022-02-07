@@ -32,6 +32,10 @@ routed:
 install:
 	./mk.li $@
 
+reboot:
+	./mk.li $@
+
+
 install_ini: nw.ini
 	./mk.li $@
 

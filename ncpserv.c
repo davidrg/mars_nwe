@@ -67,8 +67,7 @@ static void write_to_nwserv(int what, int connection, int mode,
                    break;
 
     case 0x4444  : /* tell the wdog there's no need to look  0 */
-                   /* fast activate wdog to free connection  1 */
-                   /* slow activate wdog to free connection  2 */
+                   /* activate wdogs to free connection      1 */
                    /* the connection ist closed        	    99 */
                    write(FD_NWSERV, &what,       sizeof(int));
                    write(FD_NWSERV, &connection, sizeof(int));
@@ -93,8 +92,8 @@ static void write_to_nwserv(int what, int connection, int mode,
 #define nwserv_insert_conn(connection, adr, size) \
    write_to_nwserv(0x2222, (connection), 0, (adr), (size))
 
-#define nwserv_handle_wdog(connection, mode) \
-   write_to_nwserv(0x4444, (connection), (mode), NULL, 0)
+#define nwserv_activate_wdogs() \
+   write_to_nwserv(0x4444, 0, 1, NULL, 0)
 
 #define nwserv_reset_wdog(connection) \
    write_to_nwserv(0x4444, (connection), 0,  NULL, 0)
@@ -156,11 +155,13 @@ typedef struct {
 static CONNECTION connections[MAX_CONNECTIONS];
 static int 	  anz_connect=0;   /* actual count connections */
 
+#define L_MAX_CONNECTIONS  MAX_CONNECTIONS
+
 static int new_conn_nr(void)
 {
   int  j = -1;
   if (!anz_connect){ /* init all */
-    j = MAX_CONNECTIONS;
+    j = L_MAX_CONNECTIONS;
     while (j--) {
       connections[j].fd       	= -1;
       connections[j].pid       	= -1;
@@ -169,7 +170,7 @@ static int new_conn_nr(void)
     return(1);
   }
   j = -1;
-  while (++j < MAX_CONNECTIONS) {
+  while (++j < L_MAX_CONNECTIONS) {
     CONNECTION *c=&(connections[j]);
     if (c->fd < 0 && c->pid < 0) {
       if (++j > anz_connect) anz_connect=j;
@@ -177,9 +178,7 @@ static int new_conn_nr(void)
     }
   }
   /* nothing free */
-  j=0;
-  while (j++ < MAX_CONNECTIONS)
-    nwserv_handle_wdog(j, 2);  /* slow activate wdog */
+  nwserv_activate_wdogs();
   return(0); /* nothing free */
 }
 
@@ -347,7 +346,7 @@ static int find_get_conn_nr(ipxAddr_t *addr)
       }
     }
   }
-  if (connection) {
+  if (connection>0) {
     uint8 buff[sizeof(ipxAddr_t)+sizeof(uint16)+sizeof(uint32)];
     memcpy(buff, addr, sizeof(ipxAddr_t));
 #if CALL_NWCONN_OVER_SOCKET
@@ -557,7 +556,7 @@ static void handle_ncp_request(void)
                 ncp_response(0x3333,
                              ncprequest->sequence,
                              connection,
-         	                 1,    /* task */
+         	                 0,    /* task here is 0 !? */
          	                 0x0,  /* completition */
          	                 0,    /* conn status  */
          	                 0);
@@ -565,13 +564,20 @@ static void handle_ncp_request(void)
               }
             }
           }
-          XDPRINTF((10,0, "c->fd = %d", c->fd));
         }
+        /* here someting is wrong */
+        XDPRINTF((1,0, "Not ok:0x%x,%s,fd=%d,conn=%d of %d",
+             type,
+             visable_ipx_adr(&from_addr),
+             c->fd,
+             ncprequest->connection,
+             anz_connect));
+      } else {
+        /* here the connection number is wrong */
+        XDPRINTF((1,0, "Not ok:0x%x conn=%d of %d conns",
+          type, ncprequest->connection,
+          anz_connect));
       }
-      /* here someting is wrong */
-      XDPRINTF((1,0, "GOT 0x%x connection=%d of %d conns not OK",
-          type, ncprequest->connection, anz_connect));
-
       if (type == 0x5555 || (type == 0x2222 && ncprequest->function == 0x19)) {
         compl = 0;
         cstat = 0;
@@ -579,15 +585,12 @@ static void handle_ncp_request(void)
         compl = 0;
         cstat = 1;
       }
-
       ncp_response(0x3333, ncprequest->sequence,
     	               ncprequest->connection,
-    	               1,     /* task         */
+    	               (type== 0x5555) ? 0 : 1,     /* task  */
     	               compl, /* completition */
     	               cstat, /* conn status  */
     	               0);
-
-
 
 #if !CALL_NWCONN_OVER_SOCKET
     /* here comes a call from nwbind */

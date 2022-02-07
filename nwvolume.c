@@ -260,6 +260,15 @@ static int get_fs_usage(char *path, struct fs_usage *fsp)
 {
   struct statfs fsd;
   if (statfs (path, &fsd) < 0) return (-1);
+#if 0
+/* test for a 'big' volume */
+fsd.f_blocks = 3733075;
+fsd.f_bfree  = 1531638;
+fsd.f_bavail = 1338518;
+fsd.f_files  = 966656;
+fsd.f_ffree  = 916066;
+fsd.f_bsize  = 1024;
+#endif
   XDPRINTF((3, 0,
     "blocks=%d, bfree=%d, bavail=%d, files=%d, ffree=%d, bsize=%d",
     fsd.f_blocks, fsd.f_bfree, fsd.f_bavail,
@@ -270,6 +279,7 @@ static int get_fs_usage(char *path, struct fs_usage *fsp)
   fsp->fsu_bavail = convert_blocks (fsd.f_bavail);
   fsp->fsu_files  = fsd.f_files;
   fsp->fsu_ffree  = fsd.f_ffree;
+
   return(0);
 }
 

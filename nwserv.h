@@ -59,7 +59,7 @@ extern void ins_del_bind_net_addr(uint8 *name, int styp, ipxAddr_t *adr);
 extern void send_server_response(int respond_typ,
                                  int styp, ipxAddr_t *to_addr);
 
-extern void print_routing_info(void);
+extern void print_routing_info(int force);
 extern void send_sap_rip_broadcast(int mode);
 extern void rip_for_net(uint32 net);
 extern void get_servers(void);

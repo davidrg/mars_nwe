@@ -34,6 +34,7 @@
 
 #define IPX_DATA_GR_546        1     /* allow ipx packets > 546+30 Byte    */
 
+#define USE_MMAP               1     /* use mmap systen call               */
 /* <-------------------------------------------------------------------->  */
 #define MAX_NW_VOLS           10     /* max. number of mars_nwe-volumes    */
 #define MAX_FILE_HANDLES_CONN 80     /* max. number of open files per      */

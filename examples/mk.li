@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 27-Apr-96 ###
+# mk.li 10-Jul-96 ###
 # please edit this file !
 
 mk()
@@ -20,6 +20,7 @@ mk()
 
 TOLOWER='tr "[A-Z]" "[a-z]"'
 UNX=`uname -s | $TOLOWER`
+MASCHINE=`uname -m`
 MK_PPID=$$
 export MK_PPID
 trap 'echo "Error: Try again :)" && exit 1'  1
@@ -33,8 +34,21 @@ case $UNX in
 #    CFLAGS="-pipe -O2 -fomit-frame-pointer"
 #    problems gcc2.5.8 ^^^^^^^^^^^^^^^^^^^^^
      CFLAGS="-pipe -Wall"
-     HOSTCFLAGS="-DLINUX"
+
+  case $MASCHINE in
+    sparc)
+       HOSTCFLAGS="-DLINUX -DSPARC"
+       ;;
+      *)
+       HOSTCFLAGS="-DLINUX"
+      ;;
+  esac
+
+if   [ -f /usr/lib/libgdbm.a ] || [ -f /usr/lib/libgdbm.so ] ; then
+     NDBMLIB="-lgdbm"
+else
      NDBMLIB="-ldbm"
+fi
      CRYPTLIB=""
      NSLLIB=""
      MAKE=make

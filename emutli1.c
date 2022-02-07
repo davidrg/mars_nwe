@@ -1,4 +1,4 @@
-/* emutli1.c 28-Apr-96 */
+/* emutli1.c 24-Jun-96 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -58,7 +58,7 @@ static int x_ioctl(int sock, int mode, void *id)
   return(result);
 }
 
-static int interface_data(uint8* data, uint32 *rnet, uint8 *node,
+int read_interface_data(uint8* data, uint32 *rnet, uint8 *node,
                           int *flags, uint8 *name)
 
 /* returns frame or if error < 0 */
@@ -112,7 +112,7 @@ int get_interface_frame_name(char *name, uint32 net)
     while (fgets((char*)buff, sizeof(buff), f) != NULL){
       uint32   rnet;
       uint8 dname[25];
-      int fframe = interface_data((uint8*) buff, &rnet, NULL, NULL, dname);
+      int fframe = read_interface_data((uint8*) buff, &rnet, NULL, NULL, dname);
       if (fframe < 0) continue;
       if (rnet == net) {
         if (name) strcpy(name, dname);
@@ -148,7 +148,7 @@ static void del_special_net(int special, char *devname, int frame)
         uint8 name[25];
         while (fgets((char*)buff, sizeof(buff), f) != NULL){
           int flags = 0;
-          int frame = interface_data((uint8*) buff, NULL, NULL,
+          int frame = read_interface_data((uint8*) buff, NULL, NULL,
                                      &flags, name);
           if (frame < 0) continue;
           sipx->sipx_type = frame;

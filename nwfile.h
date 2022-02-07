@@ -6,6 +6,10 @@
 typedef struct {
   int      fd;          /* filehandle from system open/creat */
   long   offd;          /* actual file offset                */
+#if USE_MMAP
+  uint8  *p_mmap;       /* for use with mmap                 */
+  int    size_mmap;
+#endif
   time_t tmodi;         /* modification TIME                 */
   FILE_PIPE *f;         /* for PIPE                          */
   int fh_flags;         /* 2 = PIPE                          */

@@ -1,4 +1,15 @@
 # in this files are important notes for user of mars_nwe.
+------12-Jul-96--- 0.97.pl9 ----------
+automatic adding and removing of ipx-interfaces. (internal router)
+now running under linux/sparc.
+better file locking/sharing.
+some unix->dos attribute handling now.
+better read performance (mmap(ing))
+A not yet assigned mars_nwe user is now automatic assigned
+to a Linux user with same name when the password is changed and the
+new password is not null.
+------------------ 0.97.pl7 ----------
+Crypted Change password call implemented.
 ------05-May-96--- 0.97.pl3 ----------
 Now nwserv can be called with parameter '-h' to send SIGHUP
 to the main nwserv program or with '-k' to send SIGTERM
