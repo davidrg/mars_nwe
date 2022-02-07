@@ -76,14 +76,19 @@ Mr. Charlie Root (alexey) <root@cs.imi.udmurtia.su>
 Andrew Sapozhnikov <sapa@hq.icb.chel.su>
         fixed findfirst/findnext bug,
         fixed directory access bug,
-        added extend "Volume is home" feature.
-        fixed "rename wildcard" bug.
+        added extend "Volume is home" feature,
+        fixed "rename wildcard" bug,
+        fixed prop_find_member bug,
+        fixed x_str_match (DOS match) routine.
 
 Hayo Schmidt <100305.1424@compuserve.com>
         added patch to let ATARI client work.
 
 Gregory Steuck <greg@nsu.ru>
         testings and errorreports
+
+Neal Stephenson <neal@nstephenson.gw.yorku.ca>
+        patch for glibc6
 
 Morio Taneda <eb04@rz.uni-karlsruhe.de>
         testings, bugfixes

@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 03-Nov-97
+Aenderungen in mars_nwe bis zum : 03-Mar-98
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -393,10 +393,10 @@ Erste 'oeffentliche' Version
 - Verzeichnisse werden nicht mehr auf readonly gesetzt.
 <----- ^^^^^^^^^^ pl4 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - negotiate Buffersize von < 512 wird nun ignoriert. ( Hayo Schmidt )
-- namspace.c:  
+- namspace.c:
   - get_dbe_data_from_disk: Rechteproblem beim readlink beseitigt.
   - max_dir_base_entries nun auch in conf file aenderbar (section 63)
-  - nw_search_file_dir so abgeaendert dass das Loeschen von Verzeichnissen 
+  - nw_search_file_dir so abgeaendert dass das Loeschen von Verzeichnissen
     nun funktionieren sollte. Evtl. muss bei sehr grossen Verzeichnissen
     max_dir_search_handles(section 80 in nwserv.conf) hochgesetzt werden.
 <----- ^^^^^^^^^^ pl5 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -408,6 +408,15 @@ Erste 'oeffentliche' Version
 - archive bit ist bei Dateien nun default gesetzt.
 - archive bit wird nun bei Client Schreiboperationen gesetzt.
 <----- ^^^^^^^^^^ pl6 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
+- in examples/config.h. NEW_ATTRIB_HANDLING removed.
+- connect.c: nw_dir_search() corrected for new get_dir_attrib.
+- changed some includes and defines for (g)libc6 / RH5.
+- added some fixes from Andrew Sapozhnikov <sapa@hq.icb.chel.su>
+  fixed prop_find_member bug,  !!!!!!!! VERY important !!!!!!
+  fixed add and delete property_val,
+  fixed dos search routine.
+- new startup bindery check/compress routine.
+- prop_delete_member changed to avoid holes (id==0) in a set section.
+- bindery function creat_new_db() now saves old files to xyz/nwdbm.sav/.
+<----- ^^^^^^^^^^ pl7 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

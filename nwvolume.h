@@ -58,6 +58,7 @@ typedef struct {
 #define VOL_OPTION_ONE_DEV   0x0010  /* Volume has only one filesys */
 #define VOL_OPTION_READONLY  0x0020  /* Volume is readonly          */
 #define VOL_OPTION_IGNCASE   0x0040  /* Do ignore up/downshift      */
+#define VOL_OPTION_NO_INODES 0x0080  /* Volume do not have fixed inodes */
 
 /* namespaces */
 #define VOL_NAMESPACE_DOS    0x1000
@@ -83,7 +84,7 @@ extern char      *path_vol_inodes_cache;  /* for namespace routines */
 extern char      *path_attributes;        /* for attribute handling */
 
 extern void nw_init_volumes(FILE *f);
-extern void nw_setup_vol_opts(int act_gid, int act_uid, 
+extern void nw_setup_vol_opts(int act_gid, int act_uid,
                        int act_umode_dir, int act_umode_file,
                        int homepathlen, uint8 *homepath);
 extern void nw_setup_home_vol(int len, uint8 *fn);

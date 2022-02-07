@@ -77,9 +77,7 @@
 
 #define PERSISTENT_SYMLINKS    0     /* change to '1' for persistent symlinks */
                                      /* main idea from Victor Khimenko */
-  /* in 0.99.pl0 still NOT working !! */
-
-#define NEW_ATTRIB_HANDLING    0     /* better (if working ;)) attrib handling */
+  /* still NOT working !! */
 
 /* <---------------  next is for linux only ---------------------------->  */
 #define INTERNAL_RIP_SAP    1        /* use internal/own rip/sap routines  */

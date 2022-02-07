@@ -15,9 +15,10 @@ typedef struct {
   int fh_flags;         /* 2 = PIPE                          */
                         /* 4 = don't reuse after close       */
                         /* 0x20 = readonly                   */
-  int    st_dev;        /* device 			     */ 
-  int    st_ino;        /* inode 			     */ 
+  int    st_dev;        /* device 			     */
+  int    st_ino;        /* inode 			     */
   char   fname[256];    /* UNIX filename                     */
+  int    volume;        /* Volume			     */
 } FILE_HANDLE;
 
 /* fh_flags */

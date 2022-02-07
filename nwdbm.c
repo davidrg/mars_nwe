@@ -1,5 +1,5 @@
-/* nwdbm.c  01-Nov-97  data base for mars_nwe */
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* nwdbm.c  27-Feb-98  data base for mars_nwe */
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -110,8 +110,8 @@ static int x_dbminit(char *s)
 
 static int dbminit(int what_dbm)
 {
-#if DBM_REMAINS_OPEN
   int result = 0;
+#if DBM_REMAINS_OPEN
   if (NULL == my_dbms[what_dbm]) {
     result = x_dbminit(dbm_fn[what_dbm]);
     if (!result)  my_dbms[what_dbm] = my_dbm;
@@ -120,6 +120,9 @@ static int dbminit(int what_dbm)
 #else
   return(x_dbminit(dbm_fn[what_dbm]));
 #endif
+  if (result) 
+    errorp(0, "dbminit", "on %s", dbm_fn[what_dbm]);
+  return(result);
 }
 
 static int dbmclose()
@@ -141,6 +144,7 @@ void sync_dbm()
 {
 #if DBM_REMAINS_OPEN
   int k = COUNT_DBM_FILES;
+  dbmclose();
   while (k--) {
     if (NULL != my_dbms[k]) {
 #  ifdef USE_GDBM
@@ -151,6 +155,8 @@ void sync_dbm()
       my_dbms[k] = NULL;
     }
   }
+#else
+  dbmclose();
 #endif
 }
 
@@ -413,23 +419,30 @@ static int prop_delete_member(uint32 obj_id, int prop_id, int prop_security,
     val.obj_id  = obj_id;
     val.prop_id = (uint8)prop_id;
     val.segment = (uint8)0;
-    data        = fetch(key);
-    while (1) {
-      val.segment++;
-      data        = fetch(key);
+    while (val.segment++ < (uint8)255) {
+      data         = fetch(key);
       if (data.dptr != NULL) {
 	NETVAL  *v = (NETVAL*)data.dptr;
 	uint8   *p = v->value;
 	int      k = 0;
 	while (k++ < 32){
-	  if (GET_BE32(p) == member_id) {
+	  uint32 id=GET_BE32(p);
+	  if (id == member_id) {
+#if 0
 	    memset(p, 0, 4);
 	    memcpy(&val, v, sizeof(NETVAL));
+#else       /* new since 0.99.pl7 */
+	    memcpy(&val, v,  p - (uint8*)v);
+            if (k<32) 
+              memcpy(&val.value[(k-1)*4], p+4, (32-k) * 4);
+            memset(&val.value[124], 0, 4);
+#endif	    
 	    data.dptr = (char*)&val;
 	    if (store(key, data)) result=-0xff;
 	    else result=0;
 	    goto L1;
-	  } else p += 4;
+          }
+          p += 4;
 	}
       } else break;
     }
@@ -686,19 +699,21 @@ static int prop_find_member(uint32 obj_id, int prop_id, int prop_security,
     key.dptr    = (char*)&val;
     val.obj_id  = obj_id;
     val.prop_id = (uint8)prop_id;
-    val.segment = (uint8)1;
-    data        = fetch(key);
-    if (data.dptr != NULL){
-      NETVAL  *v = (NETVAL*)data.dptr;
-      uint8   *p=v->value;
-      int     k=0;
-      XDPRINTF((2,0, "found VAL 0x%x, %d", obj_id, prop_id));
-      while (k++ < 32){
-	uint32 id = GET_BE32(p);
-	if (id == member_id) {
-	  result = 0;
-	  break;
-	} else p += 4;
+    val.segment = (uint8)0;
+    while (val.segment++ < (uint8)255) {
+      data      = fetch(key);
+      if (data.dptr != NULL){
+        NETVAL  *v = (NETVAL*)data.dptr;
+        uint8   *p=v->value;
+        int     k=0;
+        XDPRINTF((2,0, "found VAL 0x%x, %d segment %d", obj_id, prop_id, val.segment));
+        while (k++ < 32){
+	  uint32 id = GET_BE32(p);
+	  if (id == member_id) {
+	    result = 0;
+	    break;
+	  } else p += 4;
+        }
       }
     }
   } else result = -0xff;
@@ -722,31 +737,34 @@ static int prop_add_member(uint32 obj_id, int prop_id,  int prop_security,
     val.prop_id = (uint8)prop_id;
     val.segment = (uint8)0;
     while (!result) {
-      val.segment++;
-      data        = fetch(key);
-      if (data.dptr != NULL){
-	NETVAL  *v = (NETVAL*)data.dptr;
-	uint8   *p = v->value;
-	int      k = 0;
-	while (k++ < 32){
-	  uint32 null_id = 0;
-	  if (!memcmp(p, (char*)&null_id, 4)) {
-	    U32_TO_BE32(member_id, p);
-	    memcpy(&val, v, sizeof(NETVAL));
-	    data.dptr = (char*)&val;
-	    key.dptr  = (char*)&val;
-	    if (store(key, data)) result=-0xff;
-	    goto L1;
-	  } else p += 4;
-	}
-      } else {
-	memset(val.value, 0, 128);
-	U32_TO_BE32(member_id, val.value);
-	data.dptr  = (char*)&val;
-	data.dsize = sizeof(NETVAL);
-	if (store(key, data)) result=-0xff;
-	goto L1;
-      }
+      if (val.segment++ < (uint8)255) {
+        data        = fetch(key);
+        if (data.dptr != NULL){
+	  NETVAL  *v = (NETVAL*)data.dptr;
+	  uint8   *p = v->value;
+	  int      k = 0;
+	  while (k++ < 32){
+	    uint32 null_id = 0;
+	    if (!memcmp(p, (char*)&null_id, 4)) {
+	      U32_TO_BE32(member_id, p);
+	      memcpy(&val, v, sizeof(NETVAL));
+	      data.dptr = (char*)&val;
+	      key.dptr  = (char*)&val;
+	      if (store(key, data)) result=-0xff;
+	      goto L1;
+	    } else p += 4;
+	  }
+        } else {
+	  memset(val.value, 0, 128);
+	  U32_TO_BE32(member_id, val.value);
+	  data.dptr  = (char*)&val;
+	  data.dsize = sizeof(NETVAL);
+	  if (store(key, data)) result=-0xff;
+	  goto L1;
+        }
+      } else 
+        /* no more free cells, perhaps we need better result code */
+        result=-0xff; 
     } /* while */
   } else result = -0xff;
 L1:
@@ -781,8 +799,7 @@ static int ins_prop_val(uint32 obj_id, NETPROP *prop, int segment,
       if (!store(key, data)) {
 	result = 0;
 	if (erase_segments == 0xff){
-	  val.segment++;
-	  while (!delete(key)) val.segment++;
+	  while (val.segment++ < (uint8)255 && !delete(key));
 	}
       }
     }
@@ -1645,7 +1662,7 @@ int nwdbm_rmdir(char *path)
 
 static void create_nw_db(char *fn, int always)
 {
-  char   fname[200];
+  char   fname[300];
   struct stat stbuff;
   (void)get_div_pathes(fname, fn, 1, ".dir");
   if (stat(fname, &stbuff)){
@@ -1654,7 +1671,21 @@ static void create_nw_db(char *fn, int always)
     (void)get_div_pathes(fname, fn, 1, ".dir");
   }
   if (always || stat(fname, &stbuff)){
-    int fd = open(fname, O_CREAT | O_TRUNC | O_RDWR, 0600);
+    int fd;
+    if (always) { /* we save old dbm */
+      char pa[300];
+      char fna[300];
+      (void)get_div_pathes(pa, "nwdbm.sav", 1, NULL);
+      nwdbm_mkdir(pa, 0700, 0);
+      sprintf(fna, "%s/%s.dir", pa, fn);
+      unlink(fna);
+      rename(fname, fna);
+      sprintf(fna, "%s/%s.pag", pa, fn);
+      unlink(fna);
+      (void)get_div_pathes(pa, fn, 1, ".pag");
+      rename(pa, fna);
+    }
+    fd = open(fname, O_CREAT | O_TRUNC | O_RDWR, 0600);
     if (fd > -1) close(fd);
   }
   chmod(fname, 0600);
@@ -1957,25 +1988,264 @@ void test_ins_unx_user(uint32 id)
   }
 }
 
+static int cmp_uint32(const uint32 *e1, const uint32 *e2)
+{
+  if (*e1 < *e2) return(-1);
+  if (*e1 > *e2) return(1);
+  return(0);
+}
+
+static void check_compress_bindery()
+/* try to repair and compress bindery, added in 0.99.pl7 */
+{
+  char   *errstr   = "check_compress_bindery";
+  int    propok    = 0;
+  uint32 objs[LOC_MAX_OBJS];
+  int    ocount    = 0;
+  
+  /* for deleting props */
+  uint32 d_prop_oid[LOC_MAX_OBJS];
+  uint8  d_props[LOC_MAX_OBJS];
+  int    d_pcount  = 0;
+  
+  uint32 *prop_oid = NULL;
+  uint8  *props    = NULL;
+  uint8  *props_fl = NULL;
+  int    pcount    = 0;
+  long   tstart    = time(NULL);
+  
+  sync_dbm();
+  XDPRINTF((1,0, "%s starts...", errstr));
+  
+  if (!dbminit(FNOBJ)){
+    for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+      data = fetch(key);
+      if (data.dptr) {
+        NETOBJ *obj=(NETOBJ*)data.dptr;
+        if (ocount == LOC_MAX_OBJS) {
+          errorp(10, errstr, "to many objs = %d.",  ocount);
+          dbmclose();
+          return;
+        }
+        objs[ocount++] = obj->id;
+      }
+    }
+    qsort(objs, (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32);
+    XDPRINTF((1,0, "%s after qsort", errstr));
+    
+    /* we test whether qsort/bsearch will work fine */
+    for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+      data = fetch(key);
+      if (data.dptr) {
+        NETOBJ *obj=(NETOBJ*)data.dptr;
+        if (NULL == bsearch(&obj->id, objs, 
+             (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32)) {
+          errorp(10, errstr, "bsearch failed at id 0x%lx.", 
+                            (unsigned long)obj->id);
+          dbmclose();
+          return;
+        }
+      }
+    }
+    dbmclose();
+    
+    /* handle all properties */
+    if (!dbminit(FNPROP)){
+      propok++;
+#define LOC_MAX_OBJS_PROPS  (LOC_MAX_OBJS * 20)
+      prop_oid = (uint32*) xmalloc(LOC_MAX_OBJS_PROPS * sizeof(uint32));
+      props    = (uint8*)  xmalloc(LOC_MAX_OBJS_PROPS * sizeof(uint8));
+      props_fl = (uint8*)  xmalloc(LOC_MAX_OBJS_PROPS * sizeof(uint8));
+      for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+        data = fetch(key);
+        if (data.dptr) {
+	  NETPROP *prop=(NETPROP*)data.dptr;
+          if (NULL == bsearch(&prop->obj_id, objs, 
+             (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32)) {
+            XDPRINTF((1,0, "will delete property %s for obj_id 0x%lx",
+                           prop->name, prop->obj_id));
+	    if (d_pcount == LOC_MAX_OBJS) break;
+	    d_prop_oid[d_pcount] = prop->obj_id;
+	    d_props[d_pcount++]  = prop->id;
+          } else {
+	    if (pcount == LOC_MAX_OBJS_PROPS) {
+              errorp(10, errstr, "to many props = %d.",  pcount);
+	      propok=0;
+	      break;
+            }
+	    prop_oid[pcount]   = prop->obj_id;
+	    props[pcount]      = prop->id;
+	    props_fl[pcount++] = prop->flags;
+          }
+        }
+      }  /* for */
+    } 
+    dbmclose();
+    /* now delete properties which aere not assigned to an object */
+    while (d_pcount--) 
+       loc_delete_property(d_prop_oid[d_pcount], (char*)NULL, 
+                            d_props[d_pcount], 1);
+
+    XDPRINTF((1,0, "%s after deleting props, propok=%d", errstr, propok));
+    
+    if (propok) {  /* correct/compress propertie values */
+      int  fd=-1;
+      char tmpfn[300];
+      strcpy(tmpfn,"/tmp/nwvalXXXXXX");
+      if (mktemp(tmpfn)) {
+        unlink(tmpfn);
+        fd=creat(tmpfn, 0600);
+      }
+      if (fd > -1) {
+        if (!dbminit(FNVAL)){
+          int     i   = -1;
+          NETVAL  val;
+          key.dsize   = NETVAL_KEY_SIZE;
+          key.dptr    = (char*)&val;
+          while (propok && ++i < pcount) {
+            int is_set     = (props_fl[i] & P_FL_SET) ? 1:0;
+            NETVAL  valexp;
+            int     eitems = 0;
+            uint8   *ep    = valexp.value;
+            val.obj_id     = prop_oid[i];
+            val.prop_id    = props[i];
+            val.segment    = (uint8)0;  
+            if (is_set) {
+              memset(&valexp, 0, sizeof(NETVAL));
+              valexp.obj_id  = val.obj_id;  
+              valexp.prop_id = val.prop_id; 
+              valexp.segment = 1;
+              d_pcount       = 0;
+            }
+            while (val.segment++ < (uint8)255) {
+              data = fetch(key);
+              if (data.dptr != NULL){
+                NETVAL  *v = (NETVAL*)data.dptr;
+                uint8   *p = v->value;
+                if (is_set) {
+                  int     k=0;
+                  while (k++ < 32){
+	            uint32 id = GET_BE32(p);
+                    if (id) {
+                      if (NULL != bsearch(&id, objs, 
+                        (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32)) {
+                        int l=-1;
+                        while (++l < d_pcount) {
+                          if (d_prop_oid[l] == id) {
+                            id=(uint32)0;
+                            break;
+                          }
+                        }
+                      } else id=(uint32)0;
+                    }
+                    if (id) {  
+                      d_prop_oid[d_pcount++] = id;
+                      if (eitems > 31) {
+                        if (sizeof(NETVAL) != write(fd, &valexp, sizeof(NETVAL))){
+                          errorp(1, errstr, "writeerror on %s", tmpfn);
+                          propok=0;
+                          break;
+                        }
+                        valexp.segment++;
+                        eitems = 0;
+                        ep     = valexp.value;
+                        memset(ep, 0, 128);
+                      }
+                      memcpy(ep, p, 4);
+                      eitems++;
+                      ep += 4;
+                    }
+	            p += 4;
+                  }
+                } else {  /* ITEM property */
+                  if (sizeof(NETVAL) != write(fd, v, sizeof(NETVAL))){
+                    errorp(1, errstr, "writeerror on %s", tmpfn);
+                    propok=0;
+                    break;
+                  }
+                }
+              }
+            } /* while */
+            
+            if (is_set && eitems) {
+              if (sizeof(NETVAL) != write(fd, &valexp, sizeof(NETVAL))){
+                errorp(1, errstr, "writeerror on %s", tmpfn);
+                propok=0;
+                break;
+              }
+            }
+          } /* while */
+        }
+        dbmclose();
+        close(fd);
+        if (propok)
+          fd=open(tmpfn, O_RDONLY);
+        else
+          fd=-1;
+      }
+      if (fd > -1) {
+        NETVAL val;
+        sync_dbm();
+        create_nw_db(dbm_fn[FNVAL], 1); /* creat new value.dbm */
+        if (!dbminit(FNVAL)){
+          while (sizeof(NETVAL) == read(fd, &val, sizeof(NETVAL))){
+            key.dsize     = NETVAL_KEY_SIZE;
+            key.dptr      = (char*)&val;
+            data.dsize    = sizeof(NETVAL);
+            data.dptr     = (char*)&val;
+            if (store(key, data)) {
+              errorp(0, errstr, "Cannot store obj_id=0x%8x, prop_id=0x%x",
+               (int)val.obj_id, (int)val.prop_id);
+            }
+          } /* while */
+        } else {
+          errorp(1, errstr, "fatal error bindery file %s saved.", 
+             dbm_fn[FNVAL]);
+          exit(1);
+        }
+        dbmclose();
+        close(fd);
+        unlink(tmpfn);
+      }
+    }
+    dbmclose();
+  } 
+  sync_dbm();
+  xfree(prop_oid);
+  xfree(props);
+  xfree(props_fl);
+  XDPRINTF((1,0, "%s ends after %ld seconds.", errstr,
+            (long) time(NULL) - tstart));
+}
+
 int nw_fill_standard(char *servername, ipxAddr_t *adr)
 /* fills the standardproperties */
 {
+  int    is_nwe_start = (NULL != servername && NULL != adr);
   char   serverna[MAX_SERVER_NAME+2];
   uint32 su_id    = 0x00000001;
   uint32 ge_id    = 0x01000001;
   uint32 server_id= 0x03000001;
   uint32 q1_id    = 0x0E000001;
   uint32 ps1_id   = 0x0F000001;
-  FILE *f	  = open_nw_ini();
+  FILE *f;
   int  auto_ins_user = 0;
   char auto_ins_passwd[100];
   int  make_tests    = 1;
   char sysentry[256];
   sysentry[0] = '\0';
+  
+  if (is_nwe_start) {
+    int i = get_ini_int(16);
+    if (i > -1) make_tests=i;
+    if (make_tests > 1) 
+      check_compress_bindery();   
+  }
+
   ge_id = nw_new_obj_prop(ge_id, "EVERYONE",        0x2,   0x0,  0x31,
 	                   "GROUP_MEMBERS",          P_FL_SET,  0x31,
 	                      NULL, 0, 0);
-  if (f){
+  if (NULL != (f= open_nw_ini())){
     char buff[256];
     int  what;
     while (0 != (what =get_ini_entry(f, 0, (char*)buff, sizeof(buff)))) {
@@ -2123,9 +2393,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
     fclose(f);
   }
 
-
-
-  if (servername && adr) {
+  if (is_nwe_start) {
     strmaxcpy(serverna, servername, MAX_SERVER_NAME);
     upstr(serverna);
     nw_new_obj_prop(server_id, serverna,       0x4,      O_FL_DYNA,  0x40,
@@ -2247,7 +2515,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
             symlink(sx, maildir);
             *ppp='\0';
           } else
-            errorp(0, "Cannot get unix uid/gid", "User=`%s`", obj.name);
+            errorp(10, "Cannot get unix uid/gid", "User=`%s`", obj.name);
 
         } else if (obj.type == 3) { /* print queue */
           uint8 buff[300];
@@ -2259,17 +2527,20 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
             if (!strcmp(buff, sysname)) {
               test_add_dir(unixname, pp, 2|4, downshift, 0775, 0, 0, p);
             } else
-             errorp(0, "queue dir not on SYS",
+             errorp(10, "queue dir not on SYS",
                 "Queue=%s, Volume=%s", obj.name, sysname);
           } else
-            errorp(0, "Cannot get queue dir", "Queue=%s", obj.name);
+            errorp(10, "Cannot get queue dir", "Queue=%s", obj.name);
         }
       }
+    
     }
-    if (servername && adr)  {
+    
+    if (is_nwe_start)  {
       /* do only init_queues when starting nwserv */
       init_queues();  /* nwqueue.c */
     }
+
     return(0);
   }
   return(-1);

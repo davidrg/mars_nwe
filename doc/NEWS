@@ -1,3 +1,8 @@
+------03-Mar-98--- 0.99.pl7 ---------
+- very important BUG fixed by Andrew Sapozhnikov. <sapa@hq.icb.chel.su>
+  The properties find member functions could find max. 32 entries. (1 segment)
+  Please enable 'ckeck/compress bindery on startup' (section 16, nwserv.conf) 
+  to let mars_nwe do some checks/compressings on old bindery entries.
 ------08-Feb-98--- 0.99.pl6 ---------
 - archive bit handling changed. (default set if file, unset if directory)
 - section 5: deleting of ipx devices/routes changed.

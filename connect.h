@@ -1,4 +1,4 @@
-/* connect.h 01-Feb-98 */
+/* connect.h 14-Feb-98 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
 
@@ -153,7 +153,7 @@ extern int nw_find_dir_handle( int dir_handle,
                                int         len); /* L„nge Pfad        */
 
 extern int xinsert_new_dir(int volume, uint8 *path,
-                           int dev,   int inode, 
+                           int dev,   int inode,
                            int drive, int is_temp, int task);
 
 extern int nw_alloc_dir_handle(
@@ -188,7 +188,7 @@ extern int nw_get_vol_number(int dir_handle);
 
 
 
-extern int nw_get_eff_dir_rights(int dir_handle, uint8 *data, int len, 
+extern int nw_get_eff_dir_rights(int dir_handle, uint8 *data, int len,
                                  int modus);
 
 extern int nw_scan_dir_info(int dir_handle, uint8 *data, int len,
@@ -199,12 +199,14 @@ extern int nw_scan_dir_info(int dir_handle, uint8 *data, int len,
 extern void get_dos_file_attrib(NW_DOS_FILE_INFO *f,
                                struct stat *stb,
                                int          volume,
-                               uint8        *path);
+                               uint8        *path,
+                               char         *unixname);
 
 void get_dos_dir_attrib(NW_DOS_DIR_INFO *f,
                                 struct stat *stb,
                                 int   volume,
-                                uint8 *path);
+                                uint8 *path,
+                                char  *unixname);
 
 
 #define MAX_NW_DIRS    255
@@ -213,7 +215,7 @@ extern int     act_gid;
 extern int     act_obj_id;   /* not login == 0             */
 extern int     entry8_flags; /* special flags, see examples nw.ini, entry 8 */
 
-extern int conn_get_full_path(int dirhandle, uint8 *data, int len, 
+extern int conn_get_full_path(int dirhandle, uint8 *data, int len,
                           uint8 *fullpath);
 
 extern int conn_get_kpl_unxname(char *unixname,
@@ -259,7 +261,7 @@ extern void   un_time_2_nw(time_t time, uint8 *d, int high_low);
 
 extern void mangle_dos_name(NW_VOL *vol, uint8 *unixname, uint8 *pp);
 
-extern int nw_add_trustee(int dir_handle, uint8 *data, int len, 
+extern int nw_add_trustee(int dir_handle, uint8 *data, int len,
                    uint32 id,  int trustee, int extended);
 
 

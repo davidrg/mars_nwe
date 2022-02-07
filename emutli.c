@@ -1,4 +1,4 @@
-/* emutli.c 07-Jul-97 */
+/* emutli.c 03-Mar-98 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -26,14 +26,19 @@
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
-#include <linux/config.h>
-#include <linux/sockios.h>
+#if 0
+# include <linux/sockios.h>
+#endif
 #include "net.h"
-#include <linux/if.h>
-#include <linux/route.h>
-#include <linux/in.h>
-#include <signal.h>
-#include <string.h>
+#if 0
+# include <linux/if.h>
+# include <linux/route.h>
+# include <linux/in.h>
+#else
+# include <net/if.h>
+# include <net/route.h>
+# include <netinet/in.h>
+#endif
 #include <errno.h>
 
 #ifndef DO_IPX_SEND_TEST 

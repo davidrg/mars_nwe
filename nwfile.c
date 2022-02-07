@@ -50,13 +50,13 @@ static int count_fhandles=0;
 static int last_fhandle=HOFFS;
 #endif
 
-static int new_file_handle(uint8 *unixname, int task)
+static int new_file_handle(int volume, uint8 *unixname, int task)
 {
-#if USE_NEW_FD  
+#if USE_NEW_FD
   int fhandle= -1 + last_fhandle++;
 #else
   int fhandle=HOFFS-1;
-#endif  
+#endif
   FILE_HANDLE  *fh=NULL;
   while (++fhandle < count_fhandles) {
     fh=&(file_handles[fhandle]);
@@ -71,7 +71,7 @@ static int new_file_handle(uint8 *unixname, int task)
       fh=&(file_handles[count_fhandles]);
       fhandle = ++count_fhandles;
     } else {
-#if USE_NEW_FD  
+#if USE_NEW_FD
       last_fhandle=HOFFS+1;
       fhandle=HOFFS-1;
       while (++fhandle < count_fhandles) {
@@ -98,6 +98,7 @@ static int new_file_handle(uint8 *unixname, int task)
   strcpy((char*)fh->fname, (char*)unixname);
   fh->fh_flags   = 0;
   fh->f       = NULL;
+  fh->volume  = volume;
   XDPRINTF((5, 0, "new_file_handle=%d, count_fhandles=%d, fn=%s",
        fhandle, count_fhandles, unixname));
   return(fhandle);
@@ -123,8 +124,8 @@ static int free_file_handle(int fhandle)
           share_file(fh->st_dev, fh->st_ino, 0);
           if (fh->modified) {
             fh->modified=0;
-#if NEW_ATTRIB_HANDLING            
-            set_nw_archive_bit(fh->st_dev, fh->st_ino);
+#if NEW_ATTRIB_HANDLING
+            set_nw_archive_bit(fh->volume, fh->fname, fh->st_dev, fh->st_ino);
 #endif
           }
         }
@@ -139,7 +140,7 @@ static int free_file_handle(int fhandle)
       }
     }
     fh->fd = -1;
-#if !USE_NEW_FD    
+#if !USE_NEW_FD
     while (count_fhandles > fhandle
           && file_handles[count_fhandles-1].fd == -1
           && !(file_handles[count_fhandles-1].fh_flags & FH_DO_NOT_REUSE) ) {
@@ -164,14 +165,14 @@ void init_file_module(int task)
     while (k++ < count_fhandles)
       free_file_handle(k);
     count_fhandles = HOFFS;
-#if USE_NEW_FD    
+#if USE_NEW_FD
     last_fhandle   = HOFFS;
 #endif
   } else {
     /* I hope next is ok, added 20-Oct-96 ( 0.98.pl5 ) */
     while (k++ < count_fhandles) {
       FILE_HANDLE  *fh=&(file_handles[k-1]);
-      if (fh->task == task) {
+      if (fh->task == task && fh->fd>-1) {
         free_file_handle(k);
       }
     }
@@ -225,7 +226,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
  *
  */
 {
-   int fhandle  = new_file_handle(unixname, task);
+   int fhandle  = new_file_handle(volume, unixname, task);
    int dowrite  = ((access & 2) || (creatmode & 3) ) ? 1 : 0;
    if (fhandle > HOFFS){
      FILE_HANDLE *fh=&(file_handles[fhandle-1]);
@@ -235,9 +236,9 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                            ? get_real_access(stbuff) : -1;
 
      int did_grpchange = 0;
-     
+
      if (dowrite && (acc > -1) && (acc & W_OK) && !(creatmode&0x8) &&
-        (get_nw_attrib_dword(stbuff, voloptions) & FILE_ATTR_R))
+        (get_nw_attrib_dword(volume, fh->fname, stbuff) & FILE_ATTR_R))
        completition = -0x94;
      else if (dowrite && (voloptions & VOL_OPTION_READONLY)) {
        completition = (creatmode&3) ? -0x84 : -0x94;
@@ -349,7 +350,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          if (creatmode&0x3) {  /* creat File  */
            int was_ok=0;
            fh->fd=-1;
-           
+
            if (creatmode & 0x2) { /* creatnew */
              XDPRINTF((5,0,"CREAT FILE:%s: Handle=%d", fh->fname, fhandle));
              if (!nw_creat_node(volume, fh->fname, 0))
@@ -359,10 +360,10 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
            } else {
              XDPRINTF((5,0,"CREAT FILE, ever with attrib:0x%x, access:0x%x, fh->fname:%s: handle:%d",
                attrib,  access, fh->fname, fhandle));
-             if (!nw_creat_node(volume, fh->fname, 
+             if (!nw_creat_node(volume, fh->fname,
                     (creatmode & 0x8) ? (2|8) : 2))
                was_ok++;
-             else    
+             else
               completition = -0x85; /* no delete /create Rights */
            }
            if (was_ok) {
@@ -534,8 +535,8 @@ int nw_close_file(int fhandle, int reset_reuse)
           share_file(fh->st_dev, fh->st_ino, 0);
           if (fh->modified) {
             fh->modified=0;
-#if NEW_ATTRIB_HANDLING            
-            set_nw_archive_bit(fh->st_dev, fh->st_ino);
+#if NEW_ATTRIB_HANDLING
+            set_nw_archive_bit(fh->volume, fh->fname, fh->st_dev, fh->st_ino);
 #endif
           }
         }
@@ -641,7 +642,7 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
     if (fh->fd > -1) {
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
         int readsize=size;
-#if 1        
+#if 1
         if (-1 == (size = read(fh->fd, data, readsize)) )  {
           int k=2;
           do {
@@ -892,14 +893,14 @@ int get_nwfd(int fhandle)
 int nw_unlink(int volume, char *name)
 {
   struct stat stbuff;
-  int voloptions=get_volume_options(volume); 
+  int voloptions=get_volume_options(volume);
   if (voloptions & VOL_OPTION_IS_PIPE)
     return(0); /* don't delete 'pipe commands' */
   else if (get_volume_options(volume) & VOL_OPTION_READONLY)
     return(-0x8a); /* don't delete 'readonly' */
   if (stat(name, &stbuff))
     return(-0x9c); /* wrong path */
-  if (get_nw_attrib_dword(&stbuff, voloptions) & FILE_ATTR_R)
+  if (get_nw_attrib_dword(volume, name, &stbuff) & FILE_ATTR_R)
     return(-0x8a); /* don't delete 'readonly' */
 
   if (  -1 == share_file(stbuff.st_dev, stbuff.st_ino, 0x12|0x8)
@@ -907,7 +908,7 @@ int nw_unlink(int volume, char *name)
        -1 == share_file(stbuff.st_dev, stbuff.st_ino, 0x11|0x4)) )
     return(-0x8a); /* NO Delete Privileges, file is shared open */
   if (!unlink(name)) {
-    free_nw_ext_inode(stbuff.st_dev, stbuff.st_ino);
+    free_nw_ext_inode(volume, name, stbuff.st_dev, stbuff.st_ino);
     return(0);
   }
   return(-0x8a); /* NO Delete Privileges */

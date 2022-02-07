@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 10-Jul-97
+# mk.li 03-Mar-98
 # please edit this file !
 
 mk()
@@ -59,7 +59,17 @@ if   [ -f /usr/lib/libgdbm.a ] || [ -f /usr/lib/libgdbm.so ] ; then
 else
      NDBMLIB="-ldbm"
 fi
+     
+if   [ -f /usr/lib/libcrypt.so ] ; then
+     CRYPTLIB="-lcrypt"
+else
      CRYPTLIB=""
+fi
+
+if   [ -f /usr/include/sys/quota.h ] ; then
+     HOSTCFLAGS="$HOSTCFLAGS -DQTAINSYS"
+fi
+
      NSLLIB=""
      MAKE=make
      TMP=/tmp

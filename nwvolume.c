@@ -135,6 +135,10 @@ void nw_init_volumes(FILE *f)
                          |= VOL_OPTION_DOWNSHIFT;
                          break;
 
+              case 'n' : vol->options
+                         |= VOL_OPTION_NO_INODES;
+                         break;
+
               case 'm' : vol->options
                          |= VOL_OPTION_REMOUNT;
                          break;
@@ -169,7 +173,7 @@ void nw_init_volumes(FILE *f)
         vol->umode_file = 0;
         if (founds > 3) {
           vol->umode_dir=octtoi(umode_dirstr);
-          if (founds > 4) 
+          if (founds > 4)
             vol->umode_file=octtoi(umode_filestr);
         }
         used_nw_volumes++;
@@ -196,7 +200,7 @@ void nw_setup_home_vol(int len, uint8 *fn)
   int k=used_nw_volumes;
   uint8 unixname[258];
   uint8 fullname[258];
-  
+
   unixname[0] = '\0';
   xfree(home_dir);
   home_dir_len=0;
@@ -212,7 +216,7 @@ void nw_setup_home_vol(int len, uint8 *fn)
   while (k--) { /* now set all HOME volumes */
     uint8 *fname;
     int	  flen;
-    
+
     if (nw_volumes[k].options & VOL_OPTION_IS_HOME)  {
       int i = -1;
       while (++i < nw_volumes[k].maps_count)
@@ -240,7 +244,7 @@ void nw_setup_home_vol(int len, uint8 *fn)
   }
 }
 
-void nw_setup_vol_opts(int act_gid, int act_uid, 
+void nw_setup_vol_opts(int act_gid, int act_uid,
                        int act_umode_dir, int act_umode_file,
                        int homepathlen, uint8 *homepath)
 
@@ -249,7 +253,7 @@ void nw_setup_vol_opts(int act_gid, int act_uid,
   int k=used_nw_volumes;
   uint8 unixname[258];
   uint8 fullname[258];
-  
+
   unixname[0] = '\0';
   xfree(home_dir);
   home_dir_len=0;
@@ -262,7 +266,7 @@ void nw_setup_vol_opts(int act_gid, int act_uid,
     new_str(home_dir, unixname);
     home_dir_len=homepathlen;
   }
-  
+
   while (k--) { /* now set all HOME volumes */
     uint8 *fname;
     int	  flen;
@@ -297,7 +301,7 @@ void nw_setup_vol_opts(int act_gid, int act_uid,
 
     if (!nw_volumes[k].umode_file)
       nw_volumes[k].umode_file=act_umode_file;
-  
+
   }
 
 }
@@ -413,13 +417,13 @@ int nw_get_volume_name(int volnr, uint8 *volname)
 
 int get_volume_umode_dir(int volnr)
 {
-  return( (volnr > -1 && volnr < used_nw_volumes) ?     
+  return( (volnr > -1 && volnr < used_nw_volumes) ?
                      nw_volumes[volnr].umode_dir  : 0);
 }
 
 int get_volume_umode_file(int volnr)
 {
-  return( (volnr > -1 && volnr < used_nw_volumes) ?     
+  return( (volnr > -1 && volnr < used_nw_volumes) ?
                      nw_volumes[volnr].umode_file  : 0);
 }
 
@@ -561,11 +565,15 @@ const char *find_device_file(const char *path)
   return(mount_device);
 }
 
-#include <time.h>
-#include <sys/types.h>
 
 #ifdef LINUX
-# include <linux/quota.h>
+# ifndef QTAINSYS
+#  include <linux/quota.h>
+# else /* probably used for libc6 */
+/* #  include <asm/types.h>  ?? */
+#  include <sys/quota.h>
+# endif
+
 # if defined(__alpha__)
 #  include <errno.h>
 #  include <syscall.h>

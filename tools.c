@@ -24,6 +24,10 @@
 #ifndef LINUX
 extern int   _sys_nerr;
 extern char *_sys_errlist[];
+# if 0  /* probably used for libc6 */
+#   define _sys_nerr sys_nerr
+#   define _sys_errlist sys_errlist
+# endif
 #endif
 
 
@@ -170,6 +174,8 @@ static char *buffered=NULL;
 }
 
 void errorp(int mode, char *what, char *p, ...)
+/* mode > 9 without errno printing */
+/* mode == 1 || mode == 11 error = critical */
 {
   va_list ap;
   int errnum      = errno;

@@ -1,4 +1,4 @@
-/* net.h 02-Jun-97 */
+/* net.h 26-Feb-98 */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -22,6 +22,12 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* we want sysv signal handling, used for glibc */
+#define _XOPEN_SOURCE 
+/* perhaps this define is better */
+#define __USE_XOPEN
+
 #include <signal.h>
 #include <string.h>
 

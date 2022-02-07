@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "04-Feb-98"
+#define REVISION_DATE "01-Mar-98"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -1681,6 +1681,7 @@ static void set_sig(void)
 int main(int argc, char *argv[])
 {
   int sock_nwbind;
+  int i;
   if (argc != 4) {
     fprintf(stderr, "usage nwbind nwname address nwbindsock\n");
     exit(1);
@@ -1780,9 +1781,9 @@ int main(int argc, char *argv[])
   }
   
   /* perhaps some connections need clearing (utmp), hint from Ambrose Li */
-  got_sig=max_connections+1;
-  while (--got_sig)
-    open_clear_connection(got_sig, 0, NULL);
+  i=max_connections+1;
+  while (--i)
+    open_clear_connection(i, 0, NULL);
 
   if (ncp_fd > -1) {
     t_unbind(ncp_fd);
