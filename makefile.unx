@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=98
-P_L=8
+P_L=9
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -23,7 +23,7 @@ PATCHF=$(DISTRIBF).pl$(P_L)
 #endif
 STERN=*
 
-MAKEPATCH=diff -rub
+MAKEPATCH=diff -rub --new-file
 
 DESTMAKEFILE=Makefile.o
 #if 0
@@ -49,6 +49,9 @@ install_ini:  $(DESTMAKEFILE)
 	$(MAKE) -f $(DESTMAKEFILE) n_$@
 
 diff:   $(DESTMAKEFILE)
+	$(MAKE) -f $(DESTMAKEFILE) n_$@
+
+showconf:   $(DESTMAKEFILE)
 	$(MAKE) -f $(DESTMAKEFILE) n_$@
 
 distrib:  $(DESTMAKEFILE)
@@ -170,7 +173,7 @@ $(C)$(O):
 n_all:   $(PROGS)
 	 @echo "don't forget to do a 'make install' as root !" >> $(VPATH)/.mk.notes
 	 @echo "please take a look into doc/NEWS !" >> $(VPATH)/.mk.notes
-
+	 @-head -n 5 $(VPATH)/doc/NEWS >> $(VPATH)/.mk.notes
 
 n_routed: $(PROG7)
 
@@ -270,5 +273,10 @@ n_distrib_bin:
  examples \
  doc \
 ; cd $(OBJDIR))
+
+n_showconf:
+	echo "#" $(M_FILENAME_NW_INI)
+	grep "^[ \t]*[0-9]" $(M_FILENAME_NW_INI)
+
 
 

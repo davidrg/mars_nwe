@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 17-Jan-97
+Aenderungen in mars_nwe bis zum : 16-Apr-97
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -273,4 +273,17 @@ Erste 'oeffentliche' Version
 - Print Queue Command Parameter erweitert um '!'
   fuer banner_user_name, banner_file_name
 <----- ^^^^^^^^^^ pl8 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Dateimatchroutine OS/2 namespace wiederum abgeaendert.
+  Es wurde z.B. bei x.* auch xyz.* gematched.
+- Funktion 0x16,ufunc 0x28 implementiert.
+  Wurde von ndir 4.x benoetigt.
+- Syntax und Handling automatisch erzeugter/erkannter IPX-Interfaces
+  geaendert. Es wird nun unterschieden zwischen kernel auto creat
+  und Erkennung innerhalb mars_nwe. Section 4 + 5 abgeaendert.
+  Vorschlag/Tip von Morio Taneda.
+- neuer Aufrufparameter 'nwserv -u' fuer update internal Routes/Devices.
+- Byte Ordering bei Filehandles umgedreht. Dadurch sollen
+  nach Tests von Arne de Bruijn Probleme mit Netx beseitigt sein.
+- Section 13 erweitert um 'fixed passwords'.
+<----- ^^^^^^^^^^ pl9 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

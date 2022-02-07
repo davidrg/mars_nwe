@@ -1,4 +1,8 @@
-# in this files are some notes for user of mars_nwe.
+------17-Apr-97--- 0.98.pl9 ----------
+- Section 4: IPX-Devices, syntax of automatic creation of interfaces and
+- Section 5: save flag -> device flags CHANGED !!
+- 'nwserv -u' for updating internal routes/devices.
+- Section 13: new switch: 'fixed passwords'.
 ------29-Jan-97--- 0.98.pl8 ----------
 - Section 6: version-"spoofing" now set to '1' (3.11) default.
 - New switch in config.h: QUOTA_SUPPORT

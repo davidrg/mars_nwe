@@ -1,4 +1,4 @@
-/* tools.c  30-Dec-96 */
+/* tools.c  10-Apr-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -324,6 +324,21 @@ static void creat_pidfile(void)
   }
 }
 
+void get_debug_level(uint8 *buf)
+{
+  char buf1[300], buf2[300];
+  int i=sscanf((char*)buf, "%s %s", buf1, buf2);
+  if (i > 0) {
+    nw_debug=atoi((char*)buf1);
+    if (i > 1) {
+      char dummy;
+      if (sscanf(buf2, "%ld%c", &debug_mask, &dummy) != 1)
+          sscanf(buf2, "%lx",   &debug_mask);
+    } else
+      debug_mask=0;
+  }
+}
+
 void init_tools(int module, int options)
 {
   uint8 buf[300];
@@ -354,6 +369,8 @@ void init_tools(int module, int options)
         sig = SIGHUP;
       } else if (options == 2) { /* kill prog */
         sig = SIGTERM;
+      } else if (options == 3) { /* kill prog */
+        sig = SIGUSR1;
       } else {
         errorp(11, "INIT", "Program pid=%d already running and pidfn=%s exists" ,
                kill_pid, pidfn);
@@ -361,7 +378,7 @@ void init_tools(int module, int options)
       }
       if (kill_pid > 1) kill(kill_pid, sig);
       exit(0);
-    } else if (options == 1 || options == 2) {
+    } else if (options == 1 || options == 2 || options == 3) {
       errorp(11, "INIT", "Program not running yet" );
       exit(1);
     }
@@ -376,16 +393,7 @@ void init_tools(int module, int options)
       } else if (202 == what) {
         new_log = atoi((char*)buf);
       } else if (100+module == what) {
-        char buf1[300], buf2[300];
-        int i=sscanf((char*)buf, "%s %s", buf1, buf2);
-        if (i > 0) {
-          nw_debug=atoi((char*)buf1);
-          if (i > 1) {
-            char dummy;
-            if (sscanf(buf2, "%ld%c", &debug_mask, &dummy) != 1)
-                sscanf(buf2, "%lx",   &debug_mask);
-          }
-        }
+        get_debug_level(buf);
       }
     }
     fclose(f);
@@ -397,8 +405,10 @@ void init_tools(int module, int options)
       if (fd) exit((fd > 0) ? 0 : 1);
       my_pid=getpid();
     }
-    if (NULL == (logfile = fopen(logfilename,
-           (new_log && (NWSERV == module || NWROUTED == module)) ? "w" : "a"))) {
+    if (new_log && (NWSERV == module || NWROUTED == module))
+      unlink(logfilename);
+
+    if (NULL == (logfile = fopen(logfilename, "a"))) {
       logfile = stderr;
       errorp(1, "INIT", "Cannot open logfile='%s'",logfilename);
       exit(1);

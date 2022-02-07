@@ -53,6 +53,9 @@ distrib_bin: mk.li nw.ini
 diff:
 	./mk.li $@
 
+showconf:
+	./mk.li -s $@
+
 mk.li:  examples/mk.li
 	@if [ -r $@ ] ; then \
 	cp -f $@ $@.org && ( \

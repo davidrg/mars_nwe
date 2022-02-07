@@ -421,7 +421,9 @@ file_creat_open_ret:
    MDEBUG(D_FH_OPEN, {
      char fname[200];
      if (!fd_2_fname(fhandle, fname, sizeof(fname))){
-       dprintf("Open/creat fd=%d, fn=`%s`", fhandle, fname);
+       FILE_HANDLE *fh=fd_2_fh(fhandle);
+       dprintf("Open/creat fd=%d, fn=`%s`, openmode=%s",
+          fhandle, fname, (fh && (fh->fh_flags &FH_OPENED_RO)) ? "RO" : "RW" );
      }
    })
    return(fhandle);
@@ -441,15 +443,15 @@ int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
   return(-0x88); /* wrong filehandle */
 }
 
-int nw_close_datei(int fhandle, int reset_reuse)
+int nw_close_file(int fhandle, int reset_reuse)
 {
-  XDPRINTF((5, 0, "nw_close_datei handle=%d, anz_fhandles",
+  XDPRINTF((5, 0, "nw_close_file handle=%d, anz_fhandles",
      fhandle, anz_fhandles));
 
   MDEBUG(D_FH_OPEN, {
     char fname[200];
     int r=fd_2_fname(fhandle, fname, sizeof(fname));
-    dprintf("nw_close_datei: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
+    dprintf("nw_close_file: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
   })
 
   if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
@@ -494,6 +496,44 @@ int nw_close_datei(int fhandle, int reset_reuse)
   }
   return(-0x88); /* wrong filehandle */
 }
+
+
+int nw_commit_file(int fhandle)
+{
+  MDEBUG(D_FH_FLUSH, {
+    char fname[200];
+    int r=fd_2_fname(fhandle, fname, sizeof(fname));
+    dprintf("nw_commit_file: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
+  })
+  if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
+    FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
+    if (fh->fd > -1 || (fh->fd == -3 && fh->fh_flags & FH_IS_PIPE_COMMAND)) {
+      if (!(fh->fh_flags & FH_IS_READONLY)) {
+        int result=0;
+        if (!(fh->fh_flags & FH_IS_PIPE) && fh->fd > -1) {
+          int fd=dup(fh->fd);
+          if (fd > -1) {
+            if (!close(fh->fd)) {
+              if (fh->tmodi > 0L) {
+                struct utimbuf ut;
+                ut.actime = ut.modtime = fh->tmodi;
+                utime(fh->fname, &ut);
+                fh->tmodi = 0L;
+              }
+              fh->fd=dup2(fd, fh->fd);
+            } else
+              result=-0x8c;
+            close(fd);
+          }
+        }
+        return(result);
+      } else
+        return(-0x8c);
+    }
+  }
+  return(-0x88); /* wrong filehandle */
+}
+
 
 uint8 *file_get_unix_name(int fhandle)
 {
@@ -734,5 +774,13 @@ int fd_2_fname(int fhandle, char *buf, int bufsize)
     *buf='\0';
   return(-0x88);
 }
+
+FILE_HANDLE *fd_2_fh(int fhandle)
+{
+  if (fhandle > HOFFS && (--fhandle < anz_fhandles))
+    return(&(file_handles[fhandle]));
+  return(NULL);
+}
+
 
 

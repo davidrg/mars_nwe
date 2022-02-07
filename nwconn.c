@@ -1,4 +1,4 @@
-/* nwconn.c 17-Jan-97       */
+/* nwconn.c 16-Apr-97       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -588,6 +588,27 @@ static int handle_ncp_serv(void)
                           /* TODO !!!!!!!!!!!!!!!!!!!!  */
 #endif
                          do_druck++;
+                       } else if (*p == 0x28){
+                        /* Scan File Physical  ??? */
+                         struct INPUT {
+                           uint8   header[7];         /* Requestheader */
+                           uint8   div[3];            /* 0x0, dlen, ufunc */
+                           uint8   dir_handle;        /* directory handle */
+                           uint8   attrib;            /* Search Attrib ?? 0x2f */
+                           uint8   searchsequence[4]; /* 32 bit */
+                           uint8   len;
+                           uint8   data[2];
+                         } *input = (struct INPUT *) (ncprequest);
+                         /* we try, whether this is ok  ????? */
+                         int result = nw_scan_a_directory(
+                                      responsedata,
+                                      input->dir_handle,
+                                      input->data,
+                                      input->len,
+                                      input->attrib,
+                                      GET_BE32(input->searchsequence));
+                         if (result > -1) data_len = result;
+                         else completition = (uint8) (-result);
                        } else  if (*p == 0x29){
                         /* read  volume restrictions for an object */
 #if QUOTA_SUPPORT
@@ -859,7 +880,7 @@ static int handle_ncp_serv(void)
                          uint8   size[4];
                          uint8   weisnicht[2];   /* lock timeout ??? */
                        } *input = (struct INPUT *)ncprequest;
-                       int fhandle  = GET_BE32  (input->fhandle);
+                       int fhandle  = GET_32  (input->fhandle);
                        int offset   = GET_BE32(input->offset);
                        int size     = GET_BE32(input->size);
                        completition = (uint8)(-nw_lock_datei(fhandle,
@@ -884,47 +905,29 @@ static int handle_ncp_serv(void)
                        if (!ufunc) completition=0; /* TTS not availible */
                        else completition=0xfb;     /* request not known */
                      } break;
-#if 0
-         this was wrong, I think
-         case 0x3d : {  /* commit file, flush file buffers  */
-         0x3d seems to be no valid/used NCP call.
-#endif
-         case 0x3d :  /* looks also like commit file */
-                      /* I make no errorresult here */
-                      {
-#if 0
-                      XDPRINTF((2,0, "don't know function: 0x3d"));
-#else
-                       struct INPUT {
-                         uint8   header[7];     /* Requestheader */
-                         uint8   reserve;
-                         uint8   ext_fhandle[2]; /* all zero   */
-                         uint8   fhandle[4];     /* filehandle */
-                       } *input = (struct INPUT *)ncprequest;
-                       char fname[200];
-                       int fd = (int) GET_BE32(input->fhandle);
-                       int result=fd_2_fname(fd, fname, sizeof(fname));
-                       XDPRINTF((1,0, "0x3d, fd=%d, fn=`%s`, r=%d",
-                                fd, fname, result));
-#endif
-                      }
-                      break;
 
-         case 0x3b :
-#if DO_DEBUG
-                     {  /* commit file, flush file buffers  */
+         case 0x23 : { /* div AFP Calls */
+#if 0
+                       int ufunc = (int) *requestdata;
+#endif
+                       completition=0xbf;   /* we say invalid namespace here */
+                     } break;
+
+         case 0x3b :  /* commit file to disk        */
+         case 0x3d :  /* commit file 		    */
+                     {
                        struct INPUT {
                          uint8   header[7];     /* Requestheader */
                          uint8   reserve;
                          uint8   ext_fhandle[2]; /* all zero   */
                          uint8   fhandle[4];     /* filehandle */
                        } *input = (struct INPUT *)ncprequest;
-                       uint32 fhandle = GET_BE32(input->fhandle);
-                       XDPRINTF((5,0, "should be done some time: COMMIT FILE:fhandle=%ld", fhandle));
+                       uint32 fhandle = GET_32(input->fhandle);
+                       int result=nw_commit_file(fhandle);
+                       if (result<0)
+                         completition=(uint8)-result;
                      }
-#endif
                      break;
-
 
          case 0x3e : { /* FILE SEARCH INIT  */
                        /* returns dhandle for searchings */
@@ -1052,7 +1055,7 @@ static int handle_ncp_serv(void)
                                0x1, 0, (int)(ncprequest->task));
 
                        if (fhandle > -1){
-                         U32_TO_BE32(fhandle, xdata->fhandle);
+                         U32_TO_32(fhandle, xdata->fhandle);
                          U16_TO_BE16(0, xdata->ext_fhandle);
                          U16_TO_BE16(0, xdata->reserve2);
                          data_len = sizeof(struct XDATA);
@@ -1068,12 +1071,14 @@ static int handle_ncp_serv(void)
                          uint8   ext_fhandle[2]; /* all zero   */
                          uint8   fhandle[4];     /* filehandle */
                        } *input = (struct INPUT *)ncprequest;
-                       uint32 fhandle = GET_BE32(input->fhandle);
-                       completition = (uint8)(-nw_close_datei(fhandle, 0));
+                       uint32 fhandle = GET_32(input->fhandle);
+                       completition = (uint8)(-nw_close_file(fhandle, 0));
+#if TEST_FNAME
                        if (!completition && fhandle == test_handle) {
                          do_druck++;
                          test_handle = -1;
                        }
+#endif
                      }
                      break;
 
@@ -1104,7 +1109,7 @@ static int handle_ncp_serv(void)
                                       (int)(ncprequest->task));
                        if (fhandle > -1){
                          data_len = sizeof(struct XDATA);
-                         U32_TO_BE32(fhandle, xdata->fhandle);
+                         U32_TO_32  (fhandle, xdata->fhandle);
                          U16_TO_BE16(0,       xdata->extfhandle);
                          U16_TO_BE16(0,       xdata->reserved);
 
@@ -1187,7 +1192,7 @@ static int handle_ncp_serv(void)
                        struct XDATA {
                          uint8   size[4];    /* Position ??? */
                        } *xdata=(struct XDATA*)responsedata;
-                       int    fhandle  = GET_BE32(input->fhandle);
+                       int    fhandle  = GET_32(input->fhandle);
                        int    size     = nw_seek_datei(fhandle, 0);
                        if (size > -1) {
                          data_len = sizeof(struct XDATA);
@@ -1211,7 +1216,7 @@ static int handle_ncp_serv(void)
                          uint8   size[2]; /* read bytes  */
                          uint8   data[2]; /* read data   */
                        } *xdata=(struct XDATA*)responsedata;
-                       int    fhandle  = GET_BE32(input->fhandle);
+                       int    fhandle  = GET_32  (input->fhandle);
                        int    max_size = GET_BE16(input->max_size);
                        off_t  offset   = GET_BE32(input->offset);
                        int    zusatz   = (offset & 1) ? 1 : 0;
@@ -1243,7 +1248,7 @@ static int handle_ncp_serv(void)
                          uint8   data[2];        /* Schreibdaten */
                        } *input = (struct INPUT *)ncprequest;
                        off_t  offset     = GET_BE32(input->offset);
-                       int    fhandle    = GET_BE32(input->fhandle);
+                       int    fhandle    = GET_32  (input->fhandle);
                        int    input_size = GET_BE16(input->size);
                        int size          = nw_write_datei(fhandle,
                                                  input->data,
@@ -1268,8 +1273,8 @@ static int handle_ncp_serv(void)
                          uint8   zoffset[4];      /* DestFile Offset   */
                          uint8   size[4];         /* copysize          */
                        } *input = (struct INPUT *)ncprequest;
-                       int    qfhandle   = GET_BE32(input->qfhandle);
-                       int    zfhandle   = GET_BE32(input->zfhandle);
+                       int    qfhandle   = GET_32  (input->qfhandle);
+                       int    zfhandle   = GET_32  (input->zfhandle);
                        off_t  qoffset    = GET_BE32(input->qoffset);
                        off_t  zoffset    = GET_BE32(input->zoffset);
                        uint32 input_size = GET_BE32(input->size);
@@ -1297,7 +1302,7 @@ static int handle_ncp_serv(void)
                          uint8   zeit[2];    /* time    */
                          uint8   datum[2];   /* date    */
                        } *input = (struct INPUT *)ncprequest;
-                       int result = nw_set_fdate_time(GET_BE32(input->fhandle),
+                       int result = nw_set_fdate_time(GET_32(input->fhandle),
                                     input->datum, input->zeit);
                        if (result <0) completition = (uint8) -result;
                      }
@@ -1332,7 +1337,7 @@ static int handle_ncp_serv(void)
                                (int)(ncprequest->task));
 
                        if (fhandle > -1){
-                         U32_TO_BE32(fhandle, xdata->fhandle);
+                         U32_TO_32  (fhandle, xdata->fhandle);
                          U16_TO_BE16(0, xdata->ext_fhandle);
                          U16_TO_BE16(0, xdata->reserve2);
 
@@ -1708,7 +1713,7 @@ int main(int argc, char **argv)
 # if 1
 #  ifdef SIOCIPXNCPCONN
    {
-     int conn   = atoi(*(argv+3));
+     int conn   = act_connection;
      int result = ioctl(0, SIOCIPXNCPCONN, &conn);
      XDPRINTF((2, 0, "ioctl:SIOCIPXNCPCONN result=%d", result));
    }
@@ -1789,6 +1794,14 @@ int main(int argc, char **argv)
       }
     }
   } /* while */
+
+  seteuid(0);
+#  ifdef SIOCIPXNCPCONN
+   {
+     int conn = -act_connection;
+     (void)ioctl(0, SIOCIPXNCPCONN, &conn);
+   }
+#  endif
   close_all();
   XDPRINTF((2,0, "leave nwconn pid=%d", getpid()));
   return(0);

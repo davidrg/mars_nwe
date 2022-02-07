@@ -234,7 +234,7 @@ static void free_queue_job(int q_id)
   if (q_id > 0 && q_id <= anz_jobs) {
     INT_QUEUE_JOB **pp=&(queue_jobs[q_id-1]);
     uint32 fhandle   = (*pp)->fhandle;
-    if (fhandle > 0) nw_close_datei(fhandle, 1);
+    if (fhandle > 0) nw_close_file(fhandle, 1);
     if (q_id == anz_jobs) {
       xfree(*pp);
       --anz_jobs;
@@ -323,7 +323,7 @@ int nw_creat_queue(int connection, uint8 *queue_id, uint8 *queue_job,
       if (result > -1) {
         jo->fhandle     = (uint32) result;
         U16_TO_BE16(0,           jo->q.o.job_file_handle);
-        U32_TO_BE32(jo->fhandle, jo->q.o.job_file_handle+2);
+        U32_TO_32(jo->fhandle,   jo->q.o.job_file_handle+2);
         result = 0;
       }
       jo->q.o.server_station = 0;
@@ -359,7 +359,7 @@ int nw_creat_queue(int connection, uint8 *queue_id, uint8 *queue_job,
 
       if (result > -1) {
         jo->fhandle = (uint32) result;
-        U32_TO_BE32(jo->fhandle,    jo->q.n.job_file_handle);
+        U32_TO_32(jo->fhandle,    jo->q.n.job_file_handle);
         result = 0;
       }
       U32_TO_BE32(0, jo->q.n.server_station);
@@ -401,7 +401,7 @@ int nw_close_file_queue(uint8 *queue_id,
            qpa.banner_user_name, qpa.banner_file_name);
       } else
         strmaxcpy((uint8*)printcommand, prc, prc_len);
-      nw_close_datei(fhandle, 1);
+      nw_close_file(fhandle, 1);
       jo->fhandle = 0L;
       if (NULL == (f = fopen(unixname, "r"))) {
         /* OK now we try the open as root */

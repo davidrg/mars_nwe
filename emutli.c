@@ -187,7 +187,7 @@ int poll( struct pollfd *fds, unsigned long nfds, int timeout)
    return(result);
 }
 
-int t_rcvudata(int fd, struct t_unitdata *ud, int *flags)
+inline int t_rcvudata(int fd, struct t_unitdata *ud, int *flags)
 {
    struct sockaddr_ipx ipxs;
    int  sz    = sizeof(struct sockaddr_ipx);
@@ -224,7 +224,7 @@ static void sig_alarm(int rsig)
 #endif
 
 
-int t_sndudata(int fd, struct t_unitdata *ud)
+inline int t_sndudata(int fd, struct t_unitdata *ud)
 {
    int result;
    struct sockaddr_ipx ipxs;

@@ -1,4 +1,4 @@
-/* namspace.c 09-Nov-96 : NameSpace Services, mars_nwe */
+/* namspace.c 16-Apr-97 : NameSpace Services, mars_nwe */
 
 /* !!!!!!!!!!!! NOTE !!!!!!!!!! */
 /* Its still very dirty, but it should work fairly well */
@@ -532,8 +532,9 @@ static int insert_get_base_entry(N_NW_PATH *nwpath,
         && nwpath->volume       == e->nwpath.volume
         && nwpath->statb.st_ino == e->nwpath.statb.st_ino
         && nwpath->statb.st_dev == e->nwpath.statb.st_dev)  {
-        if (nwp_stat(&(e->nwpath), "insert_get_base_entry")) {
-         /* the path has changed, we say handle is wrong */
+        if (nwp_stat(&(e->nwpath), "insert_get_base_entry")
+          || strcmp(e->nwpath.path, nwpath->path)) {
+         /* the path has changed, we remove this entry */
           free_dbe_p(e);
         } else {
           return(touch_handle_entry_p(e));
@@ -1270,7 +1271,7 @@ static int nw_open_creat_file_or_dir(
       (exist  > -1) result=-0x84;
 
     if (result > -1) {
-      U32_TO_BE32(fhandle,   responsedata);
+      U32_TO_32(fhandle, responsedata);
       responsedata += 4;
       *responsedata     =(uint8) actionresult;
       *(responsedata+1) = 0;

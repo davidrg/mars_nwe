@@ -1,4 +1,4 @@
-/* nwdbm.h 20-Jan-97 */
+/* nwdbm.h 17-Apr-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -198,6 +198,7 @@ extern int nw_get_q_dirname(uint32 q_id, uint8 *buff);
 extern int nw_get_q_prcommand(uint32 q_id, uint8 *buff);
 
 extern void test_ins_unx_user(uint32 id);
+extern int  test_allow_password_change(uint32 id);
 
 extern int nw_fill_standard(char *servername, ipxAddr_t *adr);
 extern int nw_init_dbm(char *servername, ipxAddr_t *adr);

@@ -1,4 +1,4 @@
-/* emutli1.c 24-Jun-96 */
+/* emutli1.c 10-Apr-97 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -61,11 +61,11 @@ static int x_ioctl(int sock, int mode, void *id)
 int read_interface_data(uint8* data, uint32 *rnet, uint8 *node,
                           int *flags, uint8 *name)
 
-/* returns frame or if error < 0 */
+/* returns frame or -1 for no frame or -2 for error */
 {
   uint32 snet;
-  int   frame=-1;
-  int   xflags =0;
+  int   frame  =-2;
+  int   xflags = 0;
   uint8 buff1[200];
   uint8 buff2[200];
   uint8 buff3[200];
@@ -76,7 +76,7 @@ int read_interface_data(uint8* data, uint32 *rnet, uint8 *node,
   if (sscanf(data, "%lx %s %s %s %s",
           rnet, buff1, buff2, buff3, buff4) == 5  ) {
     int len = strlen(buff4);
-    if (!len) return(-1);
+    if (!len) return(-2);
     switch (*(buff4+len-1)) {
       case  '2' : frame = IPX_FRAME_8022; break;
       case  '3' : frame = IPX_FRAME_8023; break;
@@ -85,6 +85,8 @@ int read_interface_data(uint8* data, uint32 *rnet, uint8 *node,
 #ifdef IPX_FRAME_TR_8022
       case  'R' : frame = IPX_FRAME_TR_8022; break;
 #endif
+      case  'e' :
+      case  'E' : frame = -1; break;   /* NONE */
       default   : return(-2);
     }
     if (node) strmaxcpy(node, buff1, 12);
@@ -95,9 +97,8 @@ int read_interface_data(uint8* data, uint32 *rnet, uint8 *node,
 
     if (name) strmaxcpy(name, buff3, 20);
     upstr(buff3);
-    if (!strcmp(buff2, "INTERNAL")) /* internal net */
+    if (!strcmp(buff3, "INTERNAL")) /* internal net */
       *flags |= 2;
-
   }
   return(frame);
 }
@@ -169,6 +170,47 @@ static void del_special_net(int special, char *devname, int frame)
   }
 }
 
+static void del_all_interfaces_nets(void)
+/* removes all ipx_interfaces */
+{
+  int sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
+  if (sock > -1) {
+    FILE *f=fopen("/proc/net/ipx_interface", "r");
+    if (f) {
+      char  buff[200];
+      uint8 name[25];
+      struct ifreq  id;
+      struct sockaddr_ipx *sipx = (struct sockaddr_ipx *)&id.ifr_addr;
+
+      while (fgets((char*)buff, sizeof(buff), f) != NULL){
+        int flags = 0;
+        int frame = read_interface_data((uint8*) buff, NULL, NULL,
+                                   &flags, name);
+        if (frame < -1) continue;
+
+        memset(&id, 0, sizeof(struct ifreq));
+        sipx->sipx_network = 0L;
+        sipx->sipx_family  = AF_IPX;
+
+        if (flags & 2) {     /* internal */
+          sipx->sipx_special = IPX_INTERNAL;
+        } else {
+          sipx->sipx_type = frame;
+          strcpy(id.ifr_name, name);
+          if (flags & 1) /* primary  */
+            sipx->sipx_special = IPX_PRIMARY;
+          else
+            sipx->sipx_special = IPX_SPECIAL_NONE;
+        }
+        sipx->sipx_action  = IPX_DLTITF;
+        x_ioctl(sock, SIOCSIFADDR, &id);
+      }
+      fclose(f);
+    }
+    close(sock);
+  }
+}
+
 #define del_internal_net() \
   del_special_net(IPX_INTERNAL, NULL, 0)
 #define del_interface(devname, frame) \
@@ -230,7 +272,7 @@ int get_frame_name(uint8 *framename, int frame)
   return(0);
 }
 
-int init_ipx(uint32 network, uint32 node, int ipx_debug)
+int init_ipx(uint32 network, uint32 node, int ipx_debug, int flags)
 {
   int result=-1;
   int sock;
@@ -243,6 +285,7 @@ int init_ipx(uint32 network, uint32 node, int ipx_debug)
   exit(1);
 # endif
 #endif
+
   if ((sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX)) < 0) {
     errorp(1,  "EMUTLI:init_ipx", NULL);
     errorp(10, "Problem", "probably kernel-IPX is not setup correctly");
@@ -254,6 +297,7 @@ int init_ipx(uint32 network, uint32 node, int ipx_debug)
         auto_interfaces = cfgdata.ipxcfg_auto_create_interfaces;
     set_sock_debug(sock);
     result=0;
+
     /* build new internal net */
     if (network) {
       struct sockaddr_ipx ipxs;
@@ -272,50 +316,47 @@ int init_ipx(uint32 network, uint32 node, int ipx_debug)
       add_internal_net(network, node);
       have_ipx_started++;
     }
+
+    if ((flags & 2) && !auto_interfaces) { /* set auto interfaces */
+      auto_interfaces = 1;
+      ioctl(sock, SIOCAIPXITFCRT, &auto_interfaces);
+    }
+
     close(sock);
   }
   return(result);
 }
 
-void exit_ipx(int full)
+void exit_ipx(int flags)
 {
   int sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
   if (sock > -1) {
     /* Switch DEBUG off */
     set_locipxdebug(0);
     set_sock_debug(sock);
-#if 1
-    if (have_ipx_started && full) org_auto_interfaces = 0;
-#endif
+    if (have_ipx_started && !(flags&1))
+       org_auto_interfaces = 0;
     if (auto_interfaces != org_auto_interfaces)
       ioctl(sock, SIOCAIPXITFCRT, &org_auto_interfaces);
     close(sock);
   }
-  if (have_ipx_started && full) del_internal_net();
+  if (have_ipx_started && !(flags&1)) {
+    del_all_interfaces_nets();
+  }
 }
 
-int init_dev(char *devname, int frame, uint32 network)
+int init_dev(char *devname, int frame, uint32 network, int wildmask)
 {
-   int is_auto = (!network || frame < 0 || devname[0] == '*');
-   if (frame > -1 && devname[0] != '*') del_interface(devname,  frame);
+   if (!(wildmask & 3))
+      del_interface(devname, frame);
    if (!have_ipx_started) {
-     if (is_auto) return(-99);
+     if (wildmask) return(-99);
      have_ipx_started++;
      del_primary_net();
      add_primary_net(devname, frame, network);
    } else {
-     if (!is_auto)
+     if (!wildmask)
        return(add_device_net(devname, frame, network));
-     else if (!auto_interfaces) {
-       int sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
-       if (sock < 0) return(-2);
-       auto_interfaces = 1;
-       if (ioctl(sock, SIOCAIPXITFCRT, &auto_interfaces) < 0) {
-         close(sock);
-         return(-3);
-       }
-       close(sock);
-     }
      return(1);
    }
    return(0);

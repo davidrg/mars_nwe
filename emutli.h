@@ -102,10 +102,9 @@ extern int  t_bind(int sock, struct t_bind *a_in, struct t_bind *a_out);
 extern int  t_unbind(int sock);
 extern void t_error(char *s);
 extern int  t_close(int fd);
-extern int  t_rcvudata(int fd, struct t_unitdata *ud, int *flags);
+extern inline int t_rcvudata(int fd, struct t_unitdata *ud, int *flags);
 extern int  t_rcvuderr(int fd, struct t_uderr    *ud);
-extern int  t_sndudata(int fd, struct t_unitdata *ud);
-
+extern inline int t_sndudata(int fd, struct t_unitdata *ud);
 
 #ifndef  IPX_FRAME_8022
 #  define  OLD_KERNEL_IPX    1

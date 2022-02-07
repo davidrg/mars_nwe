@@ -20,11 +20,12 @@ Mars_nwe kann auf 2 Arten konfiguriert werden.
    Eintrag '3' der 'ini/conf Datei' muss eine im Netz eindeutige
    Netwerknummer erhalten.
    Es muss ein Eintrag '4' mit Netzwerk Nummer = 0,
-   Device = '*' und Frame = 'auto' fuer ein 'autocreat' Interface
+   Device = '*' und Frame = 'auto' fuer ein 'autodetect' Interface
    vorhanden sein.
    Beispiel fuer conf/ini Datei: (siehe auch: examples/nw.ini)
-   3  0x77777  # eindeutige Netzwerk Nummer fuer internal net.
-   4  0x0  *      AUTO          # autocreat Interfaces
+    3  0x0                 # verwende IP Nummer als Internal Net.
+    4  0x0  *      AUTO    # autodetect interfaces.
+    5  0x2                 # set kernel autocreat interfaces = on.
 
    Falls kein anderer IPX/NCP Server im Netz vorhanden ist
    kann im Eintrag '4' eine beliebige Netzwerknummer verwendet werden.
@@ -33,6 +34,7 @@ Mars_nwe kann auf 2 Arten konfiguriert werden.
    4  0x20 eth0 802.3        # eth0 Device mit Netznummer '0x20'
                              # und Frame ETHERNET_802.3.
 
+
 2. Mars_nwe soll nur als File Server Verwendung finden, d.h.
    Routing usw. soll von anderen Programmen erledigt werden.
 -> Die IPX-Interfaces muessen durch andere Programme/Tools
@@ -40,6 +42,7 @@ Mars_nwe kann auf 2 Arten konfiguriert werden.
    und es muss ein rip/sap router/daemon eingerichtet sein.
    In mars_nwe/config.h muss folgende Zeile vorhanden sein.
    #define INTERNAL_RIP_SAP  0
+
 
 =========>   Programme erzeugen
 1. make aufrufen.
@@ -59,7 +62,7 @@ zu *ueberschreiben* .
 
 =========>   Starten
 nwserv starten  ( als root !! )
-mit Linux Version 1.2.13 und 1.3.32 getestet.
+mit Linux Version 1.2.13 und 1.3.32 und 2.0.x getestet.
 Der Linux Kernel muss mit IPX Unterstuetzung erzeugt worden sein.
 IPX-Interface bzw. Routen werden durch das Programm automatisch
 angelegt, falls in der nw.ini Datei Devices (Eintrag 4) enthalten

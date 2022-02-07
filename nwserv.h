@@ -1,4 +1,4 @@
-/* nwserv.h 16-Jul-96 */
+/* nwserv.h 10-Apr-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -19,7 +19,7 @@
 #define _M_NWSERV_H_
 extern uint32    internal_net;        /* NETWORKNUMMER INTERN (SERVER) */
 extern int       no_internal;         /* no use of internal net        */
-extern int       auto_creat_interfaces;
+extern int       auto_detect_interfaces;
 extern ipxAddr_t my_server_adr;       /* Address of this server        */
 extern char      my_nwname[50];       /* Name of this server           */
 extern int       print_route_tac;     /* every x broadcasts print it   */
@@ -33,6 +33,7 @@ typedef struct {
   int      ticks;      /* ether:ticks=1, isdn:ticks=7 */
   uint32   net;        /* NETWORK NUMBER              */
   int      is_up;      /* Is this device up ?         */
+  int      wildmask;   /* wildmask, 1=name, 2=frame, 4=net */
 } NW_NET_DEVICE;
 
 /* <========== DEVICES ==========> */

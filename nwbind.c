@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "20-Jan-97"
+#define REVISION_DATE "17-Apr-97"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -878,7 +878,9 @@ static void handle_fxx(int gelen, int func)
 
                         internal_act = 1;
                         if (act_c->object_id == 1 ||
-                           0 == (result=nw_test_unenpasswd(obj.id, oldpassword))){
+                           (0 == (result=test_allow_password_change(act_c->object_id))
+                           &&
+                           0 == (result=nw_test_unenpasswd(obj.id, oldpassword)))){
                           if ( (act_c->object_id != 1)
                             || *newpassword
                             || !(password_scheme & PW_SCHEME_LOGIN))
@@ -1054,7 +1056,10 @@ static void handle_fxx(int gelen, int func)
                     p += (*p+1); /* here is crypted password length */
                     if (0 == (result = find_obj_id(&obj)))  {
 		      internal_act=1;
-		      result=nw_keychange_passwd(obj.id, act_c->crypt_key,
+                      if (obj.id != 1)
+                        result=test_allow_password_change(obj.id);
+                      if (!result)
+  		        result=nw_keychange_passwd(obj.id, act_c->crypt_key,
 				rdata, (int)*p, p+1, act_c->object_id);
                       if (!result) test_ins_unx_user(obj.id);
 		      internal_act = 0;

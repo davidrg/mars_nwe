@@ -1,4 +1,4 @@
-/* nwdbm.c  20-Jan-97  data base for mars_nwe */
+/* nwdbm.c  17-Apr-97  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1119,6 +1119,14 @@ uint32 nw_new_obj_prop(uint32 wanted_id,
   return(obj.id);
 }
 
+/* some property names */
+/*STANDARD NOVELL properties */
+static uint8 *pn_password=(uint8*)      "PASSWORD";
+
+/* OWN properties */
+static uint8 *pn_unix_user=(uint8*)     "UNIX_USER";
+static uint8 *pn_special_flags=(uint8*)"SP_SU_FLAGS"; /* flag */
+
 typedef struct {
   int    pw_uid;
   int    pw_gid;
@@ -1132,7 +1140,7 @@ static MYPASSWD *nw_getpwnam(uint32 obj_id)
 {
   static MYPASSWD pwstat;
   char buff[200];
-  if (nw_get_prop_val_str(obj_id, "UNIX_USER", buff) > 0){
+  if (nw_get_prop_val_str(obj_id, pn_unix_user, buff) > 0){
     struct passwd *pw = getpwnam(buff);
     if (NULL != pw) {
       if (obj_id != 1 && !pw->pw_uid)
@@ -1205,7 +1213,7 @@ static int crypt_pw_ok(uint8 *password, char *passwd)
 static int loc_nw_test_passwd(uint8 *keybuff, uint8 *stored_passwd,
                               uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
 {
-  if (nw_get_prop_val_str(obj_id, "PASSWORD", stored_passwd) > 0) {
+  if (nw_get_prop_val_str(obj_id, pn_password, stored_passwd) > 0) {
     nw_encrypt(vgl_key, stored_passwd, keybuff);
     return (memcmp(akt_key, keybuff, 8) ? -0xff : 0);
   } else { /* now we build an empty password */
@@ -1247,7 +1255,7 @@ int nw_test_unenpasswd(uint32 obj_id, uint8 *password)
   uint8 stored_passwd[200];
   MYPASSWD *pw;
   if (password && *password
-     && nw_get_prop_val_str(obj_id, "PASSWORD", stored_passwd) > 0 ) {
+     && nw_get_prop_val_str(obj_id, pn_password, stored_passwd) > 0 ) {
     uint8 s_uid[4];
     U32_TO_BE32(obj_id, s_uid);
     xstrcpy(passwordu, password);
@@ -1267,9 +1275,12 @@ int nw_test_unenpasswd(uint32 obj_id, uint8 *password)
   } else return(-0xff);
 }
 
+
+
+
 static int nw_set_enpasswd(uint32 obj_id, uint8 *passwd, int dont_ch)
 {
-  uint8 *prop_name=(uint8*)"PASSWORD";
+  uint8 *prop_name=pn_password;
   if (passwd && *passwd) {
     if ((!dont_ch) || (nw_get_prop_val_str(obj_id, prop_name, NULL) < 1))
        nw_new_obj_prop(obj_id, NULL, 0, 0, 0,
@@ -1496,13 +1507,41 @@ static void add_user_2_unx(uint32 u_id,  char  *unname)
 {
   if (unname && *unname)
     nw_new_obj_prop(u_id, NULL,          0  ,   0  ,   0 ,
-      	             "UNIX_USER",        P_FL_ITEM,    0x33,
+      	             pn_unix_user,        P_FL_ITEM,    0x33,
 	             (char*)unname,  strlen(unname), 1);
+}
+
+extern int test_allow_password_change(uint32 id)
+{
+  uint8  more_segments;
+  uint8  property_flags;
+  uint8  buff[200];
+  int    segment = 1;
+  int    result  = nw_get_prop_val_by_obj_id(id, segment,
+                   pn_special_flags, strlen(pn_special_flags),
+                   buff, &more_segments, &property_flags);
+  if (result > -1 && (GET_BE32(buff) & 1))
+    return(-0xff);
+  return(0);
+}
+
+static void add_remove_special_flags(uint32 obj_id, int flags)
+/* add special flags to User, 0x1 = fixed-password */
+{
+  if (flags) {
+    uint8 buff[4];
+    U32_TO_BE32(flags, buff);
+    nw_new_obj_prop(obj_id, NULL, 0, 0, 0,
+  	                pn_special_flags, P_FL_STAT|P_FL_ITEM, 0x33,
+	                buff, sizeof(buff), 1);
+  } else
+    (void)loc_delete_property(obj_id, pn_special_flags, 0, 1);
 }
 
 static void add_user_g(uint32 u_id,   uint32 g_id,
                   char   *name,  char  *unname,
-                  char *password, int dont_ch)
+                  char *password, int dont_ch,
+                  int flags, int set_flags)
 {
                                       /*   Typ    Flags  Security */
   dont_ch = (nw_new_obj(&u_id,  name,              0x1  , 0x0,  0x31)
@@ -1519,6 +1558,8 @@ static void add_user_g(uint32 u_id,   uint32 g_id,
     if (*password == '-') *password='\0';
     nw_set_passwd(u_id, password, dont_ch);
   }
+  if (set_flags)
+    add_remove_special_flags(u_id, flags);
 }
 
 static void add_group(char *name,  char  *unname, char *password)
@@ -1715,16 +1756,32 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
         char nname[100];
         char uname[100];
         char password[100];
-        int  anz=sscanf((char*)buff, "%s %s %s", nname, uname, password);
+        char flagsstr[100];
+        int  flags=0;
+        int  set_flags=0;
+        int  anz=sscanf((char*)buff, "%s %s %s %s", nname, uname, password, flagsstr);
         if (anz > 1) {
           upstr(nname);
-          if (anz > 2) upstr(password);
-          else password[0] = '\0';
+          if (anz > 2) {
+            upstr(password);
+            if (anz > 3) {
+              flags=hextoi(flagsstr);
+              set_flags++;
+            } else if ( what == 13
+                     && password[0] == '0'
+                     && password[1] == 'X'
+                     && password[2] >= '0'
+                     && password[2] <= '9' ) {
+              flags=hextoi(password);
+              password[0] = '\0';
+              set_flags++;
+            }
+          } else password[0] = '\0';
           if (what == 14)
             add_group(nname, uname, password);
           else
             add_user_g((12 == what) ? su_id : 0L, ge_id, nname,
-                            uname, password, 0);
+                            uname, password, 0, flags, set_flags);
         }
       } else if (15 == what) {
         char buf[100];
@@ -1785,7 +1842,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
           xstrcpy(nname, pw->pw_name);
           upstr(nname);
           add_user_g(0L, ge_id, nname, pw->pw_name, auto_ins_passwd,
-            (auto_ins_user == 99) ? 0 : 99);
+            (auto_ins_user == 99) ? 0 : 99, 0, 0);
         } else {
           XDPRINTF((1,0, "Unix User:'%s' not added because passwd='%s'",
              pw->pw_name, pw->pw_passwd));

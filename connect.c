@@ -1224,7 +1224,7 @@ int nw_chmod_datei(int dir_handle, uint8 *data, int len,
   }
   if (completition < 0) return(completition);
   strcpy(unname, build_unix_name(&nwpath, 2));
-  XDPRINTF((5,0,"set file attrib 0x%x, unname:%s:", unname));
+  XDPRINTF((5,0,"set file attrib 0x%x, unname:%s:", access,  unname));
   if (!stat(unname, &stbuff)){
     int result = chmod(unname, un_nw_attrib(&stbuff, access, 1));
     return( (result != 0) ? -0x8c : 0);  /* no modify rights */
@@ -1473,7 +1473,7 @@ int nw_init_connect(void)
       } else if (what == 11) { /* UID */
         default_uid = atoi((char*)buff);
       } else if (what == 103) { /* Debug */
-        nw_debug = atoi((char*)buff);
+        get_debug_level(buff);
       }
     } /* while */
     nw_init_volumes(f);

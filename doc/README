@@ -1,6 +1,6 @@
 
 mars_nwe - Martin Stovers netware emulation
-Copyright (C) 1993,1996  Martin Stover, Marburg, Germany
+Copyright (C) 1993,1997  Martin Stover, Marburg, Germany
 
 
 Help on how to compile and install can be found in `INSTALL'.
@@ -8,7 +8,7 @@ Help on how to compile and install can be found in `INSTALL'.
 
 "mars_nwe" is an attempt to emulate the basic functionality
 of a netware-server under UNIX (Linux).
-The first version was written 1993 on a USL1.1 with TLI-Code.
+The first version was written 1993 on a UnixWare 1.1 with TLI-Code.
 1994 I ported it to LINUX, which was easy because I only had
 to write a small TLI->SOCKET emulation (see the modul
 "emutli").

@@ -1,4 +1,4 @@
-last updated: 16-Jan-97
+last updated: 11-Apr-97
 Q: I don't exaclty understand the meaning of some ponits in nw.ini:
    12,13
    What will happen if I will not put PASSWORD here? Will it take it from
@@ -51,5 +51,26 @@ A: Sorry but mars_nwe can recognize this setting only at compile time,
    so you must compile mars_nwe again with actual kernel CONFIG_IPX_INTERN=NO
    settings.
 
+Q: What is an easy way to get a 'clean' nwserv.conf file without comments.
+A: do a 'make showconf' in the mars_nwserv directory or do a
+   'grep "^[ \t]*[0-9]" /etc/nwserv.conf'
+
+Q: Which frametyp should I use (Ethernet_ii, 802.2, SNAP or 802.3)  ?
+A: Use Ethernet_II on a new network as it can carry anything and everything
+   (AFAIK) and doesn't have any of the potential disadvantages of the rest.
+
+   If you're trying to fit into an already established environment which
+   doesn't use Ethernet II for IPX/SPX traffic then try using 802.2 if
+   available. Netware v4 upwards uses this by default. Apparently OSI uses
+   this as well.
+
+   I'll gloss over SNAP at this point, as I only know of it being used
+   in Appletalk environments which I've never dealt with. I did just notice
+   a comment in the Linux source tree about not using it for IP and IPX yet(?).
+
+   Last, and pretty much least, comes 802.3 which is only used by IPX/SPX,
+   and for less and less of that these days, but it shouldn't break anything
+   if you have to use it.
+    (Rick)
 
 

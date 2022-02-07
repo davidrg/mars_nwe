@@ -1,4 +1,4 @@
-/* net1.c, 26-Oct-96 */
+/* net1.c, 11-Mar-97 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -266,41 +266,36 @@ int send_own_data(int fd, IPX_DATA *d, ipxAddr_t *toaddr)
 /* returns < 0 if senderror or functionresultcode > = 0 */
 {
 static int lastsequence=0;
-  int result   = -1;
-  int tries    =  0;
-  int sendsize =  d->owndata.d.size+sizeof(d->owndata.d.size)+
+  int tries        =  0;
+  int sendsize     =  d->owndata.d.size+sizeof(d->owndata.d.size)+
                          sizeof(d->owndata.h);
   d->owndata.h.type[0]   = 0xee;
   d->owndata.h.type[1]   = 0xee;
   d->owndata.h.sequence  = (uint8) ++lastsequence;
   d->owndata.h.reserved  = 0;
 
-  while (tries++ < MAX_SEND_TRIES && result < 0) {
-    result=send_ipx_data(fd, 17, sendsize, (char*)d,
-                     toaddr, "send_own_data");
 
-    if (result > -1) {
+  while (tries++ < MAX_SEND_TRIES) {
+    int result=send_ipx_data(fd, 17, sendsize, (char*)d,
+                     toaddr, "send_own_data");
+    while (result > -1) {
       int packet_typ;
       IPX_DATA   ipxd;
       ipxAddr_t  fromaddr;
-      result=receive_ipx_data(fd, &packet_typ, &ipxd, &fromaddr,
-            MAX_WAIT_MSEC);
+      result=receive_ipx_data(fd, &packet_typ, &ipxd, &fromaddr,MAX_WAIT_MSEC);
       XDPRINTF((2, 0, "receive_ipx_data, result=%d, typ=0x%x%x, sequence=%d",
               result,
               (int)ipxd.ownreply.type[0],
               (int)ipxd.ownreply.type[1],
               (int)ipxd.ownreply.sequence ));
-      if (sizeof(OWN_REPLY) == result &&
-        ipxd.ownreply.type[0]  == 0xef &&
-        ipxd.ownreply.type[1]  == 0xef &&
-      /*   !memcmp(&fromaddr, toaddr, sizeof(ipxAddr_t)) && */
-        ipxd.ownreply.sequence == d->owndata.h.sequence) {
-        result = (int)ipxd.ownreply.result;
-      } else
-        result=-1;
-    }
+      if (sizeof(OWN_REPLY) == result
+          && ipxd.ownreply.type[0]  == 0xef
+          && ipxd.ownreply.type[1]  == 0xef
+          && ipxd.ownreply.sequence == d->owndata.h.sequence)
+            return((int)ipxd.ownreply.result);
+    } /* while */
   } /* while */
-  return(result);
+  return(-1);
 }
 
 int send_own_reply(int fd, int result, int sequence, ipxAddr_t *toaddr)

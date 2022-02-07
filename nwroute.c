@@ -1,4 +1,4 @@
-/* nwroute.c 12-Nov-96 */
+/* nwroute.c 15-Apr-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -66,7 +66,7 @@ static void insert_delete_net(uint32 destnet,
     NW_NET_DEVICE *nd=net_devices[k];
     if  (nd->is_up) {
       if (nd->net == destnet) {
-        if (!do_delete) return; /* don't route device */
+        if (!do_delete) return; /* don't alter device */
         nd_dev = nd;
       }
       if (nd->net == rnet)    ndticks=nd->ticks;
@@ -95,23 +95,27 @@ static void insert_delete_net(uint32 destnet,
     nr->ticks = 0xffff;
     nr->hops  = 0xffff;
   } else if (do_delete) {
+
     nr=nw_routes[k];
     if (nr->rnet == rnet && IPXCMPNODE(nr->rnode, rnode) ) {
       /* only delete the routes, which we have inserted */
       XDPRINTF((2,0,"ROUTE DEL NET=0x%x over Router NET 0x%x",
                 nr->net, rnet));
       ipx_route_del(nr->net);
+
       if (nd_dev != NULL) { /* this is net to our device */
         /* I must delete and setup new, because there is */
         /* no direct way to delete this route from interface :( */
         exit_dev(nd_dev->devname, nd_dev->frame);
-        init_dev(nd_dev->devname, nd_dev->frame, nd_dev->net);
+        init_dev(nd_dev->devname, nd_dev->frame, nd_dev->net, 0);
       }
+
       nr->net = 0L;
     } else {
       XDPRINTF((3,0,"ROUTE NOT deleted NET=0x%x, RNET=0x%x",
                 nr->net, rnet));
     }
+
     return;
   } else nr=nw_routes[k];
 
@@ -392,7 +396,7 @@ void handle_rip(int fd,       int ipx_pack_typ,
                 ipxAddr_t     *from_addr)
 
 /* All received rip packets reach this function  */
-/* It can be a RIP Request or a RIP Respons      */
+/* It can be a RIP Request or a RIP Response     */
 {
   int operation    = GET_BE16(ipxdata->rip.operation);
   int entries      = (data_len-2) / 8;
@@ -641,14 +645,22 @@ void send_sap_rip_broadcast(int mode)
 /* mode=0, standard broadcast */
 /* mode=1, first trie         */
 /* mode=2, shutdown           */
+/* mode=3, update routes      */
 {
 static int flipflop=1;
   int force_print_routes=(mode == 1);
-  if (auto_creat_interfaces)
-    force_print_routes = look_for_interfaces();
+  if (auto_detect_interfaces)
+    force_print_routes += look_for_interfaces();
   if (mode) {
-    send_rip_broadcast(mode);
-    send_sap_broadcast(mode);
+    if (mode == 3) {
+      if (force_print_routes) {
+        send_rip_broadcast(1);
+        send_sap_broadcast(1);
+      }
+    } else {
+      send_rip_broadcast(mode);
+      send_sap_broadcast(mode);
+    }
   } else {
     if (flipflop) {
       send_rip_broadcast(mode);
@@ -757,9 +769,27 @@ int test_ins_device_net(uint32 rnet)
 
   if ( foundfree < 0 ) {
     if (anz_net_devices < MAX_NET_DEVICES) {
-      NW_NET_DEVICE **pnd=&(net_devices[anz_net_devices++]);
-      nd=*pnd= (NW_NET_DEVICE*)xcmalloc(sizeof(NW_NET_DEVICE));
-      nd->ticks  = 1;
+      NW_NET_DEVICE **pnd;
+      int matched=0;
+      k=-1;
+      while (++k < anz_net_devices) {
+        nd = net_devices[k];
+        if (nd->wildmask&3) {
+          int dfound = !strcmp(nd->devname, rnetdevname);
+          int ffound = nd->frame == rnetframe;
+          if ( (dfound && ffound) || (dfound && (nd->wildmask&2) )
+              || (ffound && (nd->wildmask&1))) {
+            pnd=&(net_devices[anz_net_devices++]);
+            *pnd= (NW_NET_DEVICE*)xcmalloc(sizeof(NW_NET_DEVICE));
+            (*pnd)->wildmask = nd->wildmask;
+            (*pnd)->ticks    = nd->ticks;
+            matched++;
+            nd=*pnd;
+            break;
+          }
+        }
+      }
+      if (!matched) return(0);
     } else {
       XDPRINTF((1, 0, "too many devices > %d, increase MAX_NET_DEVICES in config.h", anz_net_devices));
       return(0);
@@ -780,10 +810,11 @@ int test_ins_device_net(uint32 rnet)
     if (nr->net == rnet) {
       ipx_route_del(nr->net);
       nr->net = 0L;
+
       /* I must delete and setup new, because there is */
       /* no direct way to delete this route from interface :( */
       exit_dev(nd->devname, nd->frame);
-      init_dev(nd->devname, nd->frame, nd->net);
+      init_dev(nd->devname, nd->frame, nd->net, 0);
       break;
     }
   }
@@ -810,7 +841,7 @@ static int look_for_interfaces(void)
       int      flags;
       int fframe = read_interface_data((uint8*) buff, &rnet, NULL, &flags, dname);
       if (fframe < 0) continue;
-      if (rnet > 0L && !(flags & 2)) {
+      if (rnet > 0L && !(flags & 2)) { /* not internal */
         int found=0;
         k=-1;
         while (++k < anz_net_devices) {
@@ -822,7 +853,7 @@ static int look_for_interfaces(void)
         }
         if (found && nd->is_up) {
           if (nd->is_up == -2) nd->is_up=2; /* reset  */
-        } else find_diffs=test_ins_device_net(rnet);
+        } else find_diffs+=test_ins_device_net(rnet);
       }
     }
     fclose(f);
@@ -830,7 +861,22 @@ static int look_for_interfaces(void)
     k = -1;
     while (++k < anz_net_devices) {
       nd=net_devices[k];
-      if (nd->is_up < 0) nd->is_up = 0; /* this will be put DOWN */
+      if (nd->is_up < 0) {
+        int j;
+        find_diffs++;
+        nd->is_up = 0; /* this will be put DOWN */
+        for (j=0; j < anz_routes; j++){
+          NW_ROUTES *nr=nw_routes[j];
+          if (nr && nr->rnet == nd->net)
+            nr->net = 0L; /* remove route */
+        }
+        if (nd->wildmask & 1)
+          new_str(nd->devname, "*");
+        if (nd->wildmask & 2)
+          nd->frame = -1;
+        if (nd->wildmask & 4)
+          nd->net = 0;
+      }
     }
   }
   return(find_diffs);

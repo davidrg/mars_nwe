@@ -11,9 +11,7 @@ the mars_nwe-package.
 
     For general questions about how to compile a kernel,
     please see the Linux Kernel-HOWTO.
-    Best kernels for mars_nwe are 1.3.57
-    (with little patch from example directory)
-    or kernels >= 1.3.60.
+    Best kernels for mars_nwe are 2.0.x.
     Older kernels will sometimes not work because of
     bugs in the ipx-code. See examples directory for
     some patches.
@@ -42,7 +40,8 @@ the mars_nwe-package.
     You request this with the following entries in `nwserv.conf':
 
     3  0x0                 # use your IP number for internal net.
-    4  0x0  *      AUTO    # autocreat Interfaces
+    4  0x0  *      AUTO    # autodetect interfaces.
+    5  0x2                 # set kernel autocreat interfaces = on.
 
     Make sure that no other server is using your internal net number
     as it's networknumber.
@@ -110,6 +109,9 @@ the mars_nwe-package.
     into the "LOGIN" or "login" directory.
     You also can use the free mars_dosutils with a poor version of
     these programms.
+    NEW !
+    In newer versions of mars_nwe these directories will be created
+    after the first start of mars_nwe.
 
 (7) Fire it up
 

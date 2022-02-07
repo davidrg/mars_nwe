@@ -1,0 +1,66 @@
+diff -uwr linux-2.0.28/include/linux/ipx.h linux/include/linux/ipx.h
+--- linux-2.0.28/include/linux/ipx.h    Mon May 13 22:39:28 1996
++++ linux/include/linux/ipx.h   Tue Jan 14 16:33:27 1997
+@@ -75,5 +75,6 @@
+ #define SIOCAIPXITFCRT         (SIOCPROTOPRIVATE)
+ #define SIOCAIPXPRISLT         (SIOCPROTOPRIVATE+1)
+ #define SIOCIPXCFGDATA         (SIOCPROTOPRIVATE+2)
++#define SIOCIPXNCPCONN         (SIOCPROTOPRIVATE+3)
+ #endif
+
+diff -uwr linux-2.0.28/include/net/sock.h linux/include/net/sock.h
+--- linux-2.0.28/include/net/sock.h     Sun Dec  1 19:01:21 1996
++++ linux/include/net/sock.h    Tue Jan 14 16:34:39 1997
+@@ -112,6 +112,10 @@
+  * know the connection this socket belongs to.
+  */
+        struct ncp_server       *ncp_server;
++/*
++ * To handle special NCP-Sockets for mars_nwe
++ */
++      unsigned short          ipx_ncp_conn;
+
+ };
+ #endif
+diff -uwr linux-2.0.28/net/ipx/af_ipx.c linux/net/ipx/af_ipx.c
+--- linux-2.0.28/net/ipx/af_ipx.c       Wed Nov 27 08:44:21 1996
++++ linux/net/ipx/af_ipx.c      Tue Jan 14 16:33:27 1997
+@@ -468,6 +468,20 @@
+        ipx_socket      *sock1 = NULL, *sock2 = NULL;
+        struct sk_buff  *skb1 = NULL, *skb2 = NULL;
+
++       if (intrfc == ipx_primary_net
++         && ntohs(ipx->ipx_dest.sock) == 0x451
++         &&  *((char*)(ipx+1))   == 0x22
++         &&  *((char*)(ipx+1)+1) == 0x22) {
++         int connection = (int) *((char*)(ipx+1)+3);
++          /* 255 connections are enough ;) */
++          if (connection) {
++            for (sock1=intrfc->if_sklist;
++               (sock1 != NULL) &&
++               (sock1->protinfo.af_ipx.ipx_ncp_conn != connection);
++               sock1=sock1->next);;
++          }
++        }
++        if (sock1 == NULL)
+        sock1 = ipxitf_find_socket(intrfc, ipx->ipx_dest.sock);
+
+        /*
+@@ -2242,6 +2256,17 @@
+                        if(err) return err;
+                        return(ipxcfg_get_config_data((void *)arg));
+                }
++
++               case SIOCIPXNCPCONN:
++                {
++                  if (!suser()) return(-EPERM);
++                  err = verify_area(VERIFY_READ, (void *)arg,
++                                sizeof(unsigned short));
++                  if (err) return err;
++                  sk->protinfo.af_ipx.ipx_ncp_conn = get_fs_word(arg);
++                  return 0;
++                }
++
+                case SIOCGSTAMP:
+                        if (sk)
+                        {

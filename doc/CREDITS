@@ -10,6 +10,9 @@ Guntram Blohm  <gbl%th7csun1@str.daimler-benz.com>
 Uwe Bonnes <bon@elektron.ikp.physik.th-darmstadt.de>
         many testings+notes
 
+Arne de Bruijn <arne@arne.bilt>
+        testings, exploring ncp mysterius (netx), notes
+
 Hardy Buchholz <hardy@kool.f.eunet.de>
         wrote HOWTO.ger
 
@@ -39,6 +42,9 @@ Jiri A. Randus <Jiri.Randus@vslib.cz>
 
 Gregory Steuck <greg@nsu.ru>
         testings and errorreports
+
+Morio Taneda <eb04@rz.uni-karlsruhe.de>
+        testings, bugfixes
 
 Erik Thiele <erik@escape.mos.unterland.de>
         testings and doc

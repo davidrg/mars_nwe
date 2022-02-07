@@ -37,7 +37,8 @@ extern int file_creat_open(int volume, uint8 *unixname,
 extern int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit);
 
 
-extern int nw_close_datei(int fhandle, int reset_reuse);
+extern int nw_close_file(int fhandle, int reset_reuse);
+extern int nw_commit_file(int fhandle);
 
 extern uint8 *file_get_unix_name(int fhandle);
 
@@ -51,5 +52,6 @@ extern int nw_server_copy(int qfhandle, uint32 qoffset,
 extern int nw_lock_datei(int fhandle, int offset, int size, int do_lock);
 
 extern int fd_2_fname(int fhandle, char *buf, int bufsize);
+extern FILE_HANDLE *fd_2_fh(int fhandle);
 
 #endif

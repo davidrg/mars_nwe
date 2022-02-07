@@ -27,6 +27,11 @@ some short notes for problem- or bug-reports.
   linux-kernel,                   2.0.23
   exact typ of client (NCPFS, DOS (NETX,VLM), OS/2, Win .. )
   changes you made into nwserv.conf(nw.ini), config.h.
+- if you send nwserv.conf, please remove the comments first.
+  A simple way would be:
+  'make showconf' in the mars_nwserv directory or do a
+  'grep "^[ \t]*[0-9]" /etc/nwserv.conf'
+
 - report whether your client runs correct under a 'real Novell-Server'.
   ( if you have one ;) )
 

@@ -1,4 +1,4 @@
-/* nwserv.c 12-Nov-96 */
+/* nwserv.c 12-Apr-97 */
 /* MAIN Prog for NWSERV + NWROUTED  */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -27,7 +27,7 @@
 
 uint32     internal_net  = 0x0L;     /* NETWORKNUMMER INTERN (SERVER) */
 int        no_internal   =   0;      /* no use of internal net        */
-int        auto_creat_interfaces=0;
+int        auto_detect_interfaces=0;
 
 ipxAddr_t  my_server_adr;            /* Address of this server        */
 char       my_nwname[50];            /* Name of this server           */
@@ -110,7 +110,7 @@ static  int          broadmillisecs            =  2000; /* 2 sec */
 static  time_t       server_down_stamp         =  0;
 static  int          server_goes_down_secs     = 10;
 static  int          server_broadcast_secs     = 60;
-static  int          save_ipx_routes           =  0;
+static  int          ipx_flags                 =  0;
 
 static  int          nearest_request_flag=0;
 
@@ -749,7 +749,7 @@ static void handle_event(int fd, uint16 socknr, int slot)
     /* it also can be Packets from DOSEMU OR ncpfs on this machine */
     XDPRINTF((2,0,"Packet from OWN maschine:sock=0x%x", source_sock));
   }
-  if (auto_creat_interfaces && test_ins_device_net(GET_BE32(source_adr.net)))
+  if (auto_detect_interfaces && test_ins_device_net(GET_BE32(source_adr.net)))
      broadmillisecs = 3000;  /* now faster rip/sap to new devices */
 #endif
 
@@ -911,7 +911,7 @@ static void get_ini(int full)
                      }
                      break;
 
-           case   5 : save_ipx_routes=atoi(inhalt);
+           case   5 : ipx_flags=hextoi(inhalt);
                       break;
 #endif
 
@@ -976,8 +976,7 @@ static void get_ini(int full)
       errorp(11, "Get_ini", "No internal net, but more than 1 Device specified");
       exit(1);
     }
-    init_ipx(internal_net, node, ipxdebug);
-
+    init_ipx(internal_net, node, ipxdebug, ipx_flags);
     for (k=0; k < anz_net_devices; k++){
       NW_NET_DEVICE *nd=net_devices[k];
       int  result;
@@ -985,15 +984,21 @@ static void get_ini(int full)
       char *sp     = "DEVICE=%s, FRAME=%s, NETWORK=0x%lx";
       (void) get_frame_name(frname, nd->frame);
       XDPRINTF((1, 0, sp, nd->devname, frname, nd->net));
-      if ((result= init_dev(nd->devname, nd->frame, nd->net)) < 0) {
+
+      if (nd->devname[0] == '*') nd->wildmask|=1;
+      if (nd->frame       <   0) nd->wildmask|=2;
+      if (!nd->net)              nd->wildmask|=4;
+
+      if ((result=init_dev(nd->devname, nd->frame, nd->net, nd->wildmask)) < 0) {
         if (result == -99) {
           errorp(11, "init_dev", "AUTO device is only in combination with internal net allowed");
           exit(1);
         } else
           errorp(1, "init_dev", sp, nd->devname, frname, nd->net);
-      } else if (!result)
+      } else if (!result) {
         nd->is_up = 1;
-      else auto_creat_interfaces=1;
+      } else
+        auto_detect_interfaces=1;
     }
 # endif
 #endif
@@ -1067,7 +1072,8 @@ static void close_all(void)
 
 #ifdef LINUX
 # if INTERNAL_RIP_SAP
-  if (!save_ipx_routes) {
+#if 0
+  if (!(ipx_flags&1)) {
     for (j=0; j<anz_net_devices;j++) {
       NW_NET_DEVICE *nd=net_devices[j];
       if (nd->is_up) {
@@ -1077,7 +1083,8 @@ static void close_all(void)
       }
     }
   }
-  exit_ipx(!save_ipx_routes);
+#endif
+  exit_ipx(ipx_flags);
 # endif
 #endif
 }
@@ -1116,7 +1123,7 @@ static void sig_quit(int rsig)
   signal(rsig,   SIG_IGN);
   signal(SIGHUP, SIG_IGN);  /* don't want it anymore */
   XDPRINTF((2, 0, "Got Signal=%d", rsig));
-  fl_get_int=2;
+  fl_get_int|=2;
 }
 
 static void handle_hup_reqest(void)
@@ -1127,22 +1134,42 @@ static void handle_hup_reqest(void)
   write_to_ncpserv(0xeeee, 0, NULL, 0); /* inform ncpserv */
   write_to_nwbind( 0xeeee, 0, NULL, 0); /* inform nwbind  */
   send_sap_rip_broadcast(1);  /* firsttime broadcast */
-  fl_get_int=0;
 }
 
 static void sig_hup(int rsig)
 {
-  fl_get_int=1;
+  fl_get_int|=1;
   signal(SIGHUP, sig_hup);
 }
 
-static void set_sigs(void)
+static void handle_usr1_request(void)
 {
-  signal(SIGTERM,  sig_quit);
-  signal(SIGQUIT,  sig_quit);
-  signal(SIGINT,   sig_quit);
+  XDPRINTF((2,0, "Got USR1, update internal devices/routes"));
+  send_sap_rip_broadcast(3);
+}
+
+static void sig_usr1(int rsig)
+{
+  fl_get_int|=4;
+  signal(rsig, sig_usr1);
+}
+
+static void set_sigs(int mode)
+{
   signal(SIGPIPE,  SIG_IGN);
-  signal(SIGHUP,   sig_hup);
+  if (!mode) {
+    signal(SIGTERM,  SIG_IGN);
+    signal(SIGQUIT,  SIG_IGN);
+    signal(SIGINT,   SIG_IGN);
+    signal(SIGHUP,   SIG_IGN);
+    signal(SIGUSR1,  SIG_IGN);
+  } else {
+    signal(SIGTERM,  sig_quit);
+    signal(SIGQUIT,  sig_quit);
+    signal(SIGINT,   sig_quit);
+    signal(SIGHUP,   sig_hup);
+    signal(SIGUSR1,  sig_usr1);
+  }
 }
 
 static int server_is_down=0;
@@ -1150,12 +1177,13 @@ static int server_is_down=0;
 static int usage(char *prog)
 {
 #if !IN_NWROUTED
-  fprintf(stderr, "usage:\t%s [-v|-h|-k|y]\n", prog);
+  fprintf(stderr, "usage:\t%s [-V|-h|-u|-k|y]\n", prog);
 #else
-  fprintf(stderr, "usage:\t%s [-v|-h]|-k]\n", prog);
+  fprintf(stderr, "usage:\t%s [-v|-h|-u|-k]\n", prog);
 #endif
-  fprintf(stderr, "\t-v: print version\n");
+  fprintf(stderr, "\t-V: print version\n");
   fprintf(stderr, "\t-h: send HUP to main process\n");
+  fprintf(stderr, "\t-u: update int. routing table\n");
   fprintf(stderr, "\t-k: stop main process\n");
 #if !IN_NWROUTED
   fprintf(stderr, "\t y: start testclient code.\n");
@@ -1179,7 +1207,9 @@ int main(int argc, char **argv)
         switch (*a)  {
           case 'h' : init_mode = 1; break;
           case 'k' : init_mode = 2; break;
-          case 'v' : fprintf(stderr, "\n%s:Version %d.%d.pl%d\n",
+          case 'u' : init_mode = 3; break;
+          case 'v' :
+          case 'V' : fprintf(stderr, "\n%s:Version %d.%d.pl%d\n",
                      argv[0], _VERS_H_, _VERS_L_, _VERS_P_ );
                      return(0);
           default  : return(usage(argv[0]));
@@ -1199,6 +1229,7 @@ int main(int argc, char **argv)
 #endif
   setgroups(0, NULL);
   init_tools(IN_PROG, init_mode);
+  set_sigs(0);
   get_ini(1);
   j=-1;
   while (++j < NEEDED_POLLS) {
@@ -1239,7 +1270,7 @@ int main(int argc, char **argv)
     /* now do polling */
     time_t broadtime;
     time(&broadtime);
-    set_sigs();
+    set_sigs(1);
     polls[NEEDED_SOCKETS].fd = fd_nwbind_in;
 
     U16_TO_BE16(SOCK_NCP, my_server_adr.sock);
@@ -1277,10 +1308,13 @@ int main(int argc, char **argv)
       }
 #endif
       if (fl_get_int) {
-        if      (fl_get_int == 1)
+        if (fl_get_int & 1)
           handle_hup_reqest();
-        else if (fl_get_int == 2)
+        else if (fl_get_int & 4)
+          handle_usr1_request();
+        if (fl_get_int & 2)
           down_server();
+        fl_get_int=0;
       }
       if (anz_poll > 0) { /* i have to work */
         struct pollfd *p = &polls[0];

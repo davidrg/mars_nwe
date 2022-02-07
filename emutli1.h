@@ -1,4 +1,4 @@
-/* emutli1.h 24-Jun-96 */
+/* emutli1.h 10-Apr-97 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -28,9 +28,9 @@ extern int read_interface_data(uint8* data, uint32 *rnet, uint8 *node,
 extern int  get_interface_frame_name(char *name, uint32 net);
 
 extern int  get_frame_name(uint8 *framename, int frame);
-extern int  init_ipx(uint32 network, uint32 node, int ipx_debug);
+extern int  init_ipx(uint32 network, uint32 node, int ipx_debug, int flags);
 extern void exit_ipx(int full);
-extern int  init_dev(char  *devname, int frame, uint32 network);
+extern int  init_dev(char  *devname, int frame, uint32 network, int wildmask);
 extern void exit_dev(char  *devname, int frame);
 
 #if 0

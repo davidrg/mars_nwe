@@ -1,10 +1,10 @@
-(C)opyright (C) 1993,1996  Martin Stover, Marburg
+(C)opyright (C) 1993,1997  Martin Stover, Marburg
 
 Hilfe zum Kompilieren bzw. Installieren siehe in 'INSTALL' !
 
 Dieses ist ein kleiner Versuch Grundfunktionen
 eines Novell Servers unter UNIX (LINUX) zur Verfuegung
-zu stellen. Die erste Version entstand 1993 auf einer USL1.1
+zu stellen. Die erste Version entstand 1993 auf einer UnixWare 1.1
 mittels TLI-Code und wurde 1994, mittels
 dem modul 'emutli' (TLI -> SOCKETS) nach Linux portiert.
 
@@ -55,8 +55,6 @@ PROBLEME bzw. TODO's:
 Vieles :-(
 Hier nur eine *kleine* Auswahl.
 
-o - Passwortaenderungen durch Client ermoeglichen.
-o - Routing verbessern.
 o - Drucken verbessern.
 o - Saeubern !!
 o - Bindery Code vervollstaendigen.
