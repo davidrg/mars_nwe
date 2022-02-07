@@ -1,5 +1,7 @@
 /* nwbind.c */
-#define REVISION_DATE "14-Aug-00"
+
+#define REVISION_DATE "14-Jun-03" // (M@K)
+
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message and queue handling */
 
@@ -25,6 +27,7 @@
  * mst:25-Apr-00: added login control routines from Paolo Prandini
  * mst:25-Apr-00: added simple example for getting nwconn data
  * mst:14-Aug-00: added patch from Poalo Prandini
+ * mck:14-Jun-2003: added patch from Marco Cavallini (M@K)
  *
  */
 
@@ -52,6 +55,10 @@ static  int        rcv_flags    =  0;
 static  ipxAddr_t  from_addr;    /* actual calling address  */
 static  NCPREQUEST *ncprequest  = (NCPREQUEST*)&ipx_in_data;
 static  int         server_goes_down=0;
+
+
+static void nwconn_callback(int connection, char *data, int data_len, int completition) ;
+
 
 static void write_to_nwserv(int what, int connection, int mode,
                                 char *data, int size)
@@ -512,9 +519,10 @@ static void handle_fxx(int gelen, int func)
     rdata   = requestdata+3;
   }
 
-  MDEBUG(D_BIND_REQ, {
+//  MDEBUG(D_BIND_REQ, 
+  {
     int j = gelen - sizeof(NCPREQUEST);
-    XDPRINTF((1, 0, "NCP 0x%x REQUEST:ufunc:0x%x", func, ufunc));
+    XDPRINTF((1, 0, "KNCP 0x%x REQUEST:ufunc:0x%x", func, ufunc));
     if (j > 0){
       uint8  *p=requestdata;
       XDPRINTF((1, 2, "len %d, DATA:", j));
@@ -525,7 +533,8 @@ static void handle_fxx(int gelen, int func)
       }
       XDPRINTF((1, 1, NULL));
     }
-  })
+  }
+//	)
 
   if (0x15 == func) {
     switch (ufunc) {  /* Messages */
@@ -1731,19 +1740,21 @@ static void handle_fxx(int gelen, int func)
 
      case 0xc8 :  { /* CHECK CONSOLE PRIVILEGES */
                     /* to use fileserver service functions */
-                    XDPRINTF((1, 0, "MAKE BETTER: CHECK CONSOLE PRIV"));
+                    XDPRINTF((1, 0, "MAKE BETTER: CHECK CONSOLE PRIV (M@K)"));
                    /*  !!!!!! TODO completition=0xc6 (no rights) */
                     if (!(act_c->id_flags&1)) 
-                       completition=0xc6; /* no rights */
+                       completition=0; /* no rights (M@K) */
+//                       completition=0xc6; /* no rights */
                   } break;
 
      case 0xc9 :  { /* GET FILE SERVER DESCRIPTION STRINGs */
-                   char *company       = "Mars :-)";
-                   char *revision      = "Version %d.%d.pl%d";
+                   char *company       = "KoanSoftware.com";
+                   char *revision      = "Version %d.%d.pl%d [KOAN]";	// (M@K)
                    char *revision_date = REVISION_DATE;
-                   char *copyright     = "(C)opyright Martin Stover";
+                   char *copyright     = "(C)M.Stover";
                    int  k=strlen(company)+1;
                    int  l;
+		 
                    memset(responsedata, 0, 512);
                    strcpy(responsedata,   company);
                    l = 1 + sprintf(responsedata+k, revision,
@@ -1792,6 +1803,25 @@ static void handle_fxx(int gelen, int func)
                     }
                   }
                   break;
+
+	case 0xd2 :  { /* Clear Connection Number (M@K) */
+					/* 14-Jun-2003 by Marco Cavallini */
+					uint8 conxnumber = *rdata - 1 ;	// pointer to NCPREQUEST structure (receive aligned to 1 and we must align to 0)
+					char buf[255] ;
+					CONNECTION *cn=&connections[conxnumber];
+		
+					sprintf(buf, "(M@K) Clear Connection Number = %d <==========", conxnumber);
+					XDPRINTF((1, 0, buf));
+					if (cn->active) {
+						strmaxcpy(cn->message, "MARS_NWE has killed your connection", 58);
+						sprintf(buf, "(M@K) KILL = Conn=%d PID=%d", conxnumber, cn->pid_nwconn);
+						XDPRINTF((1, 0, buf));
+						nwserv_handle_msg(conxnumber+1);	// send message to the client
+						if (cn->pid_nwconn > -1) 
+							  kill(cn->pid_nwconn, SIGTERM); // kill it using brute force (M@K)
+					}
+		
+                  } break;
 
      case 0xd3 :  { /* down File Server */
                     internal_act=1;

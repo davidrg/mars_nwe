@@ -538,11 +538,13 @@ Erste 'oeffentliche' Version
 - trustee fix
 <----- ^^^^^^^^^^ pl19 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - 01-Jun-00:trustee.c, SIG_SEGV error.
-- 22-Jun-00:added patches from Sergey Lentsov <lenz@mark.scc.lg.ua>  
+- 22-Jun-00:added patches from Sergey Lentsov <lenz@mark.scc.lg.ua>
 - 14-Aug-00:added patch from Paolo Prandini <prandini@spe.it>
             (access to printerqueues,nwbind.c)
 - 15-Aug-00:correction for unix rights of trustee/attrib directory (x flag)
             (hint: Nagy Zoltan Mark)
 - 01-Sep-00:added real unix acces rights patch from Przemyslaw Czerpak
 <----- ^^^^^^^^^^ pl20 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
+- 14-Jun-03:added patch from Marco Cavallini <m.cavallini@koansoftware.com>
+            Clear Connection Number (nwbind.c)
+<----- ^^^^^^^^^^ pl21 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

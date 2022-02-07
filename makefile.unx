@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 30-May-00
+#makefile.unx 14-05-2003
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=99
-P_L=20
+P_L=21
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -27,7 +27,7 @@ MAKEPATCH=diff -rub --new-file
 
 DESTMAKEFILE=Makefile.o
 #if 0
-all:    $(DESTMAKEFILE)
+all:	$(DESTMAKEFILE)
 	$(MAKE) -f $(DESTMAKEFILE) n_$@
 
 routed: $(DESTMAKEFILE)
@@ -103,7 +103,7 @@ NWROUTE_O=nwroute1$(O)
 NWROUTED=
 # else
 #  ifndef INTERNAL_RIP_SAP
-#    define INTERNAL_RIP_SAP  1
+#	define INTERNAL_RIP_SAP  1
 #  endif
 EMUTLIOBJ=emutli$(O)
 #  if INTERNAL_RIP_SAP
@@ -136,16 +136,16 @@ OBJ8= $(OBJ6)
 OBJ9= tools$(O) nwfname$(O) unxfile$(O) nwvolume$(O) nwattrib$(O) trustee$(O)
 
 OBJS= $(EMUTLIOBJ) net1$(O) tools$(O) \
-      $(EMUTLIOBJ1) $(NWROUTE_O) \
-      connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) unxfile$(O)\
-      nwqconn$(O) nameos2$(O) nwfname$(O) nwshare$(O) extpipe$(O) \
-      nwattrib$(O) trustee$(O) \
-      nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O)  \
-      $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O) $(PROG6)$(O) \
-      $(PROG7)$(O) $(PROG8)$(O) $(PROG9)$(O)
+	  $(EMUTLIOBJ1) $(NWROUTE_O) \
+	  connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) unxfile$(O)\
+	  nwqconn$(O) nameos2$(O) nwfname$(O) nwshare$(O) extpipe$(O) \
+	  nwattrib$(O) trustee$(O) \
+	  nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O)  \
+	  $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O) $(PROG6)$(O) \
+	  $(PROG7)$(O) $(PROG8)$(O) $(PROG9)$(O)
 
 HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) \
-       unxfile$(O)
+	   unxfile$(O)
 
 HOBJ6= $(PROG6)$(O) sema$(O)
 
@@ -206,22 +206,22 @@ n_install:
 	cd $(VPATH)  && $(INSTALL) -d $(M_PATHNAME_PROGS) && cd $(OBJDIR)
 	cd $(VPATH)  && $(INSTALL) $(INSTALLPROGS) $(M_PATHNAME_PROGS) && cd $(OBJDIR)
 	@-if [ -r /sbin/nwserv ] && [ -r /usr/sbin/nwserv ] ; then \
-          echo "remove old version in /sbin ?" ; \
-          (cd /sbin && rm -i nwserv nwbind ncpserv nwconn nwclient nwrouted) ; \
-        fi ;
+		  echo "remove old version in /sbin ?" ; \
+		  (cd /sbin && rm -i nwserv nwbind ncpserv nwconn nwclient nwrouted) ; \
+		fi ;
 	@-if [ -r /etc/nwobj.pag ] ; then \
-          ( \
+		  ( \
 	  if [ ! -r $(M_PATHNAME_BINDERY) ] ; then \
-           if $(VPATH)/tools.sh yesno "move bindery files from /etc to $(M_PATHNAME_BINDERY) ?" ; then \
-             mkdir -p $(M_PATHNAME_BINDERY); \
-             (cd /etc && mv \
-             nwiobj.pag nwiobj.dir nwobj.pag nwobj.dir \
-             nwprop.pag nwprop.dir nwval.pag nwval.dir \
-             $(M_PATHNAME_BINDERY) ) ; \
-           fi; \
-          fi; \
-          ) \
-        fi ;
+		   if $(VPATH)/tools.sh yesno "move bindery files from /etc to $(M_PATHNAME_BINDERY) ?" ; then \
+			 mkdir -p $(M_PATHNAME_BINDERY); \
+			 (cd /etc && mv \
+			 nwiobj.pag nwiobj.dir nwobj.pag nwobj.dir \
+			 nwprop.pag nwprop.dir nwval.pag nwval.dir \
+			 $(M_PATHNAME_BINDERY) ) ; \
+		   fi; \
+		  fi; \
+		  ) \
+		fi ;
 	@cd $(VPATH) && (if [ -r $(M_FILENAME_NW_INI) ] ; then \
 echo ""; \
 echo "********************************************************"; \
