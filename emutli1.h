@@ -26,6 +26,7 @@ extern int read_interface_data(uint8* data, uint32 *rnet, uint8 *node,
                           int *flags, uint8 *name);
 
 extern int  get_interface_frame_name(char *name, uint32 net);
+extern int add_device_net(char *devname, int frame, uint32 netnum);
 
 extern int  get_frame_name(uint8 *framename, int frame);
 extern int  init_ipx(uint32 network, uint32 node, int ipx_debug, int flags);

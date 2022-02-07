@@ -66,9 +66,9 @@ typedef struct {
 
 NW_DIR    dirs[MAX_NW_DIRS];
 int       used_dirs=0;
-int       act_uid=-1;
-int       act_gid=-1;
-int       act_obj_id=0L;  /* not login                  */
+int       act_uid=-1;     /* unix uid 0=root */
+int       act_gid=-1;     /* unix gid */
+int       act_obj_id=0L;  /* mars_nwe UID, 0=not logged in, 1=supervisor  */
 int       entry8_flags=0; /* special flags, see examples nw.ini, entry 8 */
 
 static gid_t *act_grouplist=NULL;  /* first element is counter !! */
@@ -926,7 +926,7 @@ static int nw_path_ok(NW_PATH *nwpath, struct stat *stbuff)
 
 static int build_dir_name(NW_PATH *nwpath,     /* gets complete path     */
                            struct  stat *stbuff,
-                           int     dir_handle) /* search with dirhandle  */
+                           int     dir_handle)  /* search with dirhandle  */
 
 /* return -completition code or inode */
 {
@@ -1233,7 +1233,8 @@ int un_nw_rights(struct stat *stb)
 /* returns eff rights of file/dir */
 /* needs some more work          */
 {
-  int rights=0xfb; /* first all rights, but not TRUSTEE_O */
+  /* int rights=0xfb; first all rights, but not TRUSTEE_O */
+  int rights=0xff; /* first all, pconsole needs TRUSTEE_O */
   if (act_uid) {
     /* if not root */
     int is_dir = S_ISDIR(stb->st_mode);
@@ -1315,7 +1316,7 @@ static int get_dir_attrib(NW_DIR_INFO *d, struct stat *stb,
 # else
   d->ext_attrib = (uint8) un_nw_rights(stb); /* effektive rights ?? */
 # endif
-#endif
+#endif  
   un_date_2_nw(stb->st_mtime, d->create_date, 1);
   un_time_2_nw(stb->st_mtime, d->create_time, 1);
   U32_TO_BE32(get_file_owner(stb), d->owner_id);
@@ -1378,9 +1379,9 @@ static int do_set_file_info(NW_PATH *nwpath, FUNC_SEARCH *fs)
         result=s_utime(unname, &ut, &stb);
 #else  
       if (0 == (result=s_utime(unname, &ut, &stb))){
-      result = s_chmod(unname,
+         result = s_chmod(unname,
                un_nw_attrib(&statb, (int)f->attrib, 1), &stb);
-    }
+      }
 #endif    
     }
     if (result)
@@ -1556,7 +1557,7 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
           DIR_HANDLE  *dh=&(dir_handles[j]);
           if (dh->inode == completition) free_dir_handle(j+1);
         }
-        free_attr_from_disk(stbuff.st_dev, stbuff.st_ino);
+        free_nw_ext_inode(stbuff.st_dev, stbuff.st_ino);
         completition = 0;
       } else if (errno == EEXIST)
          completition = -0xa0;    /* dir not empty */
@@ -1614,7 +1615,9 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
   NW_PATH quellpath;
   struct stat qstbuff;
   NW_PATH zielpath;
+#if 0
   struct stat zstbuff;
+#endif  
   int completition=conn_get_kpl_path(&quellpath, &qstbuff, dir_handle, q, qlen, 0);
   if (completition > -1){
 #if 1
@@ -2146,7 +2149,7 @@ int nw_creat_open_file(int dir_handle, uint8 *data, int len,
  */
 {
   NW_PATH nwpath;
-     struct stat stbuff;
+  struct stat stbuff;
   int completition = conn_get_kpl_path(&nwpath, &stbuff, dir_handle, data, len, 0);
   if (completition > -1) {
      completition=file_creat_open(nwpath.volume, (uint8*)build_unix_name(&nwpath, 0),
@@ -2448,4 +2451,25 @@ void mangle_dos_name(NW_VOL *vol, uint8 *unixname, uint8 *pp)
   get_match(unixname, pp-1);
 }
 
+
+int nw_add_trustee(int dir_handle, uint8 *data, int len, 
+                   uint32 id,  int trustee, int extended)
+/* extended 0=add trustee to dir, 1= add ext trustee to dirs and files */
+{
+  char          unname[256];
+  struct stat   stbuff;
+  NW_PATH       nwpath;
+  int completition = conn_get_kpl_path(&nwpath, &stbuff, dir_handle, data, len,
+                     (extended) ? 0 : 1);
+  if (completition < 0) return(completition);
+  strcpy(unname, build_unix_name(&nwpath, 0));
+  if (s_stat(unname, &stbuff, NULL) ||
+    (!extended && !S_ISDIR(stbuff.st_mode)) ) {
+    completition = -0x9c;
+  } else {
+    completition=set_nw_trustee(stbuff.st_dev, stbuff.st_ino,  
+                  id, trustee);
+  }
+  return(completition);
+}
 

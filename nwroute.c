@@ -1,5 +1,5 @@
-/* nwroute.c 17-Jul-97 */
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* nwroute.c 08-Feb-98 */
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -699,14 +699,19 @@ static int look_for_interfaces(void);
 
 
 void send_sap_rip_broadcast(int mode)
-/* mode=0, standard broadcast */
-/* mode=1, first trie         */
-/* mode=2, shutdown           */
-/* mode=3, update routes      */
-/* mode=4, resend to net      */
+/* mode=0, standard broadcast  */
+/* mode=1, first trie          */
+/* mode=2, shutdown            */
+/* mode=3, update routes       */
+/* mode=4, resend to net       */
+/* mode=5, force update routes */
 {
 static int flipflop=1;
   int force_print_routes=(mode == 1) ? 1 : 0;
+  if (mode == 5) {
+    force_print_routes++;
+    mode = 3;
+  }
   if (auto_detect_interfaces)
     force_print_routes += look_for_interfaces();
   if (mode) {

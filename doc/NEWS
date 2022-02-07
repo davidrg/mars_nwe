@@ -1,3 +1,8 @@
+------08-Feb-98--- 0.99.pl6 ---------
+- archive bit handling changed. (default set if file, unset if directory)
+- section 5: deleting of ipx devices/routes changed.
+- nwserv can be started to work similar to ipx_interface.
+  'nwserv -a device frame net' or 'nwserv -d device frame'
 ------01-Feb-98--- 0.99.pl5 ---------
 - config.h: NEW_ATTRIB_HANDLING
 - config.h: default HANDLE_ALL_SAP_TYPS is now set to 1.

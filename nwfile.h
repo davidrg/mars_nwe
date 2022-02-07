@@ -1,4 +1,4 @@
-/* nwfile.h 21-Jul-97 */
+/* nwfile.h 09-Feb-98 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
 #include "extpipe.h"
@@ -10,6 +10,7 @@ typedef struct {
   uint8  *p_mmap;       /* for use with mmap                 */
   int    size_mmap;
   time_t tmodi;         /* modification TIME                 */
+  int    modified;      /* is file modified / written        */
   FILE_PIPE *f;         /* for PIPE                          */
   int fh_flags;         /* 2 = PIPE                          */
                         /* 4 = don't reuse after close       */

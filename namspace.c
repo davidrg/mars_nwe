@@ -98,7 +98,7 @@ static uint32 new_search_handle(int dev, ino_t inode)
         if (foundfree < 0 && k+1==count_dsh) count_dsh--;
         else foundfree=k;
       }
-  }
+    }
   }
   if (foundfree < 0 && count_dsh < max_dir_search_handles)
     foundfree=count_dsh++;
@@ -372,7 +372,7 @@ static int get_dbe_data_from_disk(int volume,
     return(0);
   } else {
     errorp(0, "get_dbe_d_f_d", "readlink of `%s`=%d", buf, l);
-  return(-1);
+    return(-1);
   }
 }
 
@@ -472,7 +472,7 @@ static void rmdir_from_structures(DIR_BASE_ENTRY *dbe)
    int k=count_dsh;
    int   dev   = dbe->nwpath.statb.st_dev;
    ino_t inode = dbe->nwpath.statb.st_ino;
-   free_attr_from_disk(dev, inode);
+   free_nw_ext_inode(dev, inode);
    while (k--) {
      DIR_SEARCH_HANDLE *dsh=dir_search_handles[k];
      if (dsh && dsh->inode == inode && dsh->dev == dev) {
@@ -1368,7 +1368,7 @@ int nw_search_file_dir(int namespace, int datastream,
   int max_counts = *count;
 #endif
   int result     = find_base_entry(volume, basehandle);
-  DIR_BASE_ENTRY *dest_dbe=NULL;
+  DIR_BASE_ENTRY    *dest_dbe=NULL;
   DIR_SEARCH_HANDLE *dsh=NULL;
   DIR_BASE_ENTRY    *dbe=NULL;
   
@@ -1402,12 +1402,12 @@ int nw_search_file_dir(int namespace, int datastream,
       if (dsh && (dbe->nwpath.statb.st_dev != dsh->dev
         || dbe->nwpath.statb.st_ino != dsh->inode))
        dsh=NULL;
-  }
-
+    }
+    
     if (!dsh) {
       *psequence=new_search_handle(dbe->nwpath.statb.st_dev, 
                                    dbe->nwpath.statb.st_ino);
-  *psequence &= 0xff;
+      *psequence &= 0xff;
       dsh=dir_search_handles[*psequence];
     }
   }
@@ -1430,7 +1430,7 @@ int nw_search_file_dir(int namespace, int datastream,
       *(++(ds->kpath)) = '\0';
 
       dbe->locked++;   /* lock dbe */
-      dsh->idle=0;  /* touch dsh */
+      dsh->idle=0;     /* touch dsh */
 
       while (len--) {
         uint8 c=*path++;
@@ -1751,12 +1751,12 @@ static int delete_file_dir(DIR_BASE_ENTRY *dbe, FUNC_SEARCH *fs)
     if (get_nw_attrib_dword(&dbe->nwpath.statb, voloptions) & FILE_ATTR_R)
       result = -0x8a; /* don't delete 'readonly' */
     else {
-    result = rmdir(unname);
-    if (result < 0) {
-      switch (errno) {
-        case EEXIST: result=-0xa0; /* dir not empty */
-        default:     result=-0x8a; /* No privilegs */
-      }
+      result = rmdir(unname);
+      if (result < 0) {
+        switch (errno) {
+          case EEXIST: result=-0xa0; /* dir not empty */
+          default:     result=-0x8a; /* No privilegs */
+        }
       }
     }
     if (result>-1) {

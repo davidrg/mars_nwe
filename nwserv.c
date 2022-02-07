@@ -1,7 +1,7 @@
-/* nwserv.c 08-Oct-97 */
+/* nwserv.c 08-Feb-98 */
 /* MAIN Prog for NWSERV + NWROUTED  */
 
-/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1120,11 +1120,11 @@ static void close_all(void)
 
 #ifdef LINUX
 # if INTERNAL_RIP_SAP
-#if 0
+#if 1
   if (!(ipx_flags&1)) {
     for (j=0; j<count_net_devices;j++) {
       NW_NET_DEVICE *nd=net_devices[j];
-      if (nd->is_up) {
+      if (nd->is_up==1) { /* only no auto interfaces */
         XDPRINTF((1, 0, "Close Device=%s, frame=%d",
                 nd->devname, nd->frame));
         exit_dev(nd->devname, nd->frame);
@@ -1165,7 +1165,7 @@ static void sig_chld(int rsig)
 }
 #endif
 
-static int  fl_get_int=0;
+static int  fl_get_int=0; /* 1 .. 8 */
 static void sig_quit(int rsig)
 {
   signal(rsig,   SIG_IGN);
@@ -1196,10 +1196,22 @@ static void handle_usr1_request(void)
   send_sap_rip_broadcast(3);
 }
 
+static void handle_usr2_request(void)
+{
+  XDPRINTF((2,0, "Got USR2, force sending rip/sap"));
+  send_sap_rip_broadcast(5);
+}
+
 static void sig_usr1(int rsig)
 {
   fl_get_int|=4;
   signal(rsig, sig_usr1);
+}
+
+static void sig_usr2(int rsig)
+{
+  fl_get_int|=8;
+  signal(rsig, sig_usr2);
 }
 
 static void set_sigs(int mode)
@@ -1211,12 +1223,14 @@ static void set_sigs(int mode)
     signal(SIGINT,   SIG_IGN);
     signal(SIGHUP,   SIG_IGN);
     signal(SIGUSR1,  SIG_IGN);
+    signal(SIGUSR2,  SIG_IGN);
   } else {
     signal(SIGTERM,  sig_quit);
     signal(SIGQUIT,  sig_quit);
     signal(SIGINT,   sig_quit);
     signal(SIGHUP,   sig_hup);
     signal(SIGUSR1,  sig_usr1);
+    signal(SIGUSR2,  sig_usr2);
   }
 }
 
@@ -1225,12 +1239,17 @@ static int server_is_down=0;
 static int usage(char *prog)
 {
 #if !IN_NWROUTED
-  fprintf(stderr, "usage:\t%s [-V|-h|-u|-k[q]|y]\n", prog);
+  fprintf(stderr, "usage:\t%s [-V|-h|-f|-u|-k[q]|y]\n", prog);
+  fprintf(stderr, "or:\t%s -a device frame netnum\n", prog);
+  fprintf(stderr, "or:\t%s -d device frame\n", prog);
 #else
   fprintf(stderr, "usage:\t%s [-V|-h|-u|-k[q]]\n", prog);
 #endif
   fprintf(stderr, "\t-V: print version\n");
+  fprintf(stderr, "\t-a: add interface, frames = '802.2' '802.3' 'etherii' 'snap'\n");
+  fprintf(stderr, "\t-d: delete interface.\n");
   fprintf(stderr, "\t-h: send HUP to main process\n");
+  fprintf(stderr, "\t-f: force send rip/sap and update routing int. table\n");
   fprintf(stderr, "\t-u: update int. routing table\n");
   fprintf(stderr, "\t-k: stop main process, wait for it.\n");
   fprintf(stderr, "\t-kq: don't wait till stop of main process\n");
@@ -1254,9 +1273,51 @@ int main(int argc, char **argv)
     if (*a == '-') {
       while (*(++a)) {
         switch (*a)  {
+          case 'a' : 
+          case 'd' : 
+            if (    (*a == 'a' && argc - j == 4) 
+                 || (*a == 'd' && argc - j == 3) ) {
+              int    result;
+              int    frame=-1;
+              uint32 netnum=0L;
+              char buf[256];
+              strcpy(buf, argv[j+2]);
+              upstr(buf);
+              if (!strcmp(buf, "802.3"))
+                frame=IPX_FRAME_8023;
+              else if (!strcmp(buf, "802.2"))
+                frame=IPX_FRAME_8022;
+              else if (!strcmp(buf, "SNAP"))
+                frame=IPX_FRAME_SNAP;
+              else if (!strcmp(buf, "ETHERNET_II"))
+                frame=IPX_FRAME_ETHERII;
+              else if (!strcmp(buf, "ETHERII"))
+                frame=IPX_FRAME_ETHERII;
+# ifdef IPX_FRAME_TR_8022
+              else if (!strcmp(buf, "TOKEN"))
+                frame=IPX_FRAME_TR_8022;
+# endif
+              
+              if (*a == 'a' && frame > -1) {
+                char dummy;
+                if (sscanf(argv[j+3], "%ld%c", &netnum, &dummy) != 1)
+                    sscanf(argv[j+3], "%lx", &netnum);
+              }
+              if (netnum > 0)
+                result=add_device_net(argv[j+1], frame, netnum); 
+              else if ( *a == 'd') {
+                exit_dev(argv[j+1], frame); 
+                result=0;
+              } else
+                return(usage(argv[0]));
+              return((result<0) ? 1 : 0);
+            } else
+              return(usage(argv[0]));
+          
           case 'h' : init_mode = 1; break;
           case 'k' : init_mode = 2; break;
           case 'u' : init_mode = 3; break;
+          case 'f' : init_mode = 5; break;
           case 'q' : if (init_mode == 2) init_mode=4; break;
           case 'v' :
           case 'V' : fprintf(stderr, "\n%s:Version %d.%d.pl%d\n",
@@ -1369,8 +1430,10 @@ int main(int argc, char **argv)
       if (fl_get_int) {
         if (fl_get_int & 1)
           handle_hup_reqest();
-        else if (fl_get_int & 4)
+        if (fl_get_int & 4)
           handle_usr1_request();
+        if (fl_get_int & 8)
+          handle_usr2_request();
         if (fl_get_int & 2)
           down_server();
         fl_get_int=0;

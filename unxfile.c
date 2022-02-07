@@ -1,6 +1,6 @@
-/* unxfile.c:  05-Dec-97*/
+/* unxfile.c:  05-Feb-98*/
 
-/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 
 #include "net.h"
+#include <dirent.h>
 #include "unxfile.h"
 
 int unx_mvdir(uint8 *oldname, uint8 *newname)
@@ -65,6 +66,30 @@ int unx_xmkdir(char *unixname, int mode)
     return(0);
   }
   return(-1);
+}
+
+int unx_xrmdir(char *unixname)
+/* removes complete directory if possible */
+{
+  DIR *d = opendir(unixname);
+  if (NULL != (d = opendir(unixname))) {
+    struct dirent *dirbuff;
+    int    len   = strlen(unixname);
+    char   *buf  = xmalloc(len + 300);
+    char   *p    = buf+len;
+    memcpy(buf, unixname, len);
+    *p++ = '/';
+    while ((dirbuff = readdir(d)) != (struct dirent*)NULL){
+      if (dirbuff->d_ino) {
+        strcpy(p, dirbuff->d_name);
+        if (unlink(buf) && unx_xrmdir(buf)) 
+          break;
+      }
+    }
+    xfree(buf);
+    closedir(d);
+  }
+  return(rmdir(unixname));
 }
 
 #if  0

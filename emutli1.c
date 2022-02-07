@@ -246,12 +246,13 @@ static int add_special_net(int special,
 #define add_internal_net(netnum, node) \
   add_special_net(IPX_INTERNAL, NULL, 0, (netnum), (node))
 
-#define add_device_net(devname, frame, netnum) \
-  add_special_net(IPX_SPECIAL_NONE, (devname), (frame), (netnum), 0)
-
 #define add_primary_net(devname, frame, netnum) \
   add_special_net(IPX_PRIMARY, (devname), (frame), (netnum), 0)
 
+int add_device_net(char *devname, int frame, uint32 netnum) 
+{
+  return(add_special_net(IPX_SPECIAL_NONE, (devname), (frame), (netnum), 0));
+}
 
 int get_frame_name(uint8 *framename, int frame)
 {
@@ -340,7 +341,7 @@ void exit_ipx(int flags)
       ioctl(sock, SIOCAIPXITFCRT, &org_auto_interfaces);
     close(sock);
   }
-  if (have_ipx_started && !(flags&1)) {
+  if (have_ipx_started && flags&4) {
     del_all_interfaces_nets();
   }
 }

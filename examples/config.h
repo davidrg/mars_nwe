@@ -73,7 +73,7 @@
 #define HANDLE_ALL_SAP_TYPS    1     /* if set to 0 only SAP-Typ 4 Servers */
                                      /* will be put into routing table and */
                                      /* if set to 1 all SAP Typs will be   */
-                                     /* used.  	    	    	      	   */
+                                     /* used.                              */
 
 #define PERSISTENT_SYMLINKS    0     /* change to '1' for persistent symlinks */
                                      /* main idea from Victor Khimenko */

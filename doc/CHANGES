@@ -400,6 +400,14 @@ Erste 'oeffentliche' Version
     nun funktionieren sollte. Evtl. muss bei sehr grossen Verzeichnissen
     max_dir_search_handles(section 80 in nwserv.conf) hochgesetzt werden.
 <----- ^^^^^^^^^^ pl5 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- connect.c. un_nw_rights default rights now 0xff (pconsole needs TRUSTEE_O)
+- nwattrib.c : set_nw_attrib_byte korrigiert.
+- nwserv kann nun per externen Aufruf Interfaces anlegen und loeschen.
+  nwserv -a device frame net  bzw. nwserv -d device frame.
+- neuer Schalter nwserv -f. Force send rip sap.
+- archive bit ist bei Dateien nun default gesetzt.
+- archive bit wird nun bei Client Schreiboperationen gesetzt.
+<----- ^^^^^^^^^^ pl6 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 

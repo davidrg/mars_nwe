@@ -160,16 +160,16 @@ extern int nw_alloc_dir_handle(
                       int dir_handle,       /* directory handle     */
                       uint8  *data,         /* extra path           */
                       int    len,           /* len of datat         */
-                      int    driveletter, /* A .. Z normal             */
+                      int    driveletter,   /* A .. Z normal        */
                       int    is_temphandle, /* temp Handle 1        */
-                                               /* spez. temp Handle  2    */
-                      int    task);          /* Prozess Task            */
+                                            /* spez. temp Handle  2 */
+                      int    task);         /* Prozess Task         */
 
 
 extern int nw_open_dir_handle( int        dir_handle,
                         uint8      *data,   /* extra path           */
                         int        len,     /* len data             */
-                        int        *volume,   /* Volume             */
+                        int        *volume, /* Volume               */
                         int        *dir_id, /* similar to filehandle*/
                         int        *searchsequence);
 
@@ -258,5 +258,9 @@ extern int    un_nw_rights(struct stat *stb);
 extern void   un_time_2_nw(time_t time, uint8 *d, int high_low);
 
 extern void mangle_dos_name(NW_VOL *vol, uint8 *unixname, uint8 *pp);
+
+extern int nw_add_trustee(int dir_handle, uint8 *data, int len, 
+                   uint32 id,  int trustee, int extended);
+
 
 #endif

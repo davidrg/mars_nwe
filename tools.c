@@ -1,5 +1,5 @@
-/* tools.c  26-Nov-97 */
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* tools.c  08-Feb-98 */
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -444,6 +444,8 @@ void init_tools(int module, int options)
         sig = SIGTERM;
       } else if (options == 3) { /* update tables */
         sig = SIGUSR1;
+      } else if (options == 5) { /* force update tables */
+        sig = SIGUSR2;
       } else {
         errorp(11, "INIT", "Program pid=%d already running and pidfn=%s exists" ,
                kill_pid, pidfn);
@@ -466,12 +468,12 @@ void init_tools(int module, int options)
           fprintf(stderr, "\n%s not yet stopped!\n", get_modstr());
           exit(1);
         } else if (sig == SIGUSR1 || sig == SIGTERM) {  /* we try twice */
-          sleep(2);
+            sleep(2);
           kill(kill_pid, sig);
         }
       }
       exit(0);
-    } else if (options == 1 || options == 2 || options == 3 || options == 4) {
+    } else if (options == 1 || options == 2 || options == 3 || options == 4|| options==5) {
       errorp(11, "INIT", "Program not yet running." );
       exit(1);
     }

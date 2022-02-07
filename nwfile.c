@@ -93,6 +93,7 @@ static int new_file_handle(uint8 *unixname, int task)
   fh->fd      = -2;
   fh->offd    = 0L;
   fh->tmodi   = 0L;
+  fh->modified = 0;
   fh->st_ino  = 0;
   strcpy((char*)fh->fname, (char*)unixname);
   fh->fh_flags   = 0;
@@ -118,8 +119,15 @@ static int free_file_handle(int fhandle)
           fh->size_mmap = 0;
         }
         close(fh->fd);
-        if (fh->st_ino)
+        if (fh->st_ino) {
           share_file(fh->st_dev, fh->st_ino, 0);
+          if (fh->modified) {
+            fh->modified=0;
+#if NEW_ATTRIB_HANDLING            
+            set_nw_archive_bit(fh->st_dev, fh->st_ino);
+#endif
+          }
+        }
       }
       if (fh->tmodi > 0L && !(FH_IS_PIPE_COMMAND & fh->fh_flags)
                          && !(FH_IS_READONLY     & fh->fh_flags) ) {
@@ -522,8 +530,15 @@ int nw_close_file(int fhandle, int reset_reuse)
           fh->size_mmap = 0;
         }
         result=close(fh->fd);
-        if (fh->st_ino)
+        if (fh->st_ino) {
           share_file(fh->st_dev, fh->st_ino, 0);
+          if (fh->modified) {
+            fh->modified=0;
+#if NEW_ATTRIB_HANDLING            
+            set_nw_archive_bit(fh->st_dev, fh->st_ino);
+#endif
+          }
+        }
       }
       fh->fd = -1;
       if (fh->tmodi > 0L && !(fh->fh_flags & FH_IS_PIPE)
@@ -729,12 +744,16 @@ int nw_write_file(int fhandle, uint8 *data, int size, uint32 offset)
           if (fh->offd > -1L) {
             size = write(fh->fd, data, size);
             fh->offd+=(long)size;
+            if (!fh->modified)
+              fh->modified++;
           } else size = -1;
           return(size);
         } else {  /* truncate FILE */
           int result = unx_ftruncate(fh->fd, offset);
           XDPRINTF((5,0,"File %s is truncated, result=%d", fh->fname, result));
           fh->offd = -1L;
+          if (!fh->modified)
+            fh->modified++;
           return(result);
         }
       }
@@ -759,6 +778,8 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
       if (lseek(fhq->fd, qoffset, SEEK_SET) > -1L &&
           lseek(fhz->fd, zoffset, SEEK_SET) > -1L) {
         retsize = 0;
+        if (size && !fhz->modified)
+            fhz->modified++;
         while (size) {
           int xsize = read(fhq->fd, buff, min(size, (uint32)sizeof(buff)));
           if (xsize > 0){
@@ -886,7 +907,7 @@ int nw_unlink(int volume, char *name)
        -1 == share_file(stbuff.st_dev, stbuff.st_ino, 0x11|0x4)) )
     return(-0x8a); /* NO Delete Privileges, file is shared open */
   if (!unlink(name)) {
-    free_attr_from_disk(stbuff.st_dev, stbuff.st_ino);
+    free_nw_ext_inode(stbuff.st_dev, stbuff.st_ino);
     return(0);
   }
   return(-0x8a); /* NO Delete Privileges */

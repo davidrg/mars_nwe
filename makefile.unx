@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 01-Feb-98
+#makefile.unx 04-Feb-98
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=99
-P_L=5
+P_L=6
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -136,7 +136,7 @@ OBJS= $(EMUTLIOBJ) net1$(O) tools$(O) \
 HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) \
        unxfile$(O)
 
-HOBJ6= $(PROG6)$(O) sema$(O) 
+HOBJ6= $(PROG6)$(O) sema$(O)
 
 #if 0
 #$(PROG1):  $(PROG1)$(O) $(OBJ1)
@@ -194,7 +194,7 @@ n_install:
 	@-if [ -r /sbin/nwserv ] && [ -r /usr/sbin/nwserv ] ; then \
           echo "remove old version in /sbin ?" ; \
           (cd /sbin && rm -i nwserv nwbind ncpserv nwconn nwclient nwrouted) ; \
-        fi ; 
+        fi ;
 	@cd $(VPATH) && (if [ -r $(M_FILENAME_NW_INI) ] ; then \
 echo ""; \
 echo "********************************************************"; \
