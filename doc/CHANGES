@@ -286,4 +286,9 @@ Erste 'oeffentliche' Version
   nach Tests von Arne de Bruijn Probleme mit Netx beseitigt sein.
 - Section 13 erweitert um 'fixed passwords'.
 <----- ^^^^^^^^^^ pl9 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- neue Routine 0x17,0x1a (Get Connection Internet Address, new)
+  von Arne de Bruijn eingebaut.
+- Result code von nw_lock_file() korrigiert (0x21 -> 0xfd).
+  ( MS-Access meckerte unter Win3.xx fehlendes SHARE.EXE an )
+<----- ^^^^^^^^^^ pl10 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

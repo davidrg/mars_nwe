@@ -101,7 +101,7 @@ void dprintf(char *p, ...)
 {
   va_list ap;
   if (nw_debug){
-    fprintf(logfile, "%-8s:", get_modstr());
+    fprintf(logfile, "%-8s %d:", get_modstr(), connection);
     va_start(ap, p);
     vfprintf(logfile, p, ap);
     va_end(ap);

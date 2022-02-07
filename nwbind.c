@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "17-Apr-97"
+#define REVISION_DATE "20-Apr-97"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -434,13 +434,20 @@ static void handle_fxx(int gelen, int func)
                     }
                   break;
 
-     case 0x13 :  { /* Get Connection Internet Address */
-                    int conn  = (int)*(rdata);  /* Connection Nr */
+     case 0x13 :    /* Get Connection Internet Address, old */
+     case 0x1a :  { /* Get Connection Internet Address, new */
+                    int conn  = (ufunc == 0x13)
+                                 ? (int) *rdata
+                                 : GET_32(rdata);
                     if (conn && --conn < MAX_CONNECTIONS
                       && connections[conn].active ) {
                       CONNECTION *cx=&(connections[conn]);
                       data_len = sizeof(ipxAddr_t);
                       memcpy(responsedata, (char*)&(cx->client_adr), data_len);
+                      if (ufunc==0x1a) {
+                        *(responsedata+data_len)=0x02; /* NCP connection */
+                        data_len++;
+                      }
                     } else completition = 0xff;
                   } break;
 
@@ -511,7 +518,8 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
-     case 0x16 :  { /* Get Connection Info, OLD */
+     case 0x16 :    /* Get Connection Info, old */
+     case 0x1c :  { /* Get Connection Info, new */
                     struct XDATA {
                       uint8 object_id[4];
                       uint8 object_type[2];
@@ -519,7 +527,10 @@ static void handle_fxx(int gelen, int func)
                       uint8 login_time[7];
                       uint8 reserved;
                     } *xdata = (struct XDATA*) responsedata;
-                    int conn = (uint16)*(rdata);  /* Connection Nr */
+                    int conn = (ufunc == 0x16)
+                                 ? (int) *rdata
+                                 : GET_32(rdata);
+
                     memset(xdata, 0, sizeof(struct XDATA));
                     data_len = sizeof(struct XDATA);
                     if (conn && conn <= MAX_CONNECTIONS
@@ -588,33 +599,6 @@ static void handle_fxx(int gelen, int func)
                      */
                   }
                   break;
-
-     case 0x1c :  { /* Get Connection Info, new */
-                    struct XDATA {
-                      uint8 object_id[4];
-                      uint8 object_type[2];
-                      uint8 object_name[48];
-                      uint8 login_time[7];
-                      uint8 reserved;
-                    } *xdata = (struct XDATA*) responsedata;
-                    int conn   = (uint16)*(rdata);  /* Connection Nr */
-                    if (conn && --conn < MAX_CONNECTIONS){
-                      CONNECTION *cx=&(connections[conn]);
-                      NETOBJ    obj;
-                      int       result;
-                      obj.id =  cx->object_id;
-                      result =  nw_get_obj(&obj);
-                      if (!result) {
-                        memset(xdata, 0, sizeof(struct XDATA));
-                        U32_TO_BE32(obj.id,   xdata->object_id);
-                        U16_TO_BE16(obj.type, xdata->object_type);
-                        strncpy(xdata->object_name, obj.name, 48);
-                        get_login_time(xdata->login_time, cx);
-                        data_len = sizeof(struct XDATA);
-                      } else completition = (uint8)(-result);
-                    } else completition = 0xff;
-                  } break;
-
 
      case 0x32 :  {  /* Create Bindery Object */
                     NETOBJ obj;

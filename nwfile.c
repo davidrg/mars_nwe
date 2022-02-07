@@ -1,4 +1,4 @@
-/* nwfile.c  14-Jan-97 */
+/* nwfile.c  23-Apr-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -723,21 +723,17 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
   return(-0x88); /* wrong filehandle */
 }
 
-int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
+int nw_lock_file(int fhandle, int offset, int size, int do_lock)
 {
-  MDEBUG(D_FH_LOCK, {
-    char fname[200];
-    int r=fd_2_fname(fhandle, fname, sizeof(fname));
-    dprintf("nw_%s_datei: fd=%d, fn=`%s`,r=%d,offs=%d,len=%d",
-              (do_lock) ? "lock" : "unlock",
-              fhandle, fname,r,offset, size);
-  })
-  if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
-    FILE_HANDLE  *fh=&(file_handles[fhandle]);
+  int result=-0x88;  /* wrong filehandle */
+  if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
+    FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
       struct flock flockd;
-      int result;
-      if (fh->fh_flags & FH_IS_PIPE) return(0);
+      if (fh->fh_flags & FH_IS_PIPE) {
+        result=0;
+        goto leave;
+      }
       flockd.l_type   = (do_lock)
                          ? ((fh->fh_flags & FH_OPENED_RO) ?  F_RDLCK
                                                           :  F_WRLCK)
@@ -756,11 +752,20 @@ int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
       result = fcntl(fh->fd, F_SETLK, &flockd);
       XDPRINTF((2, 0,  "nw_%s_datei result=%d, fh=%d, offset=%d, size=%d",
         (do_lock) ? "lock" : "unlock", result, fhandle, offset, size));
-      if (!result) return(0);
-      else return(-0x21); /* LOCK Violation */
-    } else if (fh->fd == -3) return(0);
+      if (result)
+         result= (do_lock) ? -0xfd : -0xff;
+    } else if (fh->fd == -3) result=0;
   }
-  return(-0x88); /* wrong filehandle */
+leave:
+  MDEBUG(D_FH_LOCK, {
+    char fname[200];
+    (void)fd_2_fname(fhandle, fname, sizeof(fname));
+    dprintf("nw_%s_datei: fd=%d, fn=`%s`,r=0x%x, offs=%d, len=%d",
+              (do_lock) ? "lock" : "unlock",
+              fhandle, fname, -result, offset, size);
+  })
+
+  return(result);
 }
 
 int fd_2_fname(int fhandle, char *buf, int bufsize)
@@ -782,5 +787,13 @@ FILE_HANDLE *fd_2_fh(int fhandle)
   return(NULL);
 }
 
+int get_nwfd(int fhandle)
+{
+  if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
+    FILE_HANDLE  *fh=&(file_handles[fhandle]);
+    return(fh ? fh->fd : -1);
+  }
+  return(-1);
+}
 
 

@@ -1,4 +1,4 @@
-/* nwfile.h 19-Oct-96 */
+/* nwfile.h 23-Apr-97 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
 #include "nwqueue.h"
@@ -49,9 +49,10 @@ extern int nw_server_copy(int qfhandle, uint32 qoffset,
                    int zfhandle, uint32 zoffset,
                    uint32 size);
 
-extern int nw_lock_datei(int fhandle, int offset, int size, int do_lock);
+extern int nw_lock_file(int fhandle, int offset, int size, int do_lock);
 
 extern int fd_2_fname(int fhandle, char *buf, int bufsize);
 extern FILE_HANDLE *fd_2_fh(int fhandle);
+extern int get_nwfd(int fhandle);
 
 #endif

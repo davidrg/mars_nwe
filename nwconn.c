@@ -883,7 +883,7 @@ static int handle_ncp_serv(void)
                        int fhandle  = GET_32  (input->fhandle);
                        int offset   = GET_BE32(input->offset);
                        int size     = GET_BE32(input->size);
-                       completition = (uint8)(-nw_lock_datei(fhandle,
+                       completition = (uint8)(-nw_lock_file(fhandle,
                                                              offset, size,
                                                (int)(function == 0x1a)));
                      }
@@ -1073,6 +1073,24 @@ static int handle_ncp_serv(void)
                        } *input = (struct INPUT *)ncprequest;
                        uint32 fhandle = GET_32(input->fhandle);
                        completition = (uint8)(-nw_close_file(fhandle, 0));
+
+#if 0
+#ifdef SIOCIPXNCPCONN
+                          {
+                            struct {
+                              int fh;
+                              int fd;
+                              int mode;
+                            } ncp_1;
+                            ncp_1.fh   = 0;
+                            ncp_1.fd   = -1;
+                            ncp_1.mode = 0;
+                            ioctl(0, SIOCIPXNCPCONN+1, &ncp_1);
+                          }
+#endif
+#endif
+
+
 #if TEST_FNAME
                        if (!completition && fhandle == test_handle) {
                          do_druck++;
@@ -1233,6 +1251,21 @@ static int handle_ncp_serv(void)
                        if (size > -1) {
                          U16_TO_BE16(size, xdata->size);
                          data_len=size+zusatz+2;
+#if 0
+#ifdef SIOCIPXNCPCONN
+                          {
+                            struct {
+                              int fh;
+                              int fd;
+                              int mode;
+                            } ncp_1;
+                            ncp_1.fh   = fhandle;
+                            ncp_1.fd   = get_nwfd(fhandle);
+                            ncp_1.mode = 0;
+                            ioctl(0, SIOCIPXNCPCONN+1, &ncp_1);
+                          }
+#endif
+#endif
                        } else completition = (uint8) -size;
                      }
                      break;
@@ -1679,7 +1712,7 @@ static void set_sig(void)
   signal(SIGBUS,   sig_bus_mmap);  /* in nwfile.c */
 #endif
 }
-
+#include <sys/resource.h>
 int main(int argc, char **argv)
 {
   if (argc != 6) {
@@ -1740,7 +1773,9 @@ int main(int argc, char **argv)
   set_sig();
 
   while (fl_get_int >= 0) {
-    int data_len = read(0, readbuff, sizeof(readbuff));
+    int data_len ;
+/*    setpriority(PRIO_PROCESS, 0, 0);  */
+    data_len = read(0, readbuff, sizeof(readbuff));
     /* this read is a pipe or a socket read,
      * depending on CALL_NWCONN_OVER_SOCKET
      */
