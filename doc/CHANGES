@@ -419,4 +419,10 @@ Erste 'oeffentliche' Version
 - prop_delete_member changed to avoid holes (id==0) in a set section.
 - bindery function creat_new_db() now saves old files to xyz/nwdbm.sav/.
 <----- ^^^^^^^^^^ pl7 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- queue code changed. WinNT did not print every job.  
+  should also solve some strange problems under W95 and dos clients.
+- old dos search routine is now reused again for namespace calls, because
+  new dos search routine from Andrew did not work with this calls.
+  ( xcopy32 *.* did not work for for non OS/2 namespace volumes )
+<----- ^^^^^^^^^^ pl8 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

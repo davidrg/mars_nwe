@@ -22,14 +22,14 @@
 #include <syslog.h>
 
 #ifndef LINUX
-extern int   _sys_nerr;
-extern char *_sys_errlist[];
-# if 0  /* probably used for libc6 */
-#   define _sys_nerr sys_nerr
+ extern int   _sys_nerr;
+ extern char *_sys_errlist[];
+#else
+# ifndef  __USE_GNU
+#   define _sys_nerr    sys_nerr
 #   define _sys_errlist sys_errlist
 # endif
 #endif
-
 
 int    nw_debug=0;
 uint32 debug_mask=0; /* special debug masks */

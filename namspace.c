@@ -1217,6 +1217,148 @@ static int get_add_new_entry(DIR_BASE_ENTRY *qbe, int namespace,
   return(insert_get_base_entry(&nwpath, namespace, creatmode));
 }
 
+/* the new fn_dos_match routine from Andrew do not work ok
+ * for namespace dos searches, because namespace searches do
+ * something like  "0xff *"  to match all files.
+ * or "0xff ? 0xff ? ... 0xff ? . 0xff ? 0xff ? 0xff ?" to match
+ * 12345678.abc
+ */
+
+static int x_str_match(uint8 *s, uint8 *p, int soptions)
+{
+  uint8    pc, sc;
+  uint     state = 0;
+  uint8    anf, ende;
+  int      not = 0;
+  uint     found = 0;
+  while ( (pc = *p++) != 0) {
+
+    if (state != 100) {
+      if (pc == 255 &&  (*p == '*' || *p == '?'
+                      || *p==0xaa  || *p==0xae || *p==0xbf || *p=='.')) {
+        pc=*p++;
+      }
+
+      switch  (pc) {
+        case 0xaa:   pc='*';  break;
+        case 0xae:   pc='.';  break;
+        case 0xbf:   pc='?';  break;
+      }
+    }
+
+    switch (state){
+      case 0 :
+      switch  (pc) {
+        case '\\':  /* any following char */
+                    if (*p++ != *s++) return(0);
+                    break;
+
+        case '?' :  if (!*s ||  (sc = *s++) == '.')
+                      state = 10;
+                    break;
+
+        case  '.' : if (*s && pc != *s++) return(0);
+                    break;
+
+	case '*' : if (!*p) return(1); /* last star */
+	           while (*s) {
+	             if (x_str_match(s, p, soptions) == 1) return(1);
+                     else if (*s == '.') return(0);
+	             ++s;
+	           }
+                   state = 30;
+                   break;
+
+        case '[' :  if ( (*p == '!') || (*p == '^') ){
+                       ++p;
+                       not = 1;
+                     }
+                     state = 100;
+                     continue;
+
+        default  :  /* 'normal' chars */
+                    if (soptions & VOL_OPTION_IGNCASE) {
+                       if (!dfn_imatch(*s, pc))
+                        return(0);
+                    } else if (pc != *s) return(0);
+                    s++;
+                    break;
+
+      }  /* switch */
+      break;
+
+      case 10 :  if (pc != '*' && pc != '?' ) {
+                   if (pc == '.')
+                     state = 0;
+                   else return(0);
+                 }
+                 break;
+
+      case 30:   if (pc != '.') return(0);
+                 state = 31;
+                 break;
+
+      case 31:   if (pc != '*' ) return(0);
+                 break;
+
+      case   100  :   /*  Bereich von Zeichen  */
+        sc = *s++;
+        found = not;
+        if (!sc) return(0);
+        do {
+          if (pc == '\\') pc = *(p++);
+          if (!pc) return(0);
+          anf = pc;
+          if (*p == '-' && *(p+1) != ']'){
+            ende = *(++p);
+            p++;
+          }
+          else ende = anf;
+          if (found == not) { /* only if not found */
+            if (anf == sc || (anf <= sc && sc <= ende))
+               found = !not;
+          }
+        } while ((pc = *(p++)) != ']');
+        if (! found ) return(0);
+        not   = 0;
+        found = 0;
+        state = 0;
+        break;
+
+      default :  break;
+    }  /* switch */
+  } /* while */
+  if (*s=='.' && *(s+1)=='\0') return(1);  /* I hope this is right */
+  return ( (*s) ? 0 : 1);
+}
+
+static int fn_dos_match_old(uint8 *s, uint8 *p, int options)
+{
+  uint8 *ss=s;
+  int   len=0;
+  int   pf=0;
+  for (; *ss; ss++){
+    if (*ss == '.') {
+      if (pf++) return(0); /* no 2. point */
+      len=0;
+    } else {
+      ++len;
+      if ((pf && len > 3) || len > 8) return(0);
+
+      if (!(options & VOL_OPTION_IGNCASE)){
+        if (options & VOL_OPTION_DOWNSHIFT){   /* only downshift chars */
+          if (*ss >= 'A' && *ss <= 'Z') return(0);
+        } else {            /* only upshift chars   */
+          if (*ss >= 'a' && *ss <= 'z') return(0);
+        }
+      }
+
+    }
+  }
+  return(x_str_match(s, p, options));
+}
+
+
 static int namespace_fn_match(uint8 *s, uint8 *p, int namespace)
 /* for *OTHER* namespaces than DOS + OS2 */
 {
@@ -1327,7 +1469,7 @@ static int search_match(struct dirent *dirbuff,
     XDPRINTF((8,0,"search_match, Name='%s' dname='%s'", name, dname));
     if (!inode_search) {
       if (namespace == NAME_DOS) {
-        flag = (*name != '.' &&  fn_dos_match(dname, entry, vol_options));
+        flag = (*name != '.' &&  fn_dos_match_old(dname, entry, vol_options));
       } else if (namespace == NAME_OS2) {
         flag = (*name != '.' || (*(name+1) != '.' && *(name+1) != '\0' ))
                && fn_os2_match(dname, entry, vol_options);

@@ -132,7 +132,7 @@ static INT_QUEUE_JOB *add_queue_job(NWE_QUEUE *que, INT_QUEUE_JOB *p)
     if (!que->queue_jobs) {
       que->queue_jobs=p;
       p->job_position=1;
-      que->last_job_id=1;
+      if (++(que->last_job_id)>999) que->last_job_id=1;
     } else {
       int flag;
       INT_QUEUE_JOB *qj;
@@ -570,7 +570,7 @@ int nw_remove_job_from_queue(uint32 user_id, uint32 q_id, int job_id)
   int result=-0xff;
   NWE_QUEUE     *q  = find_queue(q_id);
   INT_QUEUE_JOB *qj = find_queue_job(q, job_id);
-  if (qj) {
+  if (qj) {  
     if (user_id==1 || user_id == qj->client_id) {
       result=remove_queue_job_file(q, qj);
       if (!result)

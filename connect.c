@@ -373,6 +373,7 @@ static char nwpathname[300];
 
 /* new from Andrew Sapozhnikov <sapa@hq.icb.chel.su>  
  * added in 0.99.pl7, removes old x_str_match routine
+ * Do not work for namespace routines, see namespace.c !!
  */
 /* NW3.12/MSDOS-like filename matching. *
  * Wildcards '*' and '?' allowed.	*/
