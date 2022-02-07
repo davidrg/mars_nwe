@@ -573,7 +573,7 @@ static int build_path( NW_PATH *path,
  * returns -0x98, if volume is wrong
  */
 {
-  uint8 vol[20];
+  uint8 vol[256];
   conn_build_path_fn(vol, path->path,
                      (only_dir) ? (uint8)NULL
                                 : path->fn,
@@ -1192,7 +1192,7 @@ int nw_search(uint8 *info,
 
 {
    NW_PATH nwpath;
-   int     completition= conn_get_kpl_path(&nwpath, dirhandle, data, len, 0);
+   int     completition = conn_get_kpl_path(&nwpath, dirhandle, data, len, 0);
    XDPRINTF((5,0,"nw_search path:%s:, fn:%s:, completition:0x%x",
      nwpath.path, nwpath.fn, completition));
    if (completition > -1) {

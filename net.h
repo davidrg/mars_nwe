@@ -128,7 +128,7 @@ extern int errno;
 #  endif
 #else
 #  undef  FUNC_17_02_IS_DEBUG
-#  define FUNC_17_02_IS_DEBUG 0
+#  define FUNC_17_02_IS_DEBUG   0
 #endif
 
 #ifndef MAX_CONNECTIONS

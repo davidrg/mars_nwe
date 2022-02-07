@@ -199,7 +199,8 @@ int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
 
 int nw_close_datei(int fhandle, int reset_reuse)
 {
-  XDPRINTF((5, 0, "nw_close_datei handle=%d", fhandle));
+  XDPRINTF((5, 0, "nw_close_datei handle=%d, anz_fhandles",
+     fhandle, anz_fhandles));
   if (fhandle > 0 && (fhandle <= anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (reset_reuse) fh->flags &= (~4);

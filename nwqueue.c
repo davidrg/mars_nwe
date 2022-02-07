@@ -150,11 +150,17 @@ int ext_pclose(FILE_PIPE *fp)
   void (*intsave) (int) = signal(SIGINT,  SIG_IGN);
   void (*quitsave)(int) = signal(SIGQUIT, SIG_IGN);
   void (*hupsave) (int) = signal(SIGHUP,  SIG_IGN);
+
+
   int j = 3;
   while (j--) if (fp->fildes[j]) fclose(fp->fildes[j]);
-  /* kill(fp->command_pid, SIGTERM); */
-  waitpid(fp->command_pid, &status, 0);
+  if (fp->command_pid != waitpid(fp->command_pid, &status, 0)) {
+    kill(fp->command_pid, SIGTERM);
+    waitpid(fp->command_pid, &status, 0);
+  }
   kill(fp->command_pid, SIGKILL);
+
+
   signal(SIGINT,   intsave);
   signal(SIGQUIT,  quitsave);
   signal(SIGHUP,   hupsave);
@@ -389,8 +395,8 @@ int nw_close_file_queue(uint8 *queue_id,
               is_ok=0;
             }
           }
-          if (ext_pclose(fp)) {
-            XDPRINTF((1,0,"Error by closing print pipe"));
+          if (0 != (k=ext_pclose(fp))) {
+            XDPRINTF((1,0,"Errorresult = %d by closing print pipe", k));
           }
         } else
           XDPRINTF((1,0,"Cannot open pipe `%s`", printcommand));

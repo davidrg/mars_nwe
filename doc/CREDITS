@@ -3,6 +3,9 @@ Sorry, but this list will *never* be complete.
 Michael Beddow <m.beddow@servelan.co.uk>
         translated doc for PIPE-FS
 
+Guntram Blohm  <gbl%th7csun1@str.daimler-benz.com>
+        testing router code on token ring
+
 Uwe Bonnes <bon@elektron.ikp.physik.th-darmstadt.de>
         many testings+notes
 
@@ -10,7 +13,7 @@ Hardy Buchholz <hardy@kool.f.eunet.de>
         wrote HOWTO.ger
 
 Ales Dryak <A.Dryak@sh.cvut.cz>
-        his linware gives the kick
+        his linware gave the kick
 
 Volker Lendecke <lendecke@math.uni-goettingen.de>
         helps distributing
@@ -18,6 +21,9 @@ Volker Lendecke <lendecke@math.uni-goettingen.de>
 James B. MacLean <macleajb@ednet.ns.ca>
         many testings+notes
 
-Winfried Truemper <truemper@MI.Uni-Koeln.DE>:
+Jiri A. Randus <Jiri.Randus@vslib.cz>
+        testing bindery code
+
+Winfried Truemper <truemper@mi.uni-koeln.de>:
         re-wrote `INSTALL' and added explanations to `nw.ini'
 

@@ -1451,6 +1451,12 @@ static void sig_quit(int rsig)
   fl_get_int=2;
 }
 
+static void sig_pipe(int rsig)
+{
+  XDPRINTF((1, 0, "Got SIG_PIPE"));
+  signal(SIGPIPE,  sig_pipe);
+}
+
 static void sig_hup(int rsig)
 {
   fl_get_int=1;
@@ -1468,7 +1474,7 @@ static void set_sig(void)
   signal(SIGTERM,  sig_quit);
   signal(SIGQUIT,  sig_quit);
   signal(SIGINT,   sig_quit);
-  signal(SIGPIPE,  sig_quit);
+  signal(SIGPIPE,  sig_pipe);
   signal(SIGHUP,   sig_hup);
 }
 

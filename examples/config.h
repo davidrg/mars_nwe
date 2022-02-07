@@ -1,7 +1,8 @@
-/* config.h: 13-May-96 */
+/* config.h: 21-May-96 */
 /* some of this config is needed by make, others by cc                     */
 
 #define DO_DEBUG      1              /* compile in debug code              */
+#define FUNC_17_02_IS_DEBUG 1        /* allow debugging with mars_dosutils */
 
 #define DO_TESTING    0              /* set this to "1" to test only       */
 
@@ -9,13 +10,11 @@
 # define FILENAME_NW_INI  "./nw.ini" /* full name of ini (conf) file       */
 # define PATHNAME_PROGS   "."        /* where to find the executables      */
 # define PATHNAME_BINDERY "."        /* directory for bindery-files        */
-# define FUNC_17_02_IS_DEBUG 1
 #else
 # define FILENAME_NW_INI  "/etc/nwserv.conf"
                                      /* full name of ini (conf) file       */
 # define PATHNAME_PROGS   "/sbin"    /* where to find the executables      */
 # define PATHNAME_BINDERY "/etc"     /* directory for bindery-files        */
-# define FUNC_17_02_IS_DEBUG 0
 #endif
 
 #define PATHNAME_PIDFILES "/var/run" /* directory for 'pidfiles'           */
