@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 22-May-99
+#makefile.unx 23-May-99
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=99
-P_L=16
+P_L=17
 
 #define D_P_L 1
 DISTRIB=mars_nwe

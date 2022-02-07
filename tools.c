@@ -1,4 +1,4 @@
-/* tools.c  16-May-99 */
+/* tools.c  31-May-99 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -51,7 +51,7 @@ int    act_ncpsequence=0; /* for debugging */
 int    act_connection=0;  /* which connection (nwconn, nwbind) */
 time_t act_time=0L;       /* actual time */
 
-static FILE *logfile=stderr;
+static FILE *logfile=NULL;
 static int   use_syslog=0; /* 1 = use syslog for all loggings
                             * 2 = only for errors
                             */
@@ -474,11 +474,13 @@ void init_tools(int module, int options)
 {
   uint8 buf[300];
   char  logfilename[300];
-  FILE *f=open_nw_ini();
+  FILE  *f;
   int   withlog=0;
   int   dodaemon=0;
   int   new_log=0;
   in_module  = module;
+  logfile    = stderr;  /* preset */
+  f          = open_nw_ini();
   my_pid     = getpid();
   if (NWSERV == module || NWROUTED == module) {
     int kill_pid=-1;

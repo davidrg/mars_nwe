@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "23-May-99"
+#define REVISION_DATE "03-Jun-99"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message and queue handling */
 

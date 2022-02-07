@@ -1,4 +1,4 @@
-/* nwfile.c  23-May-99 */
+/* nwfile.c  26-May-99 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -997,3 +997,175 @@ void log_file_module(FILE *f)
   }
 }
 
+
+/* quick and dirty hack for 0.99.pl17, 25-May-99 */
+
+
+typedef struct sLOCK_AREA {
+  uint32              offset;
+  struct sLOCK_AREA   *next;
+} LOCK_AREA;
+
+typedef struct sLOCK_FILE {
+  char                *fn;
+  int                 fd;
+  LOCK_AREA           *lock_area;
+  struct sLOCK_FILE   *next;
+} LOCK_FILE;
+
+static LOCK_FILE *root_lf=NULL;
+static LOCK_FILE *last_lf=NULL;
+static LOCK_AREA *last_la=NULL;
+
+static LOCK_AREA *find_lockarea(LOCK_FILE *lf, uint32 offset)
+{
+  LOCK_AREA *la=lf->lock_area;
+  last_la = NULL;
+  while (la && la->offset != offset) {
+    last_la=la;
+    la=la->next;
+  }
+  return(la);
+}
+
+static LOCK_FILE *find_lockfile(char *fn)
+{
+  LOCK_FILE *lf=root_lf;
+  last_lf = NULL;
+  while (lf && strcmp(lf->fn, fn)) {
+    last_lf=lf;
+    lf=lf->next;
+  }
+  return(lf);
+}
+
+int nw_log_record(int lock_flag,
+                  int timeout,
+                  int len,
+                  uint8 *data)
+{
+  static char *path_share_lock_files=NULL;
+  uint8  fn[200];
+  uint8  fullpath[300];
+  uint32 offset;
+  LOCK_FILE  *lf  = NULL;
+  LOCK_AREA  *la  = NULL;
+  struct flock flockd;
+  flockd.l_whence = SEEK_SET;
+  flockd.l_type   = (lock_flag!= -1)
+                         ? F_WRLCK
+                         : F_UNLCK;
+  flockd.l_whence = SEEK_SET;
+  flockd.l_len    = 1;
+  
+  if (len < 4) {
+    uint8 buf[4];
+    memcpy(buf, data, len);
+    memset(buf+len, 0, 4 -len);
+    len = 0;
+    offset=GET_BE32(buf);
+  } else {
+    offset=GET_BE32(data);
+    len -= 4;
+  }
+  
+  flockd.l_start  = offset;
+  
+  if (len > 0) {
+    int i;
+    if (len > sizeof(fn))
+      len=sizeof(fn-1);
+    memcpy(fn, data+4, len);
+    fn[len]='\0';
+    for (i=0; i< len; ++i) {
+      if (fn[i]=='/') fn[i]='-';
+    }
+  } else {
+    strcpy(fn, "GENERIC_LOCKFILE");
+  }
+
+  if (NULL==path_share_lock_files) {
+    char buff[300];
+    if (get_ini_entry(NULL, 41, buff, sizeof(buff)) && *buff) 
+      new_str(path_share_lock_files, buff);
+    else
+      new_str(path_share_lock_files, "/var/spool/nwserv/.locks");
+    seteuid(0);
+    unx_xmkdir(path_share_lock_files, 0755);
+    reseteuid();
+  }
+  
+  sprintf(fullpath,"%s/%s.k", path_share_lock_files, fn);
+
+  lf = find_lockfile(fn);
+
+  if (!lf) {
+    int fd;
+    if (lock_flag == -1)  /* unlock */
+      return(-0xff);
+    
+    seteuid(0);
+    fd = open(fullpath, O_RDWR|O_CREAT, 0600); 
+    reseteuid();
+    
+    if (fcntl(fd, F_SETLK, &flockd))
+      /* already locked by other process */
+      return(-0xfe);
+    
+    lf=(LOCK_FILE*)xcmalloc(sizeof(LOCK_FILE));
+    lf->fd = fd;
+    new_str(lf->fn,  fn);
+    if (last_lf)
+      last_lf->next = lf;
+    else
+      root_lf = lf;
+  }
+
+  la = find_lockarea(lf, offset);
+  if (!la) {
+    if (lock_flag == -1) /* unlock */
+      return (-0xff);
+    
+    if (fcntl(lf->fd, F_SETLK, &flockd))
+      /* already locked by other process */
+      return(-0xfe);
+
+    la=(LOCK_AREA*)xcmalloc(sizeof(LOCK_AREA));
+    la->offset=offset;
+    if (last_la)
+      last_la->next =  la;
+    else
+      lf->lock_area =  la;
+  } else if (lock_flag != -1) {
+    /* already locked */
+    return(-0xfe);
+  }
+
+  if (lock_flag == -1) {  /* remove lock */
+    (void) fcntl(lf->fd, F_SETLK, &flockd);
+    if (last_la)
+      last_la->next = la->next;
+    else 
+      lf->lock_area = la->next;
+    xfree(la);
+    
+    if (!lf->lock_area) {
+      /* no more locks by this file */
+      close(lf->fd);
+
+#if 0 /* TODO remove file if it is not opened/locked by other process */
+      seteuid(0);
+      unlink(fullpath);
+      reseteuid();
+#endif
+      
+      xfree(lf->fn);
+      if (last_lf)
+        last_lf->next = lf->next;
+      else
+        root_lf       = lf->next;
+      xfree(lf);
+    }
+  }
+  return(0);
+}

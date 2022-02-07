@@ -38,7 +38,7 @@ typedef struct {
 static SH_OP_DEV sh_op_devs[MAX_SH_OP_DEV];
 static int count_sh_op_dev=0;
 
-char *path_share_lock_files=NULL;
+static char *path_share_lock_files=NULL;
 
 int share_file(int dev, int inode, int sh_mode)
 /*  sh_mode

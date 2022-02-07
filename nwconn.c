@@ -1,4 +1,4 @@
-/* nwconn.c 23-May-99       */
+/* nwconn.c 03-Jun-99       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1999  Martin Stover, Marburg, Germany
@@ -241,20 +241,20 @@ static int handle_ncp_serv(void)
 
   if (ncp_type == 0x2222) {
     switch (function) {
-#if 0         
+#if 0
          case 0x3 :  { /* Log File */
            struct INPUT {
              uint8   header[7];       /* Requestheader */
-             uint8   dir_handle;      
+             uint8   dir_handle;
              uint8   lock_flag;       /* 1 = lock direct, 0 = only log */
              uint8   timeout[2];      /* HI LO */
-             uint8   len;            
+             uint8   len;
              uint8   path[2];
            } *input = (struct INPUT *) (ncprequest);
            if (input->lock_flag==1) {
              int result = nw_log_file( input->lock_flag,
                                    GET_BE16(input->timeout),
-                                   input->dir_handle, 
+                                   input->dir_handle,
                                    input->len,
                                    input->path);
              if (result) completition = (uint8) -result;
@@ -264,7 +264,7 @@ static int handle_ncp_serv(void)
          }
          break;
 #endif
-#if 0         
+#if 0
          case 0x4 :  { /* Lock File Set  */
                      ;;
                      } break;
@@ -282,6 +282,46 @@ NWC 2  94:len 28, DATA:,0x2,0x1a,'P','R','O','B','A','\\','U','S','E','R','D','\
          case 0x8 :  { /* Clear File Set  */
                      ;;
                      } break;
+#endif
+
+#if 0    
+         /* 0.99.pl17,  03-Jun-99
+          * these functions are not well tested and perhaps not
+          * ok, was a fast hack to make one mars_nwe user happy.
+          */
+         case 0x9 :  { /* Log Logical Record ?? */
+           struct INPUT {
+             uint8   header[7];       /* Requestheader */
+             uint8   lock_flag;       /* 1 = lock direct, 0 = only log */
+             uint8   timeout[2];      /* HI LO */
+             uint8   len;             /* synch name len */
+             uint8   name[2];         /* synch name     */
+           } *input = (struct INPUT *) (ncprequest);
+           if (input->lock_flag==1) {
+             int result = nw_log_record(
+                                   (int) input->lock_flag,
+                                   (int) GET_BE16(input->timeout),
+                                   (int) input->len,
+                                   input->name);
+             if (result) completition = (uint8) -result;
+           }  else {  /* not handled */
+             completition = 0xfb;
+           }
+         } break;
+
+         case 0xb :  { /* Clear Logical Record ?? */
+           struct INPUT {
+             uint8   header[7];       /* Requestheader */
+             uint8   len;             /* synch name len */
+             uint8   name[2];         /* synch name     */
+           } *input = (struct INPUT *) (ncprequest);
+           int result = nw_log_record(
+                                   -1,  /* means unlock */
+                                    0,
+                                   (int) input->len,
+                                   input->name);
+           if (result) completition = (uint8) -result;
+         } break;
 #endif
 
          case 0x12 : { /* Get Volume Info with Number */
@@ -1499,8 +1539,8 @@ NWC 2  94:len 28, DATA:,0x2,0x1a,'P','R','O','B','A','\\','U','S','E','R','D','\
                      {
                        struct INPUT {
                          uint8   header[7];     /* Requestheader */
-                         uint8   dir_handle;    
-                         uint8   searchattrib; 
+                         uint8   dir_handle;
+                         uint8   searchattrib;
                          uint8   len;
                          uint8   data[2];        /* Name */
                        } *input = (struct INPUT *)ncprequest;
@@ -2265,7 +2305,7 @@ static void close_all(void)
   close(FD_NCP_OUT);
 }
 
-static int  fl_get_int=0;   
+static int  fl_get_int=0;
 /* signals
  *   &01   sig_quit
  *   &02   sig_hup
@@ -2413,9 +2453,9 @@ int main(int argc, char **argv)
       if (fl_get_int & 1) break;
       if (fl_get_int & 2)
         get_new_debug();
-      if (fl_get_int & 4) 
+      if (fl_get_int & 4)
         handle_extern_command();
-      if (fl_get_int & 8) 
+      if (fl_get_int & 8)
         handle_sigusr2();
     }
 

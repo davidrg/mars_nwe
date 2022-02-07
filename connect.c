@@ -1,4 +1,4 @@
-/* connect.c  23-May-99 */
+/* connect.c  03-Jun-99 */
 /* (C)opyright (C) 1993-1999, Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1167,7 +1167,9 @@ int nw_delete_files(int dir_handle, int searchattrib, uint8 *data, int len)
   return(completition);
 }
 
-#if 1 /* new since 22-May-99, 0.99.pl16 */
+#if 1 
+/* new since 22-May-99, 0.99.pl16 */
+/* corrected 03-Jun-99, 0.99.pl17 */
 typedef struct {
   NW_PATH     destpath;
   struct stat statbuf;
@@ -1200,30 +1202,31 @@ static int do_mv_file(NW_PATH *nwpath, FUNC_SEARCH *fs)
     /* we must save destpath, because perhaps we must modify it */
     strmaxcpy(saved_fn, nws->destpath.fn, sizeof(saved_fn)-1);
 
-    while ((0 != (c = *otopath++)) && *frompath ) {
+    while ((0 != (c = *otopath++))) {
       switch (c) {
         case '?' :
         case 0xbf:
-              if ( *frompath != '.'
+              if ( *frompath
+                && *frompath != '.'
                 && *frompath != 0xae )
                 *topath++ =  *frompath++;
               break;
 
         case '.' :
         case 0xae:
-              while ( *frompath != '.'
-                && *frompath != 0xae
-                && *frompath)
-                frompath++;
-              
-              if (*frompath)
+              while (*frompath  
+                && *frompath != '.'
+                && *frompath != 0xae )
                 frompath++;
               if (*frompath)
-                *topath++=c;
+                frompath++;
+              /* only append '.' if not at end */
+              if (*otopath)
+                *topath++='.';
               break;
           
           default:
-              if (*frompath != '.' && *frompath != 0xae) 
+              if (*frompath && *frompath != '.' && *frompath != 0xae) 
                 frompath++;
               *topath++=c;
               break;

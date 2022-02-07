@@ -513,4 +513,7 @@ Erste 'oeffentliche' Version
 - new signal SIGUSR2 for nwconn process to give info about open files.
   the loginfo is placed into /tmp/nwconnxxxx.log
 <----- ^^^^^^^^^^ pl16 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- rename file corrected. Error inserted in 0.99.pl16
+- small patch in tools.c ( initialisation of logfile )
+<----- ^^^^^^^^^^ pl17 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
