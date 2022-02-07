@@ -1,4 +1,4 @@
-/* nwroute.c 24-Dec-95 */
+/* nwroute.c 08-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -19,7 +19,6 @@
 #include "net.h"
 #include "nwserv.h"
 
-#define MAX_NW_ROUTES  50       /* max. 1 complete RIP packet should be enough */
 
 typedef struct {
   uint32  net;                  /* destnet              */
@@ -65,7 +64,10 @@ static void insert_delete_net(uint32 destnet,
   if (k == anz_routes) {    /* no route slot found */
     if (do_delete) return;  /* nothing to delete   */
     if (freeslot < 0) {
-      if (anz_routes == MAX_NW_ROUTES) return;
+      if (anz_routes == MAX_NW_ROUTES) {
+        XDPRINTF((1, 0, "too many routes=%d, increase MAX_NW_ROUTES in config.h", anz_routes));
+        return;
+      }
       nw_routes[k] = (NW_ROUTES*)xmalloc(sizeof(NW_ROUTES));
       anz_routes++;
     } else k=freeslot;
@@ -153,7 +155,7 @@ static void build_rip_buff(uint32 destnet)
   k=-1;
   while (++k < anz_routes) {
     NW_ROUTES *nr=nw_routes[k];
-    if ((is_wild || nr->net == destnet) && rmode==1 || nr->hops < 2)
+    if ( (is_wild || nr->net == destnet) && (rmode==1 || nr->hops < 2) )
       ins_rip_buff(nr->net, (rmode==1) ? 16 : nr->hops, nr->ticks);
   }
 }
@@ -178,7 +180,9 @@ static void send_rip_buff(ipxAddr_t *from_addr)
           (operation==1) ? "Request" : "Response", rentries));
       p+=2;
       while (rentries--) {
+#if 0
         uint32   net     = GET_BE32(p);
+#endif
         uint16   hops    = GET_BE16(p+4);
         uint16   ticks   = GET_BE16(p+6);
         XDPRINTF((2,0, "hops=%3d, ticks %3d, network:%02x.%02x.%02x.%02x",
@@ -298,7 +302,13 @@ void send_sap_broadcast(int mode)
         U16_TO_BE16(1,  ipx_data.sip.intermediate_networks);
        /* I hope 1 is ok here */
       }
-      send_ipx_data(sockfd[MY_BROADCAST_SLOT], 0,
+
+#ifdef MY_BROADCAST_SLOT
+      send_ipx_data(sockfd[MY_BROADCAST_SLOT],
+#else
+      send_ipx_data(-1,
+#endif
+                     0,
 	             sizeof(ipx_data.sip),
 	             (char *)&(ipx_data.sip),
 	             &wild, "SIP Broadcast");

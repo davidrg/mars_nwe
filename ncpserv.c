@@ -1,5 +1,5 @@
-/* ncpserv.c, 24-Dec-95 */
-
+/* ncpserv.c */
+#define REVISION_DATE "09-Jan-96"
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -126,7 +126,6 @@ static int 	  anz_connect=0;   /* actual anz connections */
 static int new_conn_nr(void)
 {
   int  j = -1;
-  int  not_logged=-1;
   if (!anz_connect){ /* init all */
     j = MAX_CONNECTIONS;
     while (j--) {
@@ -293,8 +292,9 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
   NCPRESPONSE  *ncpresponse  = (NCPRESPONSE*)&ipxoutdata;
   uint8        *responsedata = ((uint8*)&ipxoutdata)+sizeof(NCPRESPONSE);
   uint8        *requestdata  = ((uint8*)ncprequest)+sizeof(NCPREQUEST);
-
+#if 0
   uint8        len           = *(requestdata+1);
+#endif
   uint8        ufunc         = *(requestdata+2);
   uint8        *rdata        = requestdata+3;
   uint8        completition  = 0;
@@ -478,7 +478,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            if (!result) {
 	              c->object_id = obj.id;     /* actuell Object ID  */
                       c->t_login   = akttime;    /* u. login Time      */
-                      get_guid(rdata+2, rdata+2+sizeof(int),  obj.id);
+                      get_guid((int*) (rdata+2), (int*) (rdata+2+sizeof(int)), obj.id);
                       in_len=12 + 2*sizeof(int);
                       return(-1); /* nwconn must do the rest */
 	            } else completition = (uint8) -result;
@@ -540,7 +540,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            if (result > -1) {
 	              c->object_id = obj.id;        /* actuell Object */
                       c->t_login   = akttime;       /* and login time */
-                      get_guid(rdata+2, rdata+2+sizeof(int),  obj.id);
+                      get_guid((int*)(rdata+2), (int*)(rdata+2+sizeof(int)), obj.id);
                       in_len=12 + 2*sizeof(int);
                       return(-1); /* nwconn must do the rest */
 	            } else completition = (uint8) -result;
@@ -948,7 +948,6 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 
      case 0x49 :  { /* IS CALLING STATION A MANAGER */
 	            NETOBJ    obj;
-	            int       result;
 	            obj.id =  GET_BE32(rdata);
                     /* TODO !! */
                     completition = 0;  /* here allways Manager  */
@@ -1061,10 +1060,10 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	          } break;
 
      case 0xc9 :  { /* GET FILE SERVER DESCRIPTION STRINGs */
-	           char *company      = "Mars :-)";
-	           char *revision     = "Version %d.%d";
-	           char *revision_date= "24-Dec-95";
-	           char *copyright    = "(C)opyright Martin Stover";
+	           char *company       = "Mars :-)";
+	           char *revision      = "Version %d.%d";
+	           char *revision_date = REVISION_DATE;
+	           char *copyright     = "(C)opyright Martin Stover";
 	           int  k=strlen(company)+1;
 
 	           memset(responsedata, 0, 512);
@@ -1163,11 +1162,11 @@ static void ncp_response(int type, int sequence,
   if (nw_debug){
     char comment[80];
     sprintf(comment, "NCP-RESP compl=0x%x ", completition);
-    send_ipx_data(ncp_fd, 17, sizeof(NCPRESPONSE) + data_len,
+    send_ipx_data(-1, 17, sizeof(NCPRESPONSE) + data_len,
 	                 (char *) ncpresponse,
 	                 &from_addr, comment);
   } else
-    send_ipx_data(ncp_fd, 17, sizeof(NCPRESPONSE) + data_len,
+    send_ipx_data(-1, 17, sizeof(NCPRESPONSE) + data_len,
 	               (char *) ncpresponse,
 	                &from_addr, NULL);
 }
@@ -1286,7 +1285,7 @@ static int handle_ctrl(void)
         data_len = read(0, (char*)&conn, sizeof(conn));
         if (sizeof(int) == data_len && conn == what)
            sent_down_message();
-      break;
+        break;
 
       default : break;
     } /* switch */
@@ -1362,6 +1361,7 @@ int main(int argc, char *argv[])
                           if (diff_time > 50) /* after max. 50 seconds */
                              nwserv_reset_wdog(connection);
                              /* tell the wdog there's no need to look */
+
                           if (ncprequest->sequence == c->sequence
                               && !c->retry++) {
                             /* perhaps nwconn is busy  */
@@ -1409,7 +1409,10 @@ int main(int argc, char *argv[])
 
 	          ncp_response(0x3333, ncprequest->sequence,
 			               ncprequest->connection,
-			               0, 0xff, 0x08, 0);
+			               0,
+			               0xff, /* completition */
+			               0xff, /* conn status  */
+			               0);
 
                 } else if (type == 0x1111) {
 	          /* GIVE CONNECTION Nr connection */

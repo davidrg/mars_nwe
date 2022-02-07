@@ -1,4 +1,4 @@
-/* nwdbm.h 11-Sep-95 */
+/* nwdbm.h 08-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -167,6 +167,12 @@ extern uint32 nw_new_create_prop(uint32 wanted_id,
                   char *objname, int objtype, int objflags, int objsecurity,
 	          char *propname, int propflags, int propsecurity,
 	          char *value, int valuesize);
+
+extern int get_guid(int *gid, int *uid, uint32 obj_id);
+
+extern int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key);
+extern int nw_get_q_dirname(uint32 q_id, uint8 *buff);
+extern int nw_get_q_prcommand(uint32 q_id, uint8 *buff);
 
 extern void nw_fill_standard(char *servername, ipxAddr_t *adr);
 extern void nw_init_dbm(char *servername, ipxAddr_t *adr);

@@ -1,4 +1,4 @@
-/* nwdbm.c  24-Dec-95  data base for mars_nwe */
+/* nwdbm.c  08-Jan-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -23,11 +23,13 @@
 
 #include "net.h"
 #include "nwdbm.h"
+#include "nwcrypt.h"
 #ifdef LINUX
 #  include <ndbm.h>
 #else
 #  include </usr/ucbinclude/ndbm.h>
 #endif
+
 
 int        tells_server_version=0;
 
@@ -1062,7 +1064,7 @@ static void add_pr_queue(uint32 q_id,
 }
 
 
-static uint32 add_user(uint32 u_id,   uint32 g_id,
+static void add_user(uint32 u_id,   uint32 g_id,
                        char   *name,  char  *unname, char *password)
 {
   uint8  buff[4];
@@ -1089,17 +1091,17 @@ static uint32 add_user(uint32 u_id,   uint32 g_id,
 void nw_fill_standard(char *servername, ipxAddr_t *adr)
 /* fills the Standardproperties */
 {
-  char   serverna[50];
-  uint8  buff[12];
+  char   serverna[MAX_SERVER_NAME+2];
   uint32 su_id    = 0x00000001;
   uint32 ge_id    = 0x01000001;
-
-  uint32 guest_id = 0x02000001;
   uint32 serv_id  = 0x03000001;
+  uint32 q1_id    = 0x0E000001;
+#if 0
+  uint32 guest_id = 0x02000001;
   uint32 nbo_id   = 0x0B000001;
   uint32 ngr_id   = 0x0C000001;
   uint32 ps1_id   = 0x0D000001;
-  uint32 q1_id    = 0x0E000001;
+#endif
   FILE *f	  = open_nw_ini();
   ge_id =
   nw_new_create_prop(ge_id, "EVERYONE",        0x2,   0x0,  0x31,
@@ -1162,7 +1164,7 @@ void nw_fill_standard(char *servername, ipxAddr_t *adr)
     fclose(f);
   }
   if (servername && adr) {
-    strmaxcpy(serverna, servername, 48);
+    strmaxcpy(serverna, servername, MAX_SERVER_NAME);
     upstr(serverna);
     nw_new_create_prop(serv_id, serverna,       0x4,      O_FL_DYNA, 0x40,
 	               "NET_ADDRESS",         P_FL_ITEM | P_FL_DYNA, 0x40,

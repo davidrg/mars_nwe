@@ -1,4 +1,4 @@
-/*  tools.h : 14-Nov-95    */
+/*  tools.h : 07-Jan-96    */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -30,6 +30,7 @@ extern  int x_x_xnewstr(uint8 **p,  uint8 *s);
 #define new_str(p, s) x_x_xnewstr((uint8 **)&(p), s)
 
 extern char  *xmalloc(uint size);
+extern char  *xcmalloc(uint size);
 extern int   strmaxcpy(char *dest, char *source, int len);
 extern void  dprintf(char *p, ...);
 extern void  xdprintf(int dlevel, int mode, char *p, ...);

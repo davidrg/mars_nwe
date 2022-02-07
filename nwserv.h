@@ -1,4 +1,4 @@
-/* nwserv.h 09-Dec-95 */
+/* nwserv.h 09-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -33,16 +33,18 @@ extern  int anz_net_devices;
 extern  NW_NET_DEVICE *net_devices[];
 
 /* <======== SOCKETS =========> */
-#define MY_BROADCAST_SLOT  0   /* Server Broadcast OUT */
-#define WDOG_SLOT          1   /* Watchdog send + recv */
-
-#define SAP_SLOT           2
-#define RIP_SLOT           3
-#define ROUTE_SLOT         4
-#define DIAG_SLOT          5
 #if 0
-#define ECHO_SLOT          6
-#define ERR_SLOT           7
+#define MY_BROADCAST_SLOT  0     /* Server Broadcast OUT */
+#endif
+
+#define WDOG_SLOT          0      /* Watchdog send + recv */
+#define SAP_SLOT           1
+#define RIP_SLOT           (SAP_SLOT   +1)
+#define ROUTE_SLOT         (RIP_SLOT   +1)
+#define DIAG_SLOT          (ROUTE_SLOT +1)
+#if 0
+#define ECHO_SLOT          (DIAG_SLOT  +1)
+#define ERR_SLOT           (ECHO_SLOT  +1)
 #endif
 
 extern  int     sockfd[];

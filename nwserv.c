@@ -1,4 +1,4 @@
-/* nwserv.c 20-Dec-95 */
+/* nwserv.c 09-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -27,8 +27,13 @@ char       my_nwname[50];        /* Name of this server       */
 int            anz_net_devices=0;
 NW_NET_DEVICE *net_devices[MAX_NET_DEVICES];
 
-uint16  ipx_sock_nummern[]={ 0,                 /*  auto sock */
+uint16  ipx_sock_nummern[]={
+#ifdef MY_BROADCAST_SLOT
                              0,                 /*  auto sock */
+#endif
+#ifdef WDOG_SLOT
+                             0,                 /*  auto sock */
+#endif
 			     SOCK_SAP,
 			     SOCK_RIP,
 	                     SOCK_ROUTE,
@@ -578,8 +583,12 @@ static void handle_event(int fd, uint16 socknr, int slot)
        IPXCMPNET (source_adr.net,  my_server_adr.net)) {
 
     int source_sock = (int) GET_BE16(source_adr.sock);
+
+#if 0
     if (  source_sock  == sock_nummern[MY_BROADCAST_SLOT]
-       || source_sock  == sock_nummern[WDOG_SLOT]
+#endif
+
+    if  ( source_sock  == sock_nummern[WDOG_SLOT]
        || source_sock  == SOCK_SAP
        || source_sock  == SOCK_RIP) {
       XDPRINTF((2,0,"OWN Packet from sock:0x%04x, ignored", source_sock));
@@ -639,8 +648,8 @@ static void get_ini(int full)
       char inhalt4[500];
       char dummy;
       int  anz;
-      if ((anz=sscanf((char*)buff, "%s %s %s", inhalt, inhalt2,
-                                              inhalt3, inhalt4)) >  0) {
+      if ((anz=sscanf((char*)buff, "%s %s %s %s", inhalt, inhalt2,
+                                                inhalt3, inhalt4)) >  0) {
          switch (what) {
            case 2 : if (full) {
                        strncpy(my_nwname, inhalt, 48);

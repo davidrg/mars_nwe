@@ -44,5 +44,11 @@ Erste 'oeffentliche' Version
 - Noch einen Wildcard Fehler korrigiert. (James MacLean)
 - Debug Routine und Levels veraendert.
 - Packet Groesse > 546 Byte erlaubt.
-
-
+- MAX_NW_ROUTES ist nun in config.h.
+- nwroute.c build_rip_buff if condition richtig geklammert.
+- Code mittels cc -Wall etwas gesaeubert.
+- RIP Broadcast's werden nun ueber einen temporaeren socket
+  geschrieben.
+- direkte Responses von ncpserv werden nun ueber einen
+  temporaeren socket und nicht mehr ueber den NCP-Socket
+  geschrieben.

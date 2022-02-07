@@ -1,4 +1,4 @@
-/* net.h 02-Jan-96 */
+/* net.h 08-Jan-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -34,6 +34,7 @@
 #include "unistd.h"
 #include <sys/stat.h>
 #include <time.h>
+#include <sys/wait.h>
 
 #ifndef LINUX
 #  include "stropts.h"
@@ -105,6 +106,10 @@
 
 #ifndef IPX_DATA_GR_546
 # define IPX_DATA_GR_546 1
+#endif
+
+#ifndef MAX_NW_ROUTES
+# define MAX_NW_ROUTES 50
 #endif
 
 #if IPX_DATA_GR_546
@@ -349,15 +354,6 @@ typedef struct {
   uint8   bannner_header_file_name[14];  /* all zero      */
   uint8   file_path_name[80];     	 /* all zero 	  */
 } QUEUE_PRINT_AREA;
-
-
-typedef struct {
-  uint8  volume;
-  uint8  base[4];     /* Base or Handle */
-  uint8  flag;        /* 0=base, 1=handle, 0xff=not path nor handle */
-  uint8	 components;  /* nmbrs of pathes, components */
-  uint8  pathes[1];   /* form len+name  */
-} NW_HPATH;
 
 
 extern int nw_init_connect(void);

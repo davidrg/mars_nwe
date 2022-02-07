@@ -1,4 +1,4 @@
-/* tools.c  24-Dec-95 */
+/* tools.c  07-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,6 +42,13 @@ char *xmalloc(uint size)
     fprintf(logfile, "not enough core, need %d Bytes\n", size);
     exit(1);
   }
+  return(p);
+}
+
+char *xcmalloc(uint size)
+{
+  char *p = xmalloc(size);
+  if (size) memset(p, 0, size);
   return(p);
 }
 
@@ -301,7 +308,7 @@ int get_fs_usage(char *path, struct fs_usage *fsp)
   struct statfs fsd;
   if (statfs (path, &fsd) < 0) return (-1);
   XDPRINTF((3, 0,
-    "blocks=%d, bfree=%d, bavail=%d, files=%d, ffree=%d, bsize=%d\n",
+    "blocks=%d, bfree=%d, bavail=%d, files=%d, ffree=%d, bsize=%d",
     fsd.f_blocks, fsd.f_bfree, fsd.f_bavail,
     fsd.f_files, fsd.f_ffree,  fsd.f_bsize));
 #define convert_blocks(b) adjust_blocks ((b), fsd.f_bsize, 512)

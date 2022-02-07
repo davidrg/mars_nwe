@@ -1,4 +1,4 @@
-/* emutli.c 24-Dec-95 */
+/* emutli.c 08-Jan-96 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -307,7 +307,6 @@ void ipx_route_add(uint32  dest_net,
 void ipx_route_del(uint32 net)
 {
   struct rtentry  rd;
-  int    result;
   int    sock;
   /* Router */
   struct sockaddr_ipx	*sr = (struct sockaddr_ipx *)&rd.rt_gateway;
@@ -315,7 +314,6 @@ void ipx_route_del(uint32 net)
   struct sockaddr_ipx	*st = (struct sockaddr_ipx *)&rd.rt_dst;
   rd.rt_flags = RTF_GATEWAY;
   st->sipx_network = htonl(net);
-
   if ( (sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX)) < 0){
     errorp(0, "EMUTLI:ipx_route_del", NULL);
     return;

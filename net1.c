@@ -1,4 +1,4 @@
-/* net1.c,  24-Dec-95 */
+/* net1.c,  09-Jan-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -138,13 +138,14 @@ void ipx_addr_to_adr(char *s, ipxAddr_t *p)
 }
 
 
-int send_ipx_data(int fd, int pack_typ,
+int send_ipx_data(int fdx, int pack_typ,
 	              int data_len, char *data,
 	              ipxAddr_t *to_addr, char *comment)
 {
+  int                fd=fdx;
+  int                result=0;
   struct             t_unitdata ud;
   uint8              ipx_pack_typ = (uint8) pack_typ;
-
   ud.opt.len       = sizeof(ipx_pack_typ);
   ud.opt.maxlen    = sizeof(ipx_pack_typ);
   ud.opt.buf       = (char*)&ipx_pack_typ;
@@ -156,16 +157,32 @@ int send_ipx_data(int fd, int pack_typ,
   ud.addr.buf      = (char*)to_addr;
   if (comment != NULL) XDPRINTF((2,0,"%s TO: ", comment));
   if (nw_debug > 1) print_ipx_addr(to_addr);
-  if (t_sndudata(fd, &ud) < 0){
-    if (nw_debug > 1) t_error("t_sndudata !OK");
-    return(-1);
+  if (fd < 0) {
+    struct t_bind   bind;
+    ipxAddr_t       addr;
+    fd=t_open("/dev/ipx", O_RDWR, NULL);
+    if (fd < 0) {
+      t_error("t_open !Ok");
+      return(-1);
+    }
+    memset(&addr,0, sizeof(ipxAddr_t));
+    bind.addr.len    = sizeof(ipxAddr_t);
+    bind.addr.maxlen = sizeof(ipxAddr_t);
+    bind.addr.buf    = (char*)&addr;
+    bind.qlen        = 0; /* ever */
+    if (t_bind(fd, &bind, &bind) < 0){
+      t_error("t_bind in send_ipx_data");
+      t_close(fd);
+      return(-1);
+    }
   }
-  return(0);
+  if ((result=t_sndudata(fd, &ud)) < 0){
+    if (nw_debug > 1) t_error("t_sndudata !OK");
+  }
+  if (fdx < 0 && fd > -1) {
+    t_unbind(fd);
+    t_close(fd);
+  }
+  return(result);
 }
-
-
-
-
-
-
 

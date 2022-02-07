@@ -1,4 +1,4 @@
-/* namspace.c 08-Jan-96 : NameSpace Services, mars_nwe */
+/* namspace.h 08-Jan-96 : NameSpace Services, mars_nwe */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -17,11 +17,4 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-#include "net.h"
-#include <dirent.h>
-#include <utime.h>
-#include "connect.h"
-#include "namspace.h"
-
-#if WITH_NAME_SPACE_CALLS
-#endif
+#define WITH_NAME_SPACE_CALLS  0

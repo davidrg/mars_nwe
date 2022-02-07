@@ -1,4 +1,4 @@
-# makefile.unx 25-Dec-95
+# makefile.unx 09-Jan-96
 VPATH=..
 O=.o
 C=.c
@@ -6,7 +6,7 @@ C=.c
 DEBUG=-DDB
 V_H=0
 V_L=96
-P_L=2
+P_L=4
 #define D_P_L 1
 DISTRIB=mars_nwe
 #if D_P_L
@@ -87,13 +87,14 @@ M_PATHNAME_PROGS="."
 
 OBJ1= $(EMUTLIOBJ) net1$(O) tools$(O)
 OBJ2= $(OBJ1) nwroute$(O)
-#nwdbm$(O)
 OBJ3= $(OBJ1) connect$(O) namspace$(O)
 OBJ4= $(OBJ1) nwdbm$(O) nwcrypt$(O)
 OBJ5= $(OBJ1)
 
 OBJS= net1$(O) tools$(O) connect$(O) nwdbm$(O) \
       $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O)
+
+HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O)
 
 $(PROG1):  $(PROG1)$(O) $(OBJ1)
 	   $(CC) -o ../$(PROG1) $(PROG1)$(O) $(OBJ1) $(NSLLIB)
@@ -112,7 +113,10 @@ $(PROG4):  $(PROG4)$(O) $(OBJ4)
 $(PROG5):  $(PROG5)$(O) $(OBJ5)
 	   $(CC) -o ../$(PROG5) $(PROG5)$(O) $(OBJ5) $(NSLLIB)
 
-$(OBJS):   net.h config.h
+$(PROG3)$(O):  namspace.h connect.h
+connect$(O):   namspace.h connect.h
+namspace$(O):  namspace.h connect.h
+$(OBJS):       net.h config.h
 
 $(C)$(O):
 	$(CC) -c $(CFLAGS) $(HOSTCFLAGS) $(DEBUG)\
@@ -173,6 +177,8 @@ n_make_dir: n_clean1
  $(DISTRIB).lsm \
  $(DISTRIB)/. \
 ; rm -f  $(DISTRIB)/config.h \
+; rm -f  $(DISTRIB)/namspace.? \
+; cp old/namspace.?  $(DISTRIB)/. \
 ; ln -f  \
  examples/$(STERN) \
  $(DISTRIB)/examples/. \

@@ -1,4 +1,4 @@
-/* nwconn.c 02-Jan-96       */
+/* nwconn.c 09-Jan-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
@@ -19,6 +19,9 @@
  */
 
 #include "net.h"
+#include <dirent.h>
+#include "connect.h"
+#include "namspace.h"
 
 static int          father_pid    = -1;
 static ipxAddr_t    from_addr;
@@ -306,21 +309,25 @@ static void handle_ncp_serv()
 	               } else if (*p == 0xa){ /* legt Verzeichnis an */
 	           /******** Create Dir *********************/
 	                 int dir_handle  = (int) *(p+1);
+#if 0
 	                 int rightmask   = (int) *(p+2);
+#endif
 	                 int pathlen     = (int) *(p+3);
 	                 uint8 *path     =  p+4;
 	                 int code = nw_mk_rd_dir(dir_handle, path, pathlen, 1);
 	                 if (code) completition = (uint8) -code;
-	               } else  if (*p == 0xb){ /* l”scht Verzeichnis */
+	               } else  if (*p == 0xb){ /* deletes dir */
 	           /******** Delete DIR *********************/
 	                 int dir_handle  = (int) *(p+1);
+#if 0
 	                 int reserved    = (int) *(p+2); /* Res. by NOVELL */
+#endif
 	                 int pathlen     = (int) *(p+3);
 	                 uint8 *path     =  p+4;
 	                 int code = nw_mk_rd_dir(dir_handle, path, pathlen, 0);
 	                 if (code) completition = (uint8) -code;
 	               } else  if (*p == 0xd){  /* Add Trustees to DIR  */
-	           /******** GetDirektoryPATH ***************/
+	           /******** AddTrustesstoDir ***************/
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
 	                   uint8   div[3];         /* 0x0, dlen,  typ */
@@ -1195,11 +1202,13 @@ static void handle_ncp_serv()
 	             }
 	             break;
 
-#if 0
+#if WITH_NAME_SPACE_CALLS
 	 case 0x57 : /* some new namespace calls */
-                     int result = handle_func_0x57(requestdata, responsedata);
-                     if (result > -1) data_len = result;
-                     else completition=(uint8)-result;
+                     {
+                       int result = handle_func_0x57(requestdata, responsedata);
+                       if (result > -1) data_len = result;
+                       else completition=(uint8)-result;
+                     }
                      break;
 #endif
 
@@ -1288,7 +1297,6 @@ static void set_sig(void)
 
 int main(int argc, char **argv)
 {
-  int completition = 0;
   if (argc != 4) {
     fprintf(stderr, "usage nwconn PID FROM_ADDR Connection\n");
     exit(1);
@@ -1299,7 +1307,8 @@ int main(int argc, char **argv)
   init_tools(NWCONN);
 
   XDPRINTF((1, 0, "FATHER PID=%d, ADDR=%s CON:%s", father_pid, *(argv+2), *(argv+3)));
-            adr_to_ipx_addr(&from_addr, *(argv+2));
+
+  adr_to_ipx_addr(&from_addr, *(argv+2));
 
   if (nw_init_connect()) exit(1);
 
