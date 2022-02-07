@@ -187,8 +187,8 @@ static NW_NET_DEVICE *find_device_by_net(uint32 net)
 int activate_slow_net(uint32 net)
 {
   NW_NET_DEVICE *nd=find_device_by_net(net);
-  if (nd && nd->ticks > 6) { /* if 'slow net' */ 
-    if (acttime_stamp > nd->updated_time + 600) { 
+  if (nd && nd->ticks > 6) { /* if 'slow net' */
+    if (acttime_stamp > nd->updated_time + 600) {
       nd->needs_update=NEEDS_UPDATE_ALL;
       nd->updated_time=acttime_stamp;
       return(1);
@@ -415,7 +415,7 @@ static void send_rip_broadcast(int mode)
   while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
     if (mode == 4 && !(nd->needs_update&NEEDS_UPDATE_RIP)) continue;
-    if (nd->is_up && (nd->ticks < 7 
+    if (nd->is_up && (nd->ticks < 7
       || mode || (nd->needs_update&NEEDS_UPDATE_RIP) )) {
       /* isdn devices should not get RIP broadcasts everytime */
       nd->needs_update&=~NEEDS_UPDATE_RIP;
@@ -431,8 +431,8 @@ void rip_for_net(uint32 net)
   int k=-1;
   while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
-    if (nd->is_up && (nd->ticks < 7 
-      || (nd->needs_update&NEEDS_UPDATE_RIP_NET) ) ) { 
+    if (nd->is_up && (nd->ticks < 7
+      || (nd->needs_update&NEEDS_UPDATE_RIP_NET) ) ) {
       /* isdn devices should not get RIP broadcasts everytime */
       nd->needs_update&=~NEEDS_UPDATE_RIP_NET;
       init_rip_buff(nd->net, 10);
@@ -582,7 +582,7 @@ static void send_sap_broadcast(int mode)
   while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
     if (mode == 4 && !(nd->needs_update&NEEDS_UPDATE_SAP)) continue;
-    if (nd->is_up && (nd->ticks < 7 || 
+    if (nd->is_up && (nd->ticks < 7 ||
       (nd->needs_update&NEEDS_UPDATE_SAP) || mode)) {
     /* isdn devices should not get SAP broadcasts everytime */
        nd->needs_update &= ~NEEDS_UPDATE_SAP;
@@ -611,8 +611,10 @@ static FILE *open_route_info_fn(int force, FILE *ff, int section)
       if (section == 1) {
         if (NULL != f)
           tacs = print_route_tac-1;
-        else
+        else {
           print_route_tac=0;
+          errorp(0, "route info", "Openerror of `%s`", fn);
+        }
       } else {
         if (NULL != f)
           fclose(ff);
@@ -744,22 +746,22 @@ static void sap_find_nearest_server(uint32 net)
   send_ipx_data(sockfd[SAP_SLOT], 17, sizeof(SQP),
                (char*)&sqp, &wild, "SERVER Query");
 }
-	        
+
 void get_servers(void)
 {
   int k=-1;
   while (++k < count_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
-    if (nd->is_up && (nd->ticks < 7 
+    if (nd->is_up && (nd->ticks < 7
       || nd->needs_update&NEEDS_UPDATE_SAP_QUERY)){
       nd->needs_update &= ~NEEDS_UPDATE_SAP_QUERY;
-      sap_find_nearest_server(nd->net); 
+      sap_find_nearest_server(nd->net);
     }
   }
   if (!count_net_devices) sap_find_nearest_server(internal_net);
 }
 
-		
+
 int dont_send_wdog(ipxAddr_t *addr)
 /* returns != 0 if ticks are to high for wdogs */
 {
@@ -802,7 +804,7 @@ int test_ins_device_net(uint32 rnet)
         foundfree = k;
     } else if (nd->net == rnet) return(0);
   }
-   
+
   if ((rnetframe=get_interface_frame_name(rnetdevname, rnet)) < 0)
     return(0);
 

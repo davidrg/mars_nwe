@@ -1,4 +1,4 @@
-/* config.h: 02-Jun-97 */
+/* config.h: 10-Nov-97 */
 /* some of this config is needed by make, others by cc                     */
 
 #define DO_DEBUG      1              /* compile in debug code              */
@@ -13,7 +13,7 @@
 #else
 # define FILENAME_NW_INI  "/etc/nwserv.conf"
                                      /* full name of ini (conf) file       */
-# define PATHNAME_PROGS   "/sbin"    /* where to find the executables      */
+# define PATHNAME_PROGS   "/usr/sbin" /* where to find the executables     */
 # define PATHNAME_BINDERY "/etc"     /* directory for bindery-files        */
 #endif
 
@@ -29,7 +29,7 @@
                                      /* serial number (4 byte)             */
 #define NETWORK_APPL_NMBR   0x2222   /* application number (2 byte)        */
 
-#define MAX_CONNECTIONS        5     /* max. number of simultaneous        */
+#define MAX_CONNECTIONS        50    /* max. number of simultaneous        */
                                      /* connections handled by mars_nwe    */
  /* !! NOTE !! */
  /* If set > 255 some NCP calls will probably not work, try it with caution */

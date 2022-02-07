@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "08-Oct-97"
+#define REVISION_DATE "01-Nov-97"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -262,15 +262,15 @@ static void handle_fxx(int gelen, int func)
   if (0x15 == func) {
     switch (ufunc) {  /* Messages */
       case 0x0 :  {   /* Send Broadcast Message (old) */
-        int anz_conns   = (int)*(rdata);        /* Number of connections */
+        int count_conns   = (int)*(rdata);        /* Number of connections */
         uint8  *conns   = rdata+1;              /* connectionslist */
-        int msglen      = *(conns+anz_conns);
-        uint8 *msg      = conns+anz_conns+1;
+        int msglen      = *(conns+count_conns);
+        uint8 *msg      = conns+count_conns+1;
         uint8 *p        = responsedata;
         int   one_found = 0;
         int   k         = -1;
-        *p++            = (uint8) anz_conns;
-        while (++k < anz_conns) {
+        *p++            = (uint8) count_conns;
+        while (++k < count_conns) {
           int connr   =  (int) (*conns++);
           int result  =  0xff; /* target not ok */
           CONNECTION *cn;
@@ -285,7 +285,7 @@ static void handle_fxx(int gelen, int func)
           }
           *p++ = (uint8)result;
         }
-        if (one_found) data_len = anz_conns+1;
+        if (one_found) data_len = count_conns+1;
         else completition=0xff;
       }
       break;
@@ -522,7 +522,7 @@ static void handle_fxx(int gelen, int func)
                       completition = (uint8) -result;
                   } break;
 
-     case 0x15 :  { /* Get Object Connection List */
+     case 0x15 :  { /* Get Object Connection List (old) */
                     uint8  *p           =  rdata;
                     int    result;
                     NETOBJ obj;
@@ -533,17 +533,17 @@ static void handle_fxx(int gelen, int func)
                     result = find_obj_id(&obj);
                     if (!result){
                       int k=-1;
-                      int anz  = 0;
+                      int count  = 0;
                       p = responsedata+1;
-                      while (++k < max_connections && anz < 255) {
+                      while (++k < max_connections && count < 255) {
                         CONNECTION *cn= &connections[k];
                         if (cn->active && cn->object_id == obj.id) {
                           *p++=(uint8)k+1;
-                          anz++;
+                          count++;
                         }
                       } /* while */
-                      *responsedata = anz;
-                      data_len = 1 + anz;
+                      *responsedata = count;
+                      data_len = 1 + count;
                     } else completition=(uint8)-result;
                   }
                   break;
@@ -630,6 +630,37 @@ static void handle_fxx(int gelen, int func)
                      */
                   }
                   break;
+
+
+     case 0x1B :  { /* Get Object Connection List */
+                    uint8  *p           =  rdata;
+                    int    result;
+                    NETOBJ obj;
+                    int    searchnr     =  (int) GET_BE32(p);
+                    p+=4;
+                    obj.type            =  GET_BE16(p);
+                    p+=2;
+                    strmaxcpy((char*)obj.name,  (char*)(p+1), (int) *(p));
+                    upstr(obj.name);
+                    result = find_obj_id(&obj);
+                    if (!result){
+                      int k    = max(-1, searchnr-1);
+                      int count  = 0;
+                      p = responsedata+1;
+                      while (++k < max_connections && count < 255) {
+                        CONNECTION *cn= &connections[k];
+                        if (cn->active && cn->object_id == obj.id) {
+                          U16_TO_16(k+1, p);  /* LO-HI !! */
+                          p+=2;
+                          count++;
+                        }
+                      } /* while */
+                      *responsedata = count;
+                      data_len = 1 + count*2;
+                    } else completition=(uint8)-result;
+                  }
+                  break;
+
 
      case 0x32 :  {  /* Create Bindery Object */
                     NETOBJ obj;
@@ -1435,13 +1466,13 @@ static void handle_fxx(int gelen, int func)
      case 0xd1 :  /* Send Console Broadcast (old) */
                   {
                     uint8      *p = rdata;
-                    int anz_conns = (int) *p++;
+                    int count_conns = (int) *p++;
                     uint8    *co  = p;
-                    int msglen    = (int) *(p+anz_conns);
-                    char  *msg    = (char*) p+anz_conns+1;
+                    int msglen    = (int) *(p+count_conns);
+                    char  *msg    = (char*) p+count_conns+1;
                     int k = -1;
-                    if (anz_conns) {
-                      while (++k < anz_conns) {
+                    if (count_conns) {
+                      while (++k < count_conns) {
                         int conn= (int) *co++;
                         if (conn == act_connection) {
                           strmaxcpy(act_c->message, msg, min(58, msglen));
@@ -1501,7 +1532,7 @@ static void handle_fxx(int gelen, int func)
   send_ipx_data(ipx_out_fd, 17, data_len, (char*)ncpresponse,
                  &my_addr, NULL);
 
-  XDPRINTF((2, 0, "func=0x%x ufunc=0x%x compl:0x%x, written anz = %d",
+  XDPRINTF((2, 0, "func=0x%x ufunc=0x%x compl:0x%x, written count = %d",
              (int)func, (int)ufunc, (int) completition, data_len));
 }
 

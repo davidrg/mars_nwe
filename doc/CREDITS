@@ -70,8 +70,13 @@ Jiri A. Randus <Jiri.Randus@vslib.cz>
 Mark Robson <mark@mythras.demon.co.uk>
         fixed bindery security hole and added bindery options
 
+Mr. Charlie Root (alexey) <root@cs.imi.udmurtia.su>
+        gave hint for standard user restrict change password.
+
 Andrew Sapozhnikov <sapa@hq.icb.chel.su>
-        fixed findfirst/findnext bug
+        fixed findfirst/findnext bug,
+        fixed directory access bug,
+        added extend "Volume is home" feature.
 
 Gregory Steuck <greg@nsu.ru>
         testings and errorreports

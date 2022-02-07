@@ -1,4 +1,4 @@
-/* nwvolume.h  02-Aug-97 */
+/* nwvolume.h  01-Nov-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -35,6 +35,10 @@ typedef struct {
   uint8  *sysname;       /* VOL_NAME                          */
   uint8  *unixname;      /* UNIX-DIR  with ending '/'         */
   int    unixnamlen;     /* len of unixname		      */
+                         /* next 2 fields added by Andrew Sapozhnikov */
+                         /* for Extend "Volume is home" feature */
+  uint8  *homeaddon;     /* tail for $HOME-relative volumes   */
+  int    addonlen;       /* len of tail part of unixname      */
   DEV_NAMESPACE_MAP *dev_namespace_maps[MAX_DEV_NAMESPACE_MAPS];
   int    max_maps_count; /* may be less than MAX_DEV_NAMESPACE_MAPS */
   int    maps_count;     /* count of dev_namespace_maps       */
@@ -78,7 +82,7 @@ extern void nw_init_volumes(FILE *f);
 extern void nw_setup_home_vol(int len, uint8 *fn);
 extern int  nw_get_volume_number(uint8 *volname, int namelen);
 extern int  nw_get_volume_name(int volnr, uint8 *volname);
-extern int  nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu);
+extern int  nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu, int limit);
 extern int  get_volume_options(int volnr);
 extern int  get_volume_inode(int volnr, struct stat *stb);
 extern int  nw_set_vol_restrictions(uint8 volnr, int uid, uint32 quota);

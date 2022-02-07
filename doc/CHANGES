@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 08-Aug-97
+Aenderungen in mars_nwe bis zum : 03-Nov-97
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -363,15 +363,29 @@ Erste 'oeffentliche' Version
 - Nested FINDFIRST/FINDNEXT bug korrigiert durch Andrew Sapozhnikov.
 - getpwnam/getspnam problem gefixed durch Leslie.
 - Neues queue handling funktioniert nun auch mit netx.
-  Die Queue-job-id wird nun bei den 'neuen' calls, obwohl eigentlich 
-  4 Byte gross, immer als 2 Byte Zahl behandelt. 
+  Die Queue-job-id wird nun bei den 'neuen' calls, obwohl eigentlich
+  4 Byte gross, immer als 2 Byte Zahl behandelt.
 - Resultcode in close_queue_job2() (nwqconn.c) korrigiert. Es wurde
   immer Fehlercode zurueckgeliefert wodurch der capture aufgehoben
   wurde.
 - creat directory liefert nun bei EEXIST 0xff zurueck.
-- pserver Unterstuetzung erweitert. 
+- pserver Unterstuetzung erweitert.
 - creat queue, destroy queue Calls eingebaut.
 - Routine nw_add_obj_to_set traegt nun keine doppelten Eintraege in das Set
   ein.
 <----- ^^^^^^^^^^ pl2 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Limit bei Anzeige freier Plattenplatz eingebaut. ( section 8 )
+- Open Fehleranzeige fuer nw.routes eingebaut.
+- neue Funktion 0x17,1B  ( Get Object Connection List (new) )
+- bei Schalter -k warten auf beenden eingebaut.
+  neuer Schalter -q (quick ohne warten)
+- home volume feature erweitert von Andrew Sapozhnikov.
+- Bei Verzeichnissen wird nicht mehr das SHARED flag zuruegesetzt. 
+  (Andrew Sapozhnikov)
+- Es kann nun mittels SYSCON verhindert werden, dass User sein Passwort
+  aendern kann. ( Mr. Charlie Root (alexey) )
+- PATHNAME_PROGS in examples/config.h auf /usr/sbin gesetzt.
+- MAX_CONNECTIONS (default) auf 50 gesetzt.
+- Logfilepfade von /tmp auf /var/log/. geaendert.
+<----- ^^^^^^^^^^ pl3 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

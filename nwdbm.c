@@ -1,4 +1,4 @@
-/* nwdbm.c  08-Oct-97  data base for mars_nwe */
+/* nwdbm.c  01-Nov-97  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1235,6 +1235,7 @@ uint32 nw_new_obj_prop(uint32 wanted_id,
 /* some property names */
 /*STANDARD NOVELL properties */
 static uint8 *pn_password=(uint8*)      "PASSWORD";
+static uint8 *pn_login_control=(uint8*)"LOGIN_CONTROL"; 
 
 /* OWN properties */
 static uint8 *pn_unix_user=(uint8*)     "UNIX_USER";
@@ -1484,12 +1485,11 @@ static int nw_test_time_access(uint32 obj_id)
   struct tm *tm;
   uint8  more_segments;
   uint8  property_flags;
-  char   *propname="LOGIN_CONTROL";
   uint8  buff[200];
   int    segment = 1;
   int    half_hours;
   int    result=nw_get_prop_val_by_obj_id(obj_id, segment,
-				   propname, strlen(propname),
+				   pn_login_control, strlen(pn_login_control),
 				   buff, &more_segments, &property_flags);
   if (result < 0)
     return(0); /* No time limits available */
@@ -1742,6 +1742,16 @@ extern int test_allow_password_change(uint32 id)
                    buff, &more_segments, &property_flags);
   if (result > -1 && (GET_BE32(buff) & 1))
     return(-0xff);
+  
+  /* hint from <root@cs.imi.udmurtia.su> (Mr. Charlie Root) */
+  result=nw_get_prop_val_by_obj_id(id, segment,
+                     pn_login_control, strlen(pn_login_control),
+                     buff, &more_segments, &property_flags);
+
+  /* can user change password ? */
+  if (result > -1 && (buff[62] & 1) ) /* Restriction Mask */
+    return(-0xff);
+  
   return(0);
 }
 

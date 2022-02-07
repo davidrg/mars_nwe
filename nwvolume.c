@@ -1,4 +1,4 @@
-/* nwvolume.c  02-Aug-97 */
+/* nwvolume.c  01-Nov-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -96,9 +96,21 @@ void nw_init_volumes(FILE *f)
         loaded_namespaces |= VOL_NAMESPACE_DOS;
         up_fn(sysname);
         new_str(vol->sysname, sysname);
-        if (1 == (len = strlen((char*)unixname)) && unixname[0] == '~') {
+        len = strlen((char*)unixname);
+        if (unixname[0] == '~' && (unixname[1]=='\0' || unixname[1]=='/')) {
           vol->options  |= VOL_OPTION_IS_HOME;
           vol->options  |= VOL_OPTION_REMOUNT;
+          if (len > 2) { /* tail is present */
+            if (unixname[len-1] != '/') {
+              unixname[len++] = '/';
+              unixname[len]   = '\0';
+            }
+            new_str(vol->homeaddon, unixname+2); /* skip ~/ */
+            vol->addonlen = len-2;
+          } else {
+            vol->homeaddon=NULL;
+            vol->addonlen = 0;
+          }
           unixname[0] = '\0';
           len = 0;
         } else if (unixname[len-1] != '/') {
@@ -169,6 +181,8 @@ void nw_setup_home_vol(int len, uint8 *fn)
 {
   int k=used_nw_volumes;
   uint8 unixname[258];
+  uint8 fullname[258];
+  
   unixname[0] = '\0';
   xfree(home_dir);
   home_dir_len=0;
@@ -182,14 +196,31 @@ void nw_setup_home_vol(int len, uint8 *fn)
     home_dir_len=len;
   }
   while (k--) { /* now set all HOME volumes */
+    uint8 *fname;
+    int	  flen;
+    
     if (nw_volumes[k].options & VOL_OPTION_IS_HOME)  {
       int i = -1;
       while (++i < nw_volumes[k].maps_count)
         xfree(nw_volumes[k].dev_namespace_maps[i]);
       nw_volumes[k].maps_count = 0;
-      nw_volumes[k].unixnamlen = len;
-      new_str(nw_volumes[k].unixname, unixname);
-      if (len>0)
+      fname = unixname;
+      flen = len;
+      if (len > 0 && nw_volumes[k].addonlen) {
+        if (len + nw_volumes[k].addonlen > 256) {
+          flen = 0;
+          fname = "";
+        } else {
+          strcpy(fullname, unixname);
+          /* concatenation $HOME/ and add/on/ */
+          strcpy(fullname + len, nw_volumes[k].homeaddon);
+          fname = fullname;
+          flen = len + nw_volumes[k].addonlen;
+        }
+      }
+      nw_volumes[k].unixnamlen =  flen;
+      new_str(nw_volumes[k].unixname, fname);
+      if (flen>0)
         volume_to_namespace_map(k, &(nw_volumes[k]));
     }
   }
@@ -315,7 +346,8 @@ static long adjust_blocks (long blocks, int fromsize, int tosize)
     return (blocks + (blocks < 0 ? -1 : 1)) / (tosize / fromsize);
 }
 
-static int get_fs_usage(char *path, struct fs_usage *fsp)
+static int get_fs_usage(char *path, struct fs_usage *fsp, int limit)
+/* limit: 0 = no limit, 1 = limits to 2 Gb */
 {
   struct statfs fsd;
   if (statfs (path, &fsd) < 0) return (-1);
@@ -347,16 +379,23 @@ fsd.f_bsize  = 1024;
   fsp->fsu_files  = fsd.f_files;
   fsp->fsu_ffree  = fsd.f_ffree;
 
+  if (limit) {
+    if (fsp->fsu_blocks > 4000000)
+       fsp->fsu_blocks = 4000000;
+    if (fsp->fsu_bfree > 4000000)
+       fsp->fsu_bfree = 4000000;
+  }
+
   return(0);
 }
 
-int nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu)
+int nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu, int limit)
 /* returns 0 if OK, else errocode < 0 */
 {
   int volnr = nw_get_volume_number(volname, strlen((char*)volname));
   if (volnr > -1) {
     NW_VOL *v=&(nw_volumes[volnr]);
-    if (0 == (volnr=get_fs_usage((char*)v->unixname, fsu))) {
+    if (0 == (volnr=get_fs_usage((char*)v->unixname, fsu, limit))) {
       if (v->options & VOL_OPTION_READONLY) {
         fsu->fsu_bfree  = 0;
         fsu->fsu_bavail = 0;

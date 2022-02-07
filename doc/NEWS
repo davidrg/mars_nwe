@@ -1,3 +1,8 @@
+------10-Nov-97--- 0.99.pl3 ---------
+- some defaults in config.h and nw.ini changed.
+  default programpath is now /usr/sbin/ !!
+  nw.log, nw.routes -> /var/log
+- nwserv -k now waits for stop of main process.
 ------16-Aug-97--- 0.99.pl2 ---------
 - new flag in section '8' for using ncpfs as mars_nwe client.
 ------16-Aug-97--- 0.99.pl1 ---------

@@ -1,4 +1,4 @@
-/* connect.c  29-Jul-97 */
+/* connect.c  01-Nov-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1090,8 +1090,9 @@ int un_nw_attrib(struct stat *stb, int attrib, int mode)
   /* 0x20   Archive Flag */
   /* 0x80   Sharable     */  /* TLINK (TCC 2.0) don't like it ???? */
 
+  int is_dir=S_ISDIR(stb->st_mode);
+  
   if (!mode) {
-    int is_dir=S_ISDIR(stb->st_mode);
     /* UNIX access -> NW access */
     if (!is_dir) {
       attrib = FILE_ATTR_A;
@@ -1131,10 +1132,13 @@ int un_nw_attrib(struct stat *stb, int attrib, int mode)
     else
       stb->st_mode |= mode;
 
-    if (attrib & FILE_ATTR_SHARE)   /* Shared */
-      stb->st_mode |= S_IXGRP;
-    else
-      stb->st_mode &= ~S_IXGRP;
+    if (!is_dir) {
+      if (attrib & FILE_ATTR_SHARE)   /* Shared */
+        stb->st_mode |= S_IXGRP;
+      else
+        stb->st_mode &= ~S_IXGRP;
+    }
+    
     return(stb->st_mode);
   }
 }
@@ -1320,7 +1324,8 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
     if (mode) {
       XDPRINTF((5,0,"MKDIR dirname:%s:", unname));
       if (!mkdir(unname, 0777)) {
-        chmod(unname, act_umode_dir);
+        if (act_umode_dir)
+          chmod(unname, act_umode_dir);
         return(0);
       }
       if (errno == EEXIST)

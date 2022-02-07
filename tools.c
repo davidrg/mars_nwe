@@ -440,7 +440,7 @@ void init_tools(int module, int options)
       int sig;
       if (options == 1) {  /* kill -HUP prog */
         sig = SIGHUP;
-      } else if (options == 2) { /* kill prog */
+      } else if (options == 2|| options == 4) { /* kill prog */
         sig = SIGTERM;
       } else if (options == 3) { /* update tables */
         sig = SIGUSR1;
@@ -451,13 +451,28 @@ void init_tools(int module, int options)
       }
       if (kill_pid > 1) {
         kill(kill_pid, sig);
-        if (sig == SIGUSR1) {  /* we try twice */
+        if (sig == SIGUSR1 || sig == SIGTERM) {  /* we try twice */
           sleep(2);
           kill(kill_pid, sig);
         }
+        if (sig == SIGTERM && options == 2 ) { /* we want to wait for stop */
+          int k = 120; /* max. 4 min */
+          fprintf(stdout, "\nwaiting for stop of %s ...\n", get_modstr());
+          while (k--) {
+            if (fn_exist(pidfn)) {
+              sleep(2);
+              if (!(k % 5)) kill(kill_pid, sig);
+            } else {
+              fprintf(stdout, "\n%s stopped\n", get_modstr());
+              exit(0);
+            }
+          }
+          fprintf(stderr, "\n%s not stopped yet!\n", get_modstr());
+          exit(1);
+        }
       }
       exit(0);
-    } else if (options == 1 || options == 2 || options == 3) {
+    } else if (options == 1 || options == 2 || options == 3 || options == 4) {
       errorp(11, "INIT", "Program not running yet" );
       exit(1);
     }

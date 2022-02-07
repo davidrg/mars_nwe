@@ -284,7 +284,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                        memset(xdata, 0, sizeof(struct XDATA));
                        if ((result = nw_get_volume_name(volume, xdata->name))>-1){
                          struct fs_usage fsp;
-                         if (!nw_get_fs_usage(xdata->name, &fsp)) {
+                         if (!nw_get_fs_usage(xdata->name, &fsp, 
+                            entry8_flags&0x40  )) {
                            int sector_scale=1;
                            while (fsp.fsu_blocks/sector_scale > 0xffff)
                                   sector_scale+=2;
@@ -542,7 +543,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            result = nw_get_volume_name(volume, xdata->name);
                            if (result > -1) {
                              struct fs_usage fsp;
-                             if (!nw_get_fs_usage(xdata->name, &fsp)) {
+                             if (!nw_get_fs_usage(xdata->name, &fsp, 
+                                  entry8_flags&0x40 )) {
                                int sector_scale=1;
                                while (fsp.fsu_blocks/sector_scale > 0xffff)
                                   sector_scale+=2;
@@ -784,7 +786,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          if (result > -1){
                            struct fs_usage fsp;
                            memset(xdata, 0, sizeof(struct XDATA));
-                           if (!nw_get_fs_usage(name, &fsp)) {
+                           if (!nw_get_fs_usage(name, &fsp, 0)) {
                              xdata->sec_per_block = 8; /* hard coded */
                              U32_TO_32(fsp.fsu_blocks/8, xdata->total_blocks);
                              U32_TO_32(fsp.fsu_bavail/8, xdata->avail_blocks);
@@ -815,7 +817,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          if (result > -1) {
                            struct fs_usage fsp;
                            memset(xdata, 0, sizeof(struct XDATA));
-                           if (!nw_get_fs_usage(name, &fsp)) {
+                           if (!nw_get_fs_usage(name, &fsp, 0)) {
                              xdata->sec_per_block = 8; /* hard coded */
                              U32_TO_32(fsp.fsu_blocks/8, xdata->total_blocks);
                              U32_TO_32(fsp.fsu_bavail/8, xdata->avail_blocks);

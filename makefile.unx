@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 30-Aug-97
+#makefile.unx 10-Nov-97
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=99
-P_L=2
+P_L=3
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -186,6 +186,10 @@ n_install_ini:
 n_install:
 	cd $(VPATH)  && $(INSTALL) -d $(M_PATHNAME_PROGS) && cd $(OBJDIR)
 	cd $(VPATH)  && $(INSTALL) $(INSTALLPROGS) $(M_PATHNAME_PROGS) && cd $(OBJDIR)
+	@-if [ -r /sbin/nwserv ] && [ -r /usr/sbin/nwserv ] ; then \
+          echo "remove old version in /sbin ?" ; \
+          (cd /sbin && rm -i nwserv nwbind ncpserv nwconn nwclient nwrouted) ; \
+        fi ; 
 	@cd $(VPATH) && (if [ -r $(M_FILENAME_NW_INI) ] ; then \
 echo ""; \
 echo "********************************************************"; \
@@ -258,7 +262,8 @@ n_diff: make_dir clean_d
 
 n_distrib: n_diff
 	-mkdir /tmp/x
-	cd $(VPATH) && (tar cvzf $(DISTRIBF).tgz $(DISTRIB) \
+	cd $(VPATH) && ./mk_lsm "$(V_H).$(V_L).pl$(P_L)" $(DISTRIBF) \
+	&& (tar cvzf $(DISTRIBF).tgz $(DISTRIB) \
 ; uue $(DISTRIBF).tgz; mv -f $(DISTRIB)-$(V_H).uue $(DISTRIBF).uue \
 ; cp -a $(DISTRIB)/doc/$(DISTRIB).lsm /tmp/yy \
 ; echo "" >> /tmp/yy \
@@ -282,6 +287,7 @@ n_distrib_bin:
 n_showconf:
 	echo "#" $(M_FILENAME_NW_INI)
 	grep "^[ \t]*[0-9]" $(M_FILENAME_NW_INI)
+
 
 
 

@@ -897,7 +897,8 @@ static void get_ini(int full)
                            }
                          }
                          if (0==internal_net)
-                           errorp(11, "Get_ini", "Cannot get AUTO internal net with help of gethostbyname");
+                           errorp(11, "Get_ini", "Cannot get AUTO internal net with help of gethostbyname.\n%s",
+                                "Please read section 3 of nwserv.conf carefully.");
                        }
                      }
                      break;
@@ -1224,14 +1225,15 @@ static int server_is_down=0;
 static int usage(char *prog)
 {
 #if !IN_NWROUTED
-  fprintf(stderr, "usage:\t%s [-V|-h|-u|-k|y]\n", prog);
+  fprintf(stderr, "usage:\t%s [-V|-h|-u|-k[q]|y]\n", prog);
 #else
-  fprintf(stderr, "usage:\t%s [-v|-h|-u|-k]\n", prog);
+  fprintf(stderr, "usage:\t%s [-V|-h|-u|-k[q]]\n", prog);
 #endif
   fprintf(stderr, "\t-V: print version\n");
   fprintf(stderr, "\t-h: send HUP to main process\n");
   fprintf(stderr, "\t-u: update int. routing table\n");
-  fprintf(stderr, "\t-k: stop main process\n");
+  fprintf(stderr, "\t-k: stop main process, wait for it.\n");
+  fprintf(stderr, "\t-kq: don't wait till stop of main process\n");
 #if !IN_NWROUTED
   fprintf(stderr, "\t y: start testclient code.\n");
 #endif
@@ -1255,6 +1257,7 @@ int main(int argc, char **argv)
           case 'h' : init_mode = 1; break;
           case 'k' : init_mode = 2; break;
           case 'u' : init_mode = 3; break;
+          case 'q' : if (init_mode == 2) init_mode=4; break;
           case 'v' :
           case 'V' : fprintf(stderr, "\n%s:Version %d.%d.pl%d\n",
                      argv[0], _VERS_H_, _VERS_L_, _VERS_P_ );
