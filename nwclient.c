@@ -314,7 +314,7 @@ static int file_search_cont(DIR_IDS *di, int seq,
   }
   return(-1);
 }
-
+#if 0
 static int scan_dir_info(int dirhandle,  char *path, int sub_dir)
 {
   uint8  *p=requestdata;
@@ -356,6 +356,8 @@ static int allocate_dir_handle(int dirhandle,
   if (!handle_event()) return((int) *responsedata);
   return(-1);
 }
+#endif
+
 #if 0
 static void scan_irgendwas(int dirhandle, int attrib, char *name)
 {
@@ -630,6 +632,7 @@ static void test1(void)
 }
 #endif
 
+#if 0
 static void test1(void)
 {
   int dirhandle = allocate_dir_handle(0, 'd', "SYS:", 1);
@@ -643,6 +646,7 @@ static void test1(void)
 
   }
 }
+#endif
 
 static void test2(void)
 {

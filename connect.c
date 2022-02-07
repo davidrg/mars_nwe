@@ -1,4 +1,4 @@
-/* connect.c  09-Aug-96 */
+/* connect.c  04-Oct-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,6 +30,8 @@
 
 static int  default_uid=-1;
 static int  default_gid=-1;
+static int  default_umode_dir=0775;
+static int  default_umode_file=0664;
 
 #include "nwvolume.h"
 #include "nwfile.h"
@@ -39,6 +41,12 @@ NW_DIR    dirs[MAX_NW_DIRS];
 int       used_dirs=0;
 int       act_uid=-1;
 int       act_gid=-1;
+int       act_obj_id=0L;  /* not login                  */
+int       entry8_flags=0; /* special login/logout/flags */
+int       act_umode_dir=0;
+int       act_umode_file=0;
+
+static gid_t *act_grouplist=NULL;  /* first element is counter !! */
 
 static int       connect_is_init = 0;
 
@@ -167,12 +175,15 @@ void set_default_guid(void)
   seteuid(0);
   setgroups(0, NULL);
   if (setegid(default_gid) < 0 || seteuid(default_uid) < 0) {
-    errorp(1, "set_default_guid, !! Abort !!",
+    errorp(1, "set_default_guid, !! SecurityAbort !!",
       "Cannot set default gid=%d and uid=%d" , default_gid, default_uid);
     exit(1);
   }
   act_gid = default_gid;
   act_uid = default_uid;
+  act_umode_dir  = default_umode_dir;
+  act_umode_file = default_umode_file;
+  xfree(act_grouplist);
 }
 
 void set_guid(int gid, int uid)
@@ -182,7 +193,7 @@ void set_guid(int gid, int uid)
      || setegid(gid)
      || seteuid(uid) ) {
     set_default_guid();
-  } else {
+  } else if (act_gid != gid || act_uid != uid) {
     struct passwd *pw = getpwuid(uid);
     if (NULL != pw) {
       seteuid(0);
@@ -190,10 +201,96 @@ void set_guid(int gid, int uid)
     }
     act_gid = gid;
     act_uid = uid;
-    if (seteuid(uid)) set_default_guid();
+
+    act_umode_dir  = default_umode_dir;
+    act_umode_file = default_umode_file;
+
+    xfree(act_grouplist);
+    if (seteuid(uid))
+      set_default_guid();
+    else {
+      int k=getgroups(0, NULL);
+      if (k > 0) {
+        act_grouplist=(gid_t*)xmalloc((k+1) * sizeof(gid_t));
+        getgroups(k, act_grouplist+1);
+        *act_grouplist=(gid_t)k;
+      }
+    }
   }
   XDPRINTF((5,0,"SET GID=%d, UID=%d %s", gid, uid,
         (gid==act_gid && uid == act_uid) ? "OK" : "failed"));
+}
+
+void reset_guid(void)
+{
+  set_guid(act_gid, act_uid);
+}
+
+void set_act_obj_id(uint32 obj_id)
+{
+  act_obj_id=obj_id;
+  XDPRINTF((5, 0, "actual obj_id is set to 0x%x", obj_id));
+}
+
+int in_act_groups(gid_t gid)
+/* returns 1 if gid is member of act_grouplist else 0 */
+{
+  int    k;
+  gid_t *g;
+  if (!act_grouplist) return(0);
+  k=(int)*act_grouplist;
+  g = act_grouplist;
+  while (k--) {
+    if (*(++g) == gid) return(1);
+  }
+  return(0);
+}
+
+int get_real_access(struct stat *stb)
+/* returns F_OK, R_OK, W_OK, X_OK  */
+/* ORED with 0x10 if owner access  */
+/* ORED with 0x20 if group access  */
+{
+  int mode = 0;
+  if (!act_uid) return(0x10 | R_OK | W_OK | X_OK) ;
+  else {
+    if (act_uid == stb->st_uid) {
+      mode    |= 0x10;
+      if (stb->st_mode & S_IXUSR)
+        mode  |= X_OK;
+      if (stb->st_mode & S_IRUSR)
+        mode  |= R_OK;
+      if (stb->st_mode & S_IWUSR)
+        mode  |= W_OK;
+    } else if ( (act_gid == stb->st_gid)
+             || in_act_groups(stb->st_gid) ) {
+      mode    |= 0x20;
+      if (stb->st_mode & S_IXGRP)
+        mode  |= X_OK;
+      if (stb->st_mode & S_IRGRP)
+        mode  |= R_OK;
+      if (stb->st_mode & S_IWGRP)
+        mode  |= W_OK;
+    } else {
+      if (stb->st_mode & S_IXOTH)
+        mode  |= X_OK;
+      if (stb->st_mode & S_IROTH)
+        mode  |= R_OK;
+      if (stb->st_mode & S_IWOTH)
+        mode  |= W_OK;
+    }
+  }
+  return(mode);
+}
+
+uint32 get_file_owner(struct stat *stb)
+/* returns nwuser creator of file */
+{
+  uint32 owner=1L;  /* default Supervisor */
+  if (act_obj_id && stb && (stb->st_uid == act_uid))
+    owner=act_obj_id;
+  XDPRINTF((5, 0, "get_file_owner owner=0x%x", owner));
+  return(owner);
 }
 
 static char *conn_get_nwpath_name(NW_PATH *p)
@@ -670,20 +767,37 @@ static int nw_path_ok(NW_PATH *nwpath)
   int j = 0;
   NW_DIR *d=&(dirs[0]);
   struct stat stbuff;
-  int result = -0x9c;   /* wrong path */
+  int    result=0;
 
-  while (j++ < (int)used_dirs){
-    if (d->inode && d->volume == nwpath->volume
-                 && !strcmp((char*)nwpath->path, (char*)d->path)){
-      return(d->inode);
+  if ((!act_obj_id) && !(entry8_flags & 1)) {
+    if (nwpath->volume)
+      result = -0x9c;   /* wrong path, only volume 0 is OK */
+    else {
+      char *p=nwpath->path;
+      char pp[10];
+      while (*p=='/') ++p;
+      strmaxcpy(pp, p, 6);
+      upstr(pp);
+      p=pp+5;
+      if (memcmp(pp, "LOGIN", 5) || (*p!='\0' && *p!='/') )
+        result=-0x9c;
     }
-    d++;
-  } /* while */
-  if (!stat(build_unix_name(nwpath, 1 | 2 ), &stbuff)
-      && (stbuff.st_mode & S_IFMT) == S_IFDIR) result=stbuff.st_ino;
-  else {
-    XDPRINTF((4,0, "NW_PATH_OK failed:`%s`", conn_get_nwpath_name(nwpath)));
   }
+
+  if (!result) {
+    while (j++ < (int)used_dirs){
+      if (d->inode && d->volume == nwpath->volume
+                   && !strcmp((char*)nwpath->path, (char*)d->path)){
+        return(d->inode);
+      }
+      d++;
+    } /* while */
+    if (!stat(build_unix_name(nwpath, 1 | 2 ), &stbuff)
+      && (stbuff.st_mode & S_IFMT) == S_IFDIR)
+      return(stbuff.st_ino);
+    result = -0x9c;   /* wrong path */
+  }
+  XDPRINTF((4,0x10, "NW_PATH_OK failed:`%s`", conn_get_nwpath_name(nwpath)));
   return(result);
 }
 
@@ -739,13 +853,15 @@ static int build_verz_name(NW_PATH *nwpath,    /* gets complete path     */
          else state++;
        } else if (state == 14) completition= -0x9c; /* something wrong  */
        else if (state == 20){
+         if (ppp > nwpath->path)
+            ppp=nwpath->path;
          if (w == '/') state = 30;
          else if (w != '.') completition= -0x9c; /* something wrong  */
        }
        if (state == 30 || !*p) { /* now action */
          uint8 *xpath=a;
          int   len = (int)(p-a);
-         if (len && state == 30) --len; /* '/' stoert hier */
+         if (len && state == 30) --len; /* '/' don not need it here */
          a = p;
          if (len) {
            if (*xpath == '.') {
@@ -773,7 +889,6 @@ static int build_verz_name(NW_PATH *nwpath,    /* gets complete path     */
        }
      }
    }
-
    if (!completition) {
      if (nwpath->volume > -1 && nwpath->volume < used_nw_volumes){
        NW_VOL *v = &nw_volumes[nwpath->volume];
@@ -820,6 +935,27 @@ int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
       completition, conn_get_nwpath_name(nwpath)));
    if (!completition) completition = build_verz_name(nwpath, dirhandle);
    return(completition);
+}
+
+int conn_get_kpl_unxname(char *unixname,
+                         int dirhandle,
+                         uint8 *data, int len)
+/*
+ * gives you the unixname of dirhandle + path
+ * returns volumenumber, or < 0 if error
+ */
+{
+  NW_PATH nwpath;
+  int completition = build_path(&nwpath, data, len, 0);
+  if (!completition)
+     completition = build_verz_name(&nwpath, dirhandle);
+  if (completition > -1) {
+    if (unixname)
+      strcpy(unixname, build_unix_name(&nwpath, 0));
+    completition=nwpath.volume;
+  }
+  XDPRINTF((5, 0, "conn_get_kpl_unxname: completition=0x%x", completition));
+  return(completition);
 }
 
 void un_date_2_nw(time_t time, uint8 *d, int high_low)
@@ -887,27 +1023,13 @@ static int un_nw_attrib(struct stat *stb, int attrib, int mode)
     /* UNIX access -> NW access */
     attrib = 0x20;
     if (act_uid) {
-      if (act_uid == stb->st_uid) {
-        if (!(stb->st_mode & S_IWUSR)) {
-          attrib |= 0x1;    /* RO    */
-        }
-        if (!(stb->st_mode & S_IRUSR)) {
-          attrib |= 0x2;   /* Hidden */
-        }
-      } else if (act_gid == stb->st_gid) {
-        if (!(stb->st_mode & S_IWGRP)) {
-          attrib |= 0x1;    /* RO    */
-        }
-        if (!(stb->st_mode & S_IRGRP)) {
-          attrib |= 0x2;   /* Hidden */
-        }
-      } else {
-        if (!(stb->st_mode & S_IWOTH)) {
-          attrib |= 0x1;    /* RO    */
-        }
-        if (!(stb->st_mode & S_IROTH)) {
-          attrib |= 0x2;   /* Hidden */
-        }
+      /* if not root */
+      int acc=get_real_access(stb);
+      if (!(acc & W_OK)) {
+        attrib |= 0x1;    /* RO    */
+      }
+      if (!(acc & R_OK)) {
+        attrib |= 0x2;   /* We say hidden here */
       }
     }
     /* only shared if gid == gid &&  x Flag */
@@ -916,7 +1038,6 @@ static int un_nw_attrib(struct stat *stb, int attrib, int mode)
     return(attrib);
   } else {
     /* NW access -> UNIX access */
-
     int mode = S_IRUSR | S_IRGRP;
     if (attrib & 0x2)   /* hidden */
       stb->st_mode &= ~mode;
@@ -971,8 +1092,7 @@ static int get_dir_attrib(NW_DIR_INFO *d, struct stat *stb,
   d->ext_attrib = 0xff; /* effektive rights ?? */
   un_date_2_nw(stb->st_mtime, d->create_date, 1);
   un_time_2_nw(stb->st_mtime, d->create_time, 1);
-
-  U32_TO_BE32(1L, d->owner_id);
+  U32_TO_BE32(get_file_owner(stb), d->owner_id);
   d->access_right_mask = 0;
   d->reserved          = 0;
   U16_TO_BE16(0, d->next_search);
@@ -1079,7 +1199,10 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
        return(mode ? -0x84 : -0x8a);
     if (mode) {
       XDPRINTF((5,0,"MKDIR dirname:%s:", unname));
-      if (!mkdir(unname, 0777)) return(0);
+      if (!mkdir(unname, 0777)) {
+        chmod(unname, act_umode_dir);
+        return(0);
+      }
       completition = -0x84; /* No Create Priv.*/  /* -0x9f Direktory Aktive */
     } else { /* rmdir */
       int  j = -1;
@@ -1235,7 +1358,7 @@ void nw_exit_connect(void)
 }
 
 int nw_init_connect(void)
-/* Cann be called when ever you want */
+/* May be called when ever you want */
 {
   uint8    *login   = (uint8*) "LOGIN/";
   NW_PATH  nwlogin;
@@ -1252,8 +1375,10 @@ int nw_init_connect(void)
     nwlogin.volume  = 0;
 
     while (k--) {
-      if (connect_is_init) xfree(d->path);
-      else d->path = NULL;
+      if (connect_is_init)
+        xfree(d->path);
+      else
+        d->path = NULL;
       d->volume    = 0;
       d->inode     = 0;
       d->is_temp   = 0;
@@ -1266,10 +1391,19 @@ int nw_init_connect(void)
     if (connect_is_init) {
       k = 0;
       while (k++ < anz_dirhandles) free_dir_handle(k);
-    } else connect_is_init++;
+    } else
+      connect_is_init++;
 
     while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))) {
-      if (what == 10) { /* GID */
+      if (what == 8) { /* entry8_flags */
+        entry8_flags = hextoi((char*)buff);
+      } else if (what == 9) { /* GID */
+        int  umode_dir, umode_file;
+        if (2 == sscanf((char*)buff, "%o %o", &umode_dir, &umode_file)) {
+          default_umode_dir  = umode_dir;
+          default_umode_file = umode_file;
+        }
+      } else if (what == 10) { /* GID */
         default_gid = atoi((char*)buff);
       } else if (what == 11) { /* UID */
         default_uid = atoi((char*)buff);
@@ -1308,7 +1442,8 @@ int nw_free_handles(int task)
  * are deleted. I hope this is right. !??
  */
 {
-  if (task == -1) return(nw_init_connect());
+  if (task == -1)
+    return(nw_init_connect());
   else {
     NW_DIR *d = &(dirs[0]);
     int     k = used_dirs;
@@ -1336,7 +1471,7 @@ int xinsert_new_dir(int volume, uint8 *path, int inode, int drive, int is_temp, 
   int    timedhandle = 0;
 #endif
   /* first look, whether drive is allready in use */
-  for (j = 0; j < (int)used_dirs; j++) {
+  for (j = (used_dirs) ? 1 : 0; j < (int)used_dirs; j++) {
     NW_DIR *d = &(dirs[j]);
     if (!d->inode)
        freehandle = j+1;
@@ -1367,7 +1502,7 @@ int insert_new_dir(NW_PATH *nwpath, int inode, int drive, int is_temp, int task)
 }
 
 
-int nw_search(uint8 *info,
+int nw_search(uint8 *info, uint32 *fileowner,
               int dirhandle, int searchsequence,
               int search_attrib, uint8 *data, int len)
 
@@ -1389,6 +1524,7 @@ int nw_search(uint8 *info,
            get_file_attrib((NW_FILE_INFO*)info, &stbuff,
                 &nwpath);
          }
+         if (fileowner) *fileowner = get_file_owner(&stbuff);
          return(searchsequence);
       } else return(-0xff); /* not found */
    } else return(completition); /* wrong path */
@@ -1632,7 +1768,7 @@ static int s_nw_scan_dir_info(int dir_handle,
           U16_TO_BE16(aktsequenz, subnr);
           upstr(dirname);
           strncpy((char*)subname, (char*)dirname, 16);
-          U32_TO_BE32(1L,  owner); /* erstmal */
+          U32_TO_BE32(get_file_owner(&stbuff),  owner);
           un_date_2_nw(stbuff.st_mtime, subdatetime,   1);
           un_time_2_nw(stbuff.st_mtime, subdatetime+2, 1);
           return(0xff);
@@ -1645,7 +1781,7 @@ static int s_nw_scan_dir_info(int dir_handle,
       if (!stat(dh->unixname, &stbuff)) {
         U16_TO_BE16(1, subnr);
         memset(subname, 0, 16);
-        U32_TO_BE32(1L,  owner);
+        U32_TO_BE32(get_file_owner(&stbuff),  owner);
         un_date_2_nw(stbuff.st_mtime, subdatetime,   1);
         un_time_2_nw(stbuff.st_mtime, subdatetime+2, 1);
         return(0xff);
@@ -1703,7 +1839,8 @@ void get_dos_file_attrib(NW_DOS_FILE_INFO *f,
     f->attributes[0] = (uint8) un_nw_attrib(stb, 0, 0);
   un_date_2_nw(stb->st_mtime, f->created.date, 0);
   un_time_2_nw(stb->st_mtime, f->created.time, 0);
-  U32_TO_BE32(1,               f->created.id);
+
+  U32_TO_BE32(get_file_owner(stb), f->created.id);
   memcpy(&(f->updated), &(f->created), sizeof(NW_DOS_FILE_INFO));
   un_date_2_nw(stb->st_atime, f->last_access_date, 0);
   U32_TO_32(stb->st_size, f->size);
@@ -1722,7 +1859,7 @@ void get_dos_dir_attrib(NW_DOS_DIR_INFO *f,
   f->attributes[0] = 0x10;    /* Dir  */
   un_date_2_nw(stb->st_mtime, f->created.date,0);
   un_time_2_nw(stb->st_mtime, f->created.time,0);
-  U32_TO_BE32(1,              f->created.id);
+  U32_TO_BE32(get_file_owner(stb), f->created.id);
   un_date_2_nw(stb->st_mtime, f->modify_date, 0);
   un_time_2_nw(stb->st_mtime, f->modify_time, 0);
   U32_TO_BE32(MAX_U32, f->max_space);

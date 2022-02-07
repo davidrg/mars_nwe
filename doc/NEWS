@@ -1,4 +1,11 @@
 # in this files are some notes for user of mars_nwe.
+------04-Oct-96--- 0.98.pl4 ----------
+- new sections 8 + 9 in nw.ini (nwserv.conf).
+  Section 8: special login/logout/security flags.
+  Section 9: Standard creat mode for creating directories and files.
+- file access now works with supplementary groups.
+- simple station connect restrictions with nwserv.stations.
+- and real bindery station login restrictions. (SYSCON)
 ------24-Aug-96--- 0.98.pl2 ----------
 - 'PIPE' filesystem scheme changed. Now the first read or write
   calls the 'pipe program' and not the open or creat call.

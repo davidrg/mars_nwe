@@ -1,4 +1,4 @@
-/* nwconn.c 10-Aug-96       */
+/* nwconn.c 29-Sep-96       */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -266,16 +266,26 @@ static int create_queue_file(uint8   *job_file_name,
 
 {
   int result;
-  NW_FILE_INFO fnfo;
   *job_file_name
      = sprintf((char*)job_file_name+1, "%07lX%d.%03d", q_id, jo_id, connection);
 
+  seteuid(0);
   result=nw_alloc_dir_handle(0, dirname, dir_nam_len, 99, 2, 1);
-  if (result > -1)
-    result = nw_creat_open_file(result, job_file_name+1,
-                                       (int)  *job_file_name,
-                                        &fnfo, 0x6, 0x6, 1 | 4 | 8);
-
+  if (result > -1) {
+    char unixname[300];
+    result=conn_get_kpl_unxname(unixname, result,
+                             job_file_name+1, (int) *job_file_name);
+    if (result > -1) {
+      struct stat stbuff;
+      result=file_creat_open(result, (uint8*)unixname,
+                                   &stbuff, 0x6, 0x6, 1|4|8);
+      if (result > -1) {
+        chown(unixname, act_uid, act_gid);
+        chmod(unixname, 0660);
+      }
+    }
+  }
+  reset_guid();
   XDPRINTF((5,0,"creat queue file bez=`%s` handle=%d",
                                          job_bez, result));
   return(result);
@@ -381,7 +391,13 @@ int nw_close_file_queue(uint8 *queue_id,
       strmaxcpy((uint8*)printcommand, prc, prc_len);
       nw_close_datei(fhandle, 1);
       jo->fhandle = 0L;
-      if (NULL != (f = fopen(unixname, "r"))) {
+      if (NULL == (f = fopen(unixname, "r"))) {
+        /* OK now we try the open as root */
+        seteuid(0);
+        f = fopen(unixname, "r");
+        reset_guid();
+      }
+      if (NULL != f) {
         int  is_ok = 0;
         FILE_PIPE *fp = ext_popen(printcommand, geteuid(), getegid());
         if (fp) {
@@ -404,7 +420,9 @@ int nw_close_file_queue(uint8 *queue_id,
           XDPRINTF((1,0,"Cannot open pipe `%s`", printcommand));
         fclose(f);
         if (is_ok) {
+          seteuid(0);
           unlink(unixname);
+          reset_guid();
           result=0;
         }
       } else XDPRINTF((1,0,"Cannot open queue-file `%s`", unixname));

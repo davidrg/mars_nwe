@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 09-Sep-96
+Aenderungen in mars_nwe bis zum : 04-Oct-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -184,4 +184,39 @@ Erste 'oeffentliche' Version
 - einfache dbm export/import Routinen eingebaut.
 - Bug in dos_mangling routine beseitigt.
 <----- ^^^^^^^^^^ pl3 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- nwserv.stations erweitert um 'station connect restrictions'.
+- Datei Access um 'supplementary groups' erweitert.
+  Open File ruft gegebenfalls  setegid() auf.
+- Als File-Creator wird nun der aktuelle mars_nwer User zurueckgegeben,
+  falls st_uid == uid aktueller User.
+- call 0x3d in 0x3b (commit file) umbenannt.
+- segmentation violation in build_verz_name (connect.c) korrigiert.
+  Konnte auftreten wenn volume Schalter '-i' gesetzt war. (James MacLean)
+- Eintrag 8 als Flag Eintrag verwendet.
+- Standardmaessig kann im ausgelogtem Zustand jetzt nur noch auf
+  das Login Verzeichnis zugegriffen werden.
+- Eintrag 9 als default umask_dir und umask_file Eintrag verwendet.
+- Ueberpruefung/Anlegen des printqueue Verzeichnisses beim Start eingebaut.
+- Es kann nun abhaengig von den Rechten des Queueverzeichnisses gedruckt
+  werden.
+- SYS:MAIL/xx Verzeichnisse werden nun beim Start generell 0733 angelegt
+  bzw. bestehende werden auf 0733 abgeaendert.
+- Unix Verzeichnis fuer SYS Volume wird nun beim ersten Start
+  automatisch angelegt.
+- BUG in nwdbm.c, der in pl2 hineingeruscht war, beseitigt.
+  Wichtige User Properties wurden beim Start nicht in die
+  Bindery eingetragen -> capture access error usw.
+  Louis Zammit Mangion hatte diesen Fehler gefunden.
+- 0x16,0x26 liefert nun immer aktuellen User als Trustee-Owner zurueck.
+  Sollte spaeter noch verbessert werden.
+- delete BinderyObject loescht nun auch die Referenzen in SET Properties auf
+  dieses Object.
+- dummy fuer 0x56,ufunc=4 eingebaut.
+- dirhandle 1 wird nach Freigabe nicht wieder verwendet.
+  Dadurch wurde Problem beseitigt, dass z.B. FILER.EXE nach
+  dem Start als Current Directory nicht das aktuelle besitzt.
+  Eine Packet-Analyse eines realen Novell Servers zeigte gleiche
+  Sonderbehandlung von handle 1.
+- Login Restrictions. (station restrictions) eingebaut.
+<----- ^^^^^^^^^^ pl4 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

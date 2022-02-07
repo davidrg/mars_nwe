@@ -1,4 +1,4 @@
-/* nwconn.c 13-Jul-96       */
+/* nwconn.c 03-Oct-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -565,21 +565,25 @@ static int handle_ncp_serv(void)
                            if (!sequenz) {
                              memset(xdata, 0, sizeof(struct XDATA));
                              xdata->entries=1;
+#if 0
                              U32_TO_BE32(1, xdata->ids);  /* SUPERVISOR  */
+#else
+                             U32_TO_BE32(act_obj_id, xdata->ids);  /* actual LOGIN User */
+                             /* NOTE: this should be made better */
+#endif
                              xdata->trustees[1] = 0x1;    /* Supervisory */
                              xdata->trustees[0] = 0xff;   /* all low     */
                              data_len = sizeof(struct XDATA);
                            } else completition = 0x9c;  /* no more trustees */
                          } else completition = (uint8) (-result);
-	               } else  if (*p == 0x27) { /* Add Trustees to DIR ?? */
+	               } else  if (*p == 0x27) { /* Add Ext Trustees to DIR */
 #if 0
 	                 struct INPUT {
-	                   uint8   header[7];      /* Requestheader */
-	                   uint8   div[3];            /* 0x0, dlen, ufunc */
-	                   uint8   dir_handle;     /* Verzeichnis Handle */
-	                   uint8   trustee_id[4];  /* Trustee Object ID  */
-	                   uint8   trustee_right_mask;
-	                   uint8   weis_nicht;    /* ???  z.B. 0x0 */
+	                   uint8   header[7];         /* Requestheader     */
+	                   uint8   div[3];            /* 0x0, dlen, ufunc  */
+	                   uint8   dir_handle;        /* Handle            */
+	                   uint8   trustee_id[4];     /* Trustee Object ID */
+	                   uint8   trustee_rights[2]; /* low - high        */
 	                   uint8   pathlen;
 	                   uint8   path;
 	                 } *input = (struct INPUT *) (ncprequest);
@@ -755,8 +759,11 @@ static int handle_ncp_serv(void)
                int len = input->len;
                int searchsequence;
                NW_FILE_INFO f;
+               uint32   owner;
+
                memset(xdata, 0, sizeof(struct XDATA));
                searchsequence = nw_search( (uint8*) &f,
+                                &owner,
                                 (int)input->dir_handle,
                                 (int) GET_BE16(input->sequence),
                                 (int) input->search_attrib,
@@ -764,7 +771,7 @@ static int handle_ncp_serv(void)
                if (searchsequence > -1) {
                  memcpy(xdata->f, &f, sizeof(NW_FILE_INFO));
                  U16_TO_BE16((uint16) searchsequence, xdata->sequence);
-                 U32_TO_BE32(1L, xdata->owner_id);  /* Supervisor */
+                 U32_TO_BE32(owner, xdata->owner_id);
                  data_len = sizeof(struct XDATA);
                } else completition = (uint8) (- searchsequence);
              }
@@ -832,7 +839,8 @@ static int handle_ncp_serv(void)
                      nw_free_handles(-1);
                      set_default_guid();
                      nw_setup_home_vol(-1, NULL);
-                     return(-1); /* nwbind must do rest */
+                     set_act_obj_id(0);  /* NOT logged in */
+                     return(-1); /* nwbind must do a little rest */
                      break;
 
 	 case 0x1a : /* lock file  */
@@ -876,8 +884,12 @@ static int handle_ncp_serv(void)
                        if (!ufunc) completition=0; /* TTS not availible */
                        else completition=0xfb;     /* request not known */
                      } break;
-
+#if 0
+         this was wrong, I think
 	 case 0x3d : {  /* commit file, flush file buffers  */
+         0x3d seems to be no valid/used NCP call.
+#endif
+	 case 0x3b : {  /* commit file, flush file buffers  */
 	               struct INPUT {
 	                 uint8   header[7];     /* Requestheader */
 	                 uint8   reserve;
@@ -885,9 +897,7 @@ static int handle_ncp_serv(void)
 	                 uint8   fhandle[4];     /* filehandle */
 	               } *input = (struct INPUT *)ncprequest;
 	               uint32 fhandle = GET_BE32(input->fhandle);
-                       XDPRINTF((2,0, "TODO: COMMIT FILE:fhandle=%ld", fhandle));
-                        /* TODO */
-                        ;
+                       XDPRINTF((5,0, "should be done some time: COMMIT FILE:fhandle=%ld", fhandle));
                      } break;
 
 
@@ -980,8 +990,10 @@ static int handle_ncp_serv(void)
 	               int len = input->len;
 	               uint8 my_sequenz[2];
 	               int searchsequence;
+                       uint32 owner;
 	               memcpy(my_sequenz, input->sequenz, 2);
 	               searchsequence = nw_search( (uint8*) &(xdata->u),
+                                             &owner,
 	                                     (int)input->dir_handle,
 	                                     (int) GET_BE16(my_sequenz),
 	                                     (int) input->search_attrib,
@@ -1427,10 +1439,11 @@ static void handle_after_bind()
        switch (ufunc) {
          case 0x14:   /* Login Objekt, unencrypted passwords */
          case 0x18: { /* crypt_keyed LOGIN */
-           int   fnlen = (int) *(bindresponse + 2 * sizeof(int));
+           int   fnlen = (int) *(bindresponse + 3 * sizeof(int));
            /* ncpserv have changed the structure */
            set_guid(*((int*)bindresponse), *((int*)(bindresponse+sizeof(int))));
-           nw_setup_home_vol(fnlen, bindresponse + 2 * sizeof(int) +1);
+           set_act_obj_id(*((uint32*)(bindresponse + 2 * sizeof(int))));
+           nw_setup_home_vol(fnlen, bindresponse   + 3 * sizeof(int) +1);
          }
          break;
 

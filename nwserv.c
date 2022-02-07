@@ -110,7 +110,6 @@ static  int          server_goes_down_secs     = 10;
 static  int          server_broadcast_secs     = 60;
 static  int          save_ipx_routes           =  0;
 
-static  uint8        *station_fn=NULL;
 static  int          nearest_request_flag=0;
 
 #if IN_NWROUTED
@@ -524,61 +523,6 @@ void get_server_data(char *name,
    }
 #endif
    XDPRINTF((2,0,"NW386 %s found at:%s", name, visable_ipx_adr(adr)));
-}
-
-static int name_match(uint8 *s, uint8 *p)
-{
-  uint8   pc;
-  while ( (pc = *p++) != 0){
-    switch  (pc) {
-      case '?' : if (!*s++) return(0);    /* simple char */
-                 break;
-
-      case '*' : if (!*p) return(1);      /* last star    */
-                 while (*s) {
-                   if (name_match(s, p) == 1) return(1);
-                   ++s;
-                 }
-                 return(0);
-
-      default : if (pc != *s++) return(0); /* normal char */
-                break;
-    } /* switch */
-  } /* while */
-  return ( (*s) ? 0 : 1);
-}
-
-static int find_station_match(int entry, ipxAddr_t *addr)
-{
-  int matched = 0;
-  if (station_fn && *station_fn) {
-    FILE *f=fopen((char*)station_fn, "r");
-    if (f) {
-      uint8  buff[200];
-      uint8  addrstring[100];
-      int   what;
-      ipx_addr_to_adr((char*)addrstring, addr);
-      upstr(addrstring);
-      while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))){
-        if (what == entry) {
-          uint8  *p = buff + strlen((char*)buff);
-          while (p-- > buff && *p==32) *p='\0';
-          upstr(buff);
-          if (name_match(addrstring, buff)) {
-            matched=1;
-            break;
-          }
-        }
-      }
-      fclose(f);
-    } else {
-      XDPRINTF((3, 0, "find_station_match, cannot open '%s'",
-           station_fn));
-    }
-  }
-  XDPRINTF((3, 0, "find_station_match entry=%d, matched=%d, addr=%s",
-          entry, matched, visable_ipx_adr(addr)));
-  return(matched);
 }
 
 static void handle_sap(int fd,
@@ -1132,10 +1076,10 @@ static void close_all(void)
 static void down_server(void)
 {
   if (!server_down_stamp) {
-    write_to_ncpserv(0xffff, 0, NULL, 0);
-    write_to_nwbind( 0xffff, 0, NULL, 0);
     signal(SIGHUP,   SIG_IGN);
     signal(SIGPIPE,  SIG_IGN);
+    write_to_ncpserv(0xffff, 0, NULL, 0);
+    write_to_nwbind( 0xffff, 0, NULL, 0);
     fprintf(stderr, "\007");
     fprintf(stderr, "\n*********************************************\n");
     fprintf(stderr, "\nWARNING: NWE-%s shuts down in %3d sec !!!\n",
@@ -1148,6 +1092,14 @@ static void down_server(void)
     send_down_broadcast();
   }
 }
+
+#if !IN_NWROUTED
+static int fl_got_sigchld=0;
+static void sig_chld(int rsig)
+{
+  fl_got_sigchld++;
+}
+#endif
 
 static int  fl_get_int=0;
 static void sig_quit(int rsig)
@@ -1252,14 +1204,17 @@ int main(int argc, char **argv)
       polls[j].fd        = -1;
     }
   }
+
+#if !IN_NWROUTED
+  signal(SIGCHLD,  sig_chld);
+#endif
+
   if ( !start_nwbind( my_nwname, &my_server_adr)
    &&  !start_ncpserv(my_nwname, &my_server_adr) ) {
     /* now do polling */
     time_t broadtime;
     time(&broadtime);
-
     set_sigs();
-
     polls[NEEDED_SOCKETS].fd = fd_nwbind_in;
 
 #if !IN_NWROUTED
@@ -1278,9 +1233,30 @@ int main(int argc, char **argv)
       int anz_poll = poll(polls, NEEDED_POLLS, broadmillisecs);
       int call_wdog=0;
       time(&akttime_stamp);
+#if !IN_NWROUTED
+      if (fl_got_sigchld) {
+        int stat_loc=-1;
+        int pid;
+        int status=-1;
+        fl_got_sigchld=0;
+        if ((pid =waitpid(-1, &stat_loc, 0)) > -1) {
+          status=WEXITSTATUS(stat_loc);
+          if (WIFSIGNALED(stat_loc)) status=-99;
+        }
+        if (pid == pid_nwbind || pid == pid_ncpserv) {
+          errorp(1, "CHILD died", "Child=%s, result=%d",
+              (pid==pid_nwbind) ? "NWBIND" : "NCPSERV", status);
+          down_server();
+        } else
+          errorp(1, "unknown CHILD died", NULL);
+
+      }
+#endif
       if (fl_get_int) {
-        if      (fl_get_int == 1) handle_hup_reqest();
-        else if (fl_get_int == 2) down_server();
+        if      (fl_get_int == 1)
+          handle_hup_reqest();
+        else if (fl_get_int == 2)
+          down_server();
       }
       if (anz_poll > 0) { /* i have to work */
         struct pollfd *p = &polls[0];

@@ -1,4 +1,4 @@
-/* tools.c  07-Aug-96 */
+/* tools.c  29-Sep-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -59,7 +59,8 @@ char *xmalloc(uint size)
 char *xcmalloc(uint size)
 {
   char *p = xmalloc(size);
-  if (size) memset(p, 0, size);
+  if (size)
+    memset(p, 0, size);
   return(p);
 }
 
@@ -74,7 +75,8 @@ void x_x_xfree(char **p)
 int strmaxcpy(uint8 *dest, uint8 *source, int len)
 {
   int slen = (source != (uint8 *)NULL) ? min(len, strlen((char*)source)) : 0;
-  if (slen) memcpy(dest, source, slen);
+  if (slen)
+    memcpy(dest, source, slen);
   dest[slen] = '\0';
   return(slen);
 }
@@ -82,10 +84,13 @@ int strmaxcpy(uint8 *dest, uint8 *source, int len)
 int x_x_xnewstr(uint8 **p,  uint8 *s)
 {
   int len = (s == NULL) ? 0 : strlen((char*)s);
-  if (*p != (uint8 *)NULL) free((char*)*p);
+  if (*p != (uint8 *)NULL)
+    free((char*)*p);
   *p = (uint8*)xmalloc(len+1);
-  if (len) strcpy((char*)(*p), (char*)s);
-  else **p = '\0';
+  if (len)
+    strcpy((char*)(*p), (char*)s);
+  else
+    **p = '\0';
   return (len);
 }
 
@@ -104,16 +109,29 @@ void dprintf(char *p, ...)
 }
 
 void xdprintf(int dlevel, int mode, char *p, ...)
+/* mode flags
+ * 0x01 : no 'begin line'
+ * 0x02 : no new line (endline)
+ * 0x10 : add errno print.
+ */
 {
   va_list ap;
+  int errnum      = errno;
   if (nw_debug >= dlevel) {
-    if (!(mode & 1)) fprintf(logfile, "%-8s %d:", get_modstr(), connection);
+    if (!(mode & 1))
+      fprintf(logfile, "%-8s %d:", get_modstr(), connection);
     if (p) {
       va_start(ap, p);
       vfprintf(logfile, p, ap);
       va_end(ap);
     }
-    if (!(mode & 2)) fprintf(logfile, "\n");
+    if (mode & 0x10) {
+      fprintf(logfile, ", errno=%d", errnum);
+      if (errnum > 0 && errnum < _sys_nerr)
+        fprintf(logfile, " (%s)",  _sys_errlist[errnum]);
+    }
+    if (!(mode & 2))
+      fprintf(logfile, "\n");
     fflush(logfile);
   }
 }
@@ -422,6 +440,14 @@ uint8 *downstr(uint8 *ss)
   return(ss);
 }
 
+int hextoi(char *buf)
+{
+  int i;
+  if (!buf || (1 != sscanf(buf, "%x", &i)))
+    i=0;
+  return(i);
+}
+
 char *hex_str(char *buf, uint8 *s, int len)
 {
   char *pp=buf;
@@ -431,3 +457,63 @@ char *hex_str(char *buf, uint8 *s, int len)
   }
   return(buf);
 }
+
+int name_match(uint8 *s, uint8 *p)
+/* simple match routine matches '?' and '*' */
+{
+  uint8   pc;
+  while ( (pc = *p++) != 0){
+    switch  (pc) {
+      case '?' : if (!*s++) return(0);    /* simple char */
+                 break;
+
+      case '*' : if (!*p) return(1);      /* last star    */
+                 while (*s) {
+                   if (name_match(s, p) == 1) return(1);
+                   ++s;
+                 }
+                 return(0);
+
+      default : if (pc != *s++) return(0); /* normal char */
+                break;
+    } /* switch */
+  } /* while */
+  return ( (*s) ? 0 : 1);
+}
+
+uint8  *station_fn=NULL;
+
+int find_station_match(int entry, ipxAddr_t *addr)
+{
+  int matched = 0;
+  if (station_fn && *station_fn) {
+    FILE *f=fopen((char*)station_fn, "r");
+    if (f) {
+      uint8  buff[200];
+      uint8  addrstring[100];
+      int   what;
+      ipx_addr_to_adr((char*)addrstring, addr);
+      upstr(addrstring);
+      while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))){
+        if (what == entry) {
+          uint8  *p = buff + strlen((char*)buff);
+          while (p-- > buff && *p==32) *p='\0';
+          upstr(buff);
+          if (name_match(addrstring, buff)) {
+            matched=1;
+            break;
+          }
+        }
+      }
+      fclose(f);
+    } else {
+      XDPRINTF((3, 0, "find_station_match, cannot open '%s'",
+           station_fn));
+    }
+  }
+  XDPRINTF((3, 0, "find_station_match entry=%d, matched=%d, addr=%s",
+          entry, matched, visable_ipx_adr(addr)));
+  return(matched);
+}
+
+

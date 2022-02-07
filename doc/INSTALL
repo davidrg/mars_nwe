@@ -107,8 +107,9 @@ the mars_nwe-package.
     At least the volume "SYS" must be defined in the configuration-file
     "nwserv.conf". Create the associated directory if it does not
     already exists and place the programs "login.exe" and "slist.exe"
-    into the "LOGIN" directory. You also can use the free mars_dosutils
-    with a poor version of these programms.
+    into the "LOGIN" or "login" directory.
+    You also can use the free mars_dosutils with a poor version of
+    these programms.
 
 (7) Fire it up
 

@@ -16,7 +16,7 @@ to write a small TLI->SOCKET emulation (see the modul
 Unfortunately I had no complete description of the NCP-calls,
 so that the handling of many calls is based on experiments. :-(
 
-WARNING: this code still has many BUG's!
+WARNING: this code still has BUG's!
 
 BINDERY:
        These are the *.pag and *.dir files.
@@ -42,7 +42,7 @@ Short description of the programs from this package:
 
 nwserv:
        the main program. Initiates all subsystems and
-       starts 'ncpserv'.
+       starts 'ncpserv' and 'nwbind'.
        Sends broadcasts, wdogs, sap and rip packets.
        If nwserv is started with the parameter 'y', then the simple
        test client 'nwclient', only for debugging, is started.

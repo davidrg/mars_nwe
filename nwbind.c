@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "29-Aug-96"
+#define REVISION_DATE "04-Oct-96"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -225,6 +225,25 @@ static void get_login_time(uint8 login_time[], CONNECTION *cx)
   login_time[6] = s_tm->tm_wday;
 }
 
+static int build_login_response(uint8 *responsedata, uint32 obj_id)
+{
+  uint8 pw_name[40];
+  int result;
+  act_c->object_id = obj_id;     /* actuell Object ID  */
+  act_c->t_login   = akttime;    /* and login Time     */
+  get_guid((int*) responsedata,
+           (int*) (responsedata+sizeof(int)),
+           obj_id, pw_name);
+  *((uint32*) (responsedata+2*sizeof(int))) = obj_id;
+
+  result = get_home_dir(responsedata + 3 * sizeof(int)+1, obj_id);
+  *(responsedata + 3 * sizeof(int)) = (uint8) result;
+  result = 3 * sizeof(int) + 1 + (int) *(responsedata+ 3 * sizeof(int));
+  write_utmp(1, act_connection, act_c->pid_nwconn,
+                 &(act_c->client_adr), pw_name);
+  return(result);
+}
+
 static void handle_fxx(int gelen, int func)
 {
   IPX_DATA     ipxoutdata;
@@ -396,15 +415,18 @@ static void handle_fxx(int gelen, int func)
                      U16_TO_BE16(MAX_CONNECTIONS, xdata->maxconnections);
                      U16_TO_BE16(h,               xdata->peak_connection);
                      U16_TO_BE16(MAX_NW_VOLS,     xdata->max_volumes);
-#ifdef _MAR_TESTS_1
                      xdata->security_level=1;
+                       /*
+                        * if this level is 0
+                        * you cannot install access restrictions.
+                        */
+
+#ifdef _MAR_TESTS_1
                      xdata->sft_level=2;
                      xdata->tts_level=1;
-
                      xdata->accounting_version=1;
                      xdata->vap_version=1;
                      xdata->queuing_version=1;
-
                      xdata->virtual_console_version=1;
                      xdata->security_level=1;
                      xdata->internet_bridge_version=1;
@@ -467,15 +489,14 @@ static void handle_fxx(int gelen, int func)
                       }
                     }
                     if (!result) {
-                      uint8 pw_name[40];
-                      act_c->object_id = obj.id;     /* actuell Object ID  */
-                      act_c->t_login   = akttime;    /* u. login Time      */
-                      get_guid((int*) responsedata, (int*)(responsedata+sizeof(int)), obj.id, pw_name);
-                      result = get_home_dir(responsedata + 2*sizeof(int)+1, obj.id);
-                      *(responsedata+ 2 * sizeof(int)) = (uint8) result;
-                      data_len = 2 * sizeof(int) + 1 + (int) *(responsedata+2* sizeof(int));
-                      write_utmp(1, act_connection, act_c->pid_nwconn, &(act_c->client_adr), pw_name);
-                    } else completition = (uint8) -result;
+                      internal_act = 1;
+                      result = nw_test_adr_access(obj.id, &(act_c->client_adr));
+                      internal_act = 0;
+                    }
+                    if (!result)
+                      data_len = build_login_response(responsedata, obj.id);
+                    else
+                      completition = (uint8) -result;
                   } break;
 
      case 0x15 :  { /* Get Object Connection List */
@@ -558,35 +579,28 @@ static void handle_fxx(int gelen, int func)
                     xstrmaxcpy(obj.name, (char*)(p+3), *(p+2));
                     upstr(obj.name);
                     XDPRINTF((2, 0, "LOGIN CRYPTED PW NAME='%s'",obj.name));
+
                     if (0 == (result = find_obj_id(&obj, 0))) {
                       internal_act = 1;
                       result=nw_test_passwd(obj.id, act_c->crypt_key, rdata);
                       internal_act = 0;
                     }
+
                     if (result > -1) {
-                      uint8 pw_name[40];
-                      act_c->object_id = obj.id;        /* actuell Object */
-                      act_c->t_login   = akttime;       /* and login time */
-                      get_guid((int*)responsedata, (int*)(responsedata+sizeof(int)), obj.id, pw_name);
-                      result = get_home_dir(responsedata + 2*sizeof(int)+1, obj.id);
-                      *(responsedata+ 2 * sizeof(int)) = (uint8) result;
-                      data_len = 2 * sizeof(int) + 1 + (int) *(responsedata+2* sizeof(int));
-                      write_utmp(1, act_connection, act_c->pid_nwconn,
-                                    &(act_c->client_adr), pw_name);
-                    } else {
-#if 0
-                      /* this is not ok */
-                      if ((password_scheme & PW_SCHEME_LOGIN) &&
-                         result == -0xff && obj.id != 1) /* not supervisor */
-                        completition = 0xfb; /* We lie here, to force LOGIN */
-                      else                   /* to use the old call         */
-#endif
-                        completition = (uint8) -result;
+                      internal_act = 1;
+                      result = nw_test_adr_access(obj.id, &(act_c->client_adr));
+                      internal_act = 0;
                     }
-                    /* completition = 0xde means login time has expired */
-                    /* completition = 0xdf means good login, but */
-                    /* login time has expired 	      	     	 */
-                    /* perhaps I will integrate it later         */
+                    if (result > -1)
+                      data_len = build_login_response(responsedata, obj.id);
+                    else
+                      completition = (uint8) -result;
+                    /*
+                     * completition = 0xde means login time has expired
+                     * completition = 0xdf means good login, but
+                     * login time has expired
+                     * perhaps I will integrate it later.
+                     */
                   }
                   break;
 
@@ -983,7 +997,15 @@ static void handle_fxx(int gelen, int func)
 
      case 0x47 :  { /* SCAN BINDERY OBJECT TRUSTEE PATH */
                     /* TODO !!! */
-                    completition = (uint8)0xff;
+                    struct XDATA {
+                      uint8 nextsequence[2];
+                      uint8 id[4];
+                      uint8 access_mask;
+                      uint8 pathlen;
+                      uint8 path[1];
+                    } *xdata = (struct XDATA*) responsedata;
+                    memset(xdata, 0, 8);
+                    data_len = 8;
                     }
                   break;
 
@@ -1288,7 +1310,7 @@ static void handle_bind_calls(uint8 *p)
          p += (*p+1);
          nw_new_obj_prop(0, obj.name, obj.type, O_FL_DYNA, 0x40,
                            "NET_ADDRESS", P_FL_DYNA|P_FL_ITEM,  0x40,
-                           (char *)p, sizeof(ipxAddr_t));
+                           (char *)p, sizeof(ipxAddr_t), 1);
        }
        break;
 

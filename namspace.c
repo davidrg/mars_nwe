@@ -336,6 +336,21 @@ static int add_hpath_to_nwpath(N_NW_PATH *nwpath,
   } /* while */
   if (nwpath->volume < 0) result=-0x9c;
 leave_build_nwpath:
+  if ((!result) && (!act_obj_id) && !(entry8_flags & 1)) {
+    if (nwpath->volume)
+      result = -0x9c;   /* wrong path, only volume 0 is OK */
+    else {
+      char *p=nwpath->path;
+      char pp[10];
+      while (*p=='/') ++p;
+      strmaxcpy(pp, p, 6);
+      upstr(pp);
+      p=pp+5;
+      if (memcmp(pp, "LOGIN", 5) || (*p!='\0' && *p!='/') )
+        result=-0x9c;
+    }
+  }
+
   if (!result) {
     NW_VOL *v = &nw_volumes[nwpath->volume];
     if (nwpath->namespace == NAME_DOS || nwpath->namespace == NAME_OS2) {
@@ -469,10 +484,14 @@ static int insert_get_base_entry(N_NW_PATH *nwpath,
 
     if (creatmode & FILE_ATTR_DIR) {
        /* creat dir */
-      if (mkdir(unname, 0777)) result=-0x84;
+      if (mkdir(unname, 0777))
+        result=-0x84;
+      else
+        chmod(unname, act_umode_dir);
     } else {
        /* creat file */
       if ((result = creat(unname, 0777)) > -1) {
+        chmod(unname, act_umode_file);
         close(result);
         result = 0;
       } else result=-0x84;
@@ -605,11 +624,13 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
   N_NW_PATH      *nwpath=&(dbe->nwpath);
   struct stat    *stb=&(nwpath->statb);
   int    result      = 76;
+  uint32 owner       = get_file_owner(stb);
   memset(p, 0, result);
+
   if (infomask & INFO_MSK_DATA_STREAM_SPACE) {
     U32_TO_32(stb->st_size, p);
   }
-  p      += 4;
+  p  += 4;
 
   if (infomask & INFO_MSK_ATTRIBUTE_INFO) {
     uint32 mask=0L;
@@ -637,7 +658,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     p      +=2;
     un_date_2_nw(stb->st_mtime, p, 0);
     p      +=2;
-    U32_TO_32(1, p);
+    U32_TO_32(owner, p);
     p      +=4;
   } else  p+=8;
 
@@ -646,7 +667,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     p      +=2;
     un_date_2_nw(stb->st_mtime, p, 0);
     p      +=2;
-    U32_TO_32(1, p);
+    U32_TO_32(owner, p);
     p      +=4;
     un_date_2_nw(stb->st_atime, p, 0);  /* access date */
     p      +=2;
@@ -1531,6 +1552,13 @@ int handle_func_0x56(uint8 *p, uint8 *responsedata, int task)
 
     case  0x04 :  /* enumerate extended attributes */
       {
+        struct OUTPUT {
+          uint8   dontknow1[16];   /* all zero */
+          uint8   ea_handle[4];    /* ???? */
+          uint8   dontknow3[4];    /* all zero */
+        } *xdata= (struct OUTPUT*)responsedata;
+        memset(xdata, 0, sizeof(struct OUTPUT));
+        result       = sizeof(struct OUTPUT);
       }
       break;
 

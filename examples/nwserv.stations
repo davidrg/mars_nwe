@@ -10,5 +10,6 @@
 #1  0.0.0.21:*                        # one special net
 # entry 1: is for get nearest server request handling.
 # look also into the examples/nw.ini file.
+# entry 2: is for station connect restrictions.
 
 

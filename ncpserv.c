@@ -31,11 +31,13 @@ static  char       my_nwname[50];
 static  time_t 	   akttime;
 static  int        server_goes_down=0;
 static  int 	   ipx_out_fd=-1;
-
+#if 0
 static  int        tells_server_version=0;
+#endif
 static  int        sock_nwbind=-1;
 static  int        sock_echo  =-1;
 
+static  int        station_restrictions=0;
 
 static int get_ini(void)
 {
@@ -44,8 +46,15 @@ static int get_ini(void)
     uint8 buff[256];
     int   what;
     while (0 != (what =get_ini_entry(f, 0, buff, sizeof(buff)))) {
+#if 0
       if (6 == what) {  /* Server Version */
         tells_server_version = atoi((char*)buff);
+      } else
+#endif
+      if (400 == what) {   /* station file */
+        new_str(station_fn, buff);
+      } else if (402 == what) {  /* station connect restrictions */
+        station_restrictions=atoi((char*)buff);
       }
     } /* while */
     fclose(f);
@@ -608,8 +617,20 @@ static void handle_ncp_request(void)
 #endif
     } else if (type == 0x1111) {
       /* GIVE CONNECTION Nr connection */
-      int connection = (server_goes_down) ? 0
-      	  	       			  : find_get_conn_nr(&from_addr);
+      int connection = 0;
+
+      if (!server_goes_down) {
+        if (!station_restrictions)
+          connection=find_get_conn_nr(&from_addr);
+        else {
+          int do_sent = (station_restrictions == 1) ? 1 : 0;
+          if (find_station_match(2, &from_addr))
+             do_sent = !do_sent;
+          if (do_sent)
+            connection=find_get_conn_nr(&from_addr);
+        }
+      }
+
       XDPRINTF((2, 0, "GIVE CONNECTION NR=%d", connection));
       if (connection) {
         CONNECTION *c = &(connections[connection-1]);
