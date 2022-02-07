@@ -1,5 +1,7 @@
-# Makefile mars_nwe: 06-Dec-95
+# Makefile mars_nwe: 31-Jan-96
+
 VPATH=
+
 all:    rmeflag mk.li config.h nw.ini
 	@if [ -r .eflag ] ; then \
 	echo ""; \
@@ -9,7 +11,7 @@ all:    rmeflag mk.li config.h nw.ini
 	echo "Please make your changes and run make again"; \
 	echo "********************************************************"; \
 	echo "";\
-	echo ""; else ./mk.li && (\
+	echo ""; else ./mk.li  && (\
 	if [ -r .mk.notes ] ; then echo "" ; \
 	echo ""; \
 	echo "********************************************************" ; \
@@ -61,12 +63,12 @@ config.h: examples/config.h
         echo "and change it to your requirements." >> .eflag ; fi
 
 rmeflag:
-	@ - rm -f .eflag
+	@- rm -f .eflag
 
 nw.ini: examples/nw.ini
 	@if [ -r $@ ] ; then echo "NOTE:examples/$@ is newer then $@" > .mk.notes ; \
 	echo "please compare examples/$@ with $@" >> .mk.notes; \
 	echo "make the changes you need and touch $@" >> .mk.notes; \
-	else  cp -a examples/$@ . ; \
+	else  cp examples/$@ . ; \
         echo "$@ created (from examples/$@) Please edit $@" > .mk.notes;\
         echo "and change it to your requirements." >> .mk.notes ; fi

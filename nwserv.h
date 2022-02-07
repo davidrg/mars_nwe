@@ -1,4 +1,4 @@
-/* nwserv.h 14-Jan-96 */
+/* nwserv.h 30-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -36,19 +36,25 @@ extern  int anz_net_devices;
 extern  NW_NET_DEVICE *net_devices[];
 
 /* <======== SOCKETS =========> */
-#define WDOG_SLOT          0      /* Watchdog send + recv */
-#define SAP_SLOT           1
-#define RIP_SLOT           (SAP_SLOT   +1)
-#define ROUTE_SLOT         (RIP_SLOT   +1)
-#define DIAG_SLOT          (ROUTE_SLOT +1)
-#if 0
-#define ECHO_SLOT          (DIAG_SLOT  +1)
-#define ERR_SLOT           (ECHO_SLOT  +1)
+#define WDOG_SLOT          0      /* Watchdog send + recv     */
+#define SAP_SLOT           1      /* SAP wellkwon or dynamic  */
+
+#if INTERNAL_RIP_SAP
+# define RIP_SLOT           (SAP_SLOT   +1)
+# if 0
+#   define ROUTE_SLOT       (RIP_SLOT   +1)
+#   define DIAG_SLOT        (ROUTE_SLOT +1)
+#   define ECHO_SLOT        (DIAG_SLOT  +1)
+#   define ERR_SLOT         (ECHO_SLOT  +1)
+# endif
 #endif
 
 extern  int     sockfd[];
 
-extern void ins_del_bind_net_addr(char *name, ipxAddr_t *adr);
+extern void ins_del_bind_net_addr(uint8 *name, int styp, ipxAddr_t *adr);
+extern void send_server_response(int respond_typ,
+                                 int styp, ipxAddr_t *to_addr);
+
 extern void send_sap_rip_broadcast(int mode);
 extern void rip_for_net(uint32 net);
 extern void get_servers(void);

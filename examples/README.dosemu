@@ -1,0 +1,7 @@
+If dosemu don't work together with mars_nwe you should apply
+the dirty dosemu-patch to the dosemu program.
+In 1.3.6? the changing of an existing route over the internal net
+is not ignored, but handled as an error (EINVAL, Alan's idea :-( ) .
+Therefor actual dosemus can fail when then want to access a external
+server.
+

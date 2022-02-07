@@ -1,3 +1,25 @@
+=========> !! wichtiger HINWEIS !!
+Mars_nwe kann auf Arten konfiguriert werden.
+1. Mars_nwe soll die IPX-Routen automatisch setzen,
+   die IPX-Interfaces per ini/conf Datei konfigurieren
+   und als RIP/SAP Router arbeiten.
+   Dieses ist der default Modus. Es werden keine weiteren
+   Programme wie ipx-configure oder IPX rip/sap Daemons
+   benoetigt.
+   In diesem Modus wurde das korrekte Zusammenspiel mit
+   dosemu, ncpfs oder Caldera's nwclient getestet.
+-> Es muss ein Kernel < 1.3.60 oder aber ein Kernel >= 1.3.60,
+   kompiliert mit IPX-Option CONFIG_IPX_INTERN=N, verwendet werden.
+   In mars_nwe/config.h muss folgende Zeile vorhanden sein.
+   #define INTERNAL_RIP_SAP  1
+
+2. Mars_nwe soll nur als File Server Verwendung finden.
+-> Die IPX-Interfaces muessen durch andere Programme/Tools
+   wie 'ipx-configure' oder aehnliche eingerichtet werden
+   und es muss ein rip/sap router/daemon eingerichtet sein.
+   In mars_nwe/config.h muss folgende Zeile vorhanden sein.
+   #define INTERNAL_RIP_SAP  0
+
 =========>   Programme erzeugen
 1. make aufrufen.
 2. mk.li und config.h evtl. anpassen

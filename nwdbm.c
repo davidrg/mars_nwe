@@ -951,7 +951,7 @@ int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
 
 int nw_set_enpasswd(uint32 obj_id, uint8 *passwd)
 {
-  uint8 *prop_name="PASSWORD";
+  uint8 *prop_name=(uint8*)"PASSWORD";
   if (passwd && *passwd) {
     nw_new_create_prop(obj_id, NULL, 0, 0, 0,
   	                prop_name, P_FL_STAT|P_FL_ITEM,  0x44,
@@ -968,7 +968,7 @@ int nw_set_passwd(uint32 obj_id, char *password)
     uint8 s_uid[4];
     U32_TO_BE32(obj_id, s_uid);
     shuffle(s_uid, password, strlen(password), passwd);
-#if 0
+#if 1
     XDPRINTF((2,0, "password %s->0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x",
        password,
        (int)passwd[0],

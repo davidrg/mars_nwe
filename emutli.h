@@ -1,4 +1,4 @@
-/* emutli.h 11-Sep-95 */
+/* emutli.h 30-Jan-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -101,7 +101,9 @@ extern void exit_ipx(int full);
 extern int  init_dev(char  *devname, int frame, uint32 network);
 extern void exit_dev(char  *devname, int frame);
 
+#if 0
 extern int get_ipx_addr(ipxAddr_t *addr);
+#endif
 
 extern void ipx_route_add(uint32  dest_net,
                           uint32  route_net,

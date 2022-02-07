@@ -1,7 +1,7 @@
-/* nwconn.c 13-Jan-96       */
+/* nwconn.c 07-Feb-96       */
 /* one process / connection */
 
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include "net.h"
 #include <dirent.h>
 #include "nwvolume.h"
+#include "nwfile.h"
 #include "connect.h"
 #include "namspace.h"
 
@@ -165,7 +166,11 @@ static void handle_ncp_serv()
 	                   U16_TO_BE16(fsp.fsu_bavail/1000, xdata->avail_blocks);
 	                   U16_TO_BE16(fsp.fsu_files,  xdata->total_dirs);
 	                   U16_TO_BE16(fsp.fsu_ffree,  xdata->avail_dirs);
-	                   U16_TO_BE16(0,  xdata->removable);
+                           if ( get_volume_options(volume, 1) & VOL_OPTION_REMOUNT) {
+	                     U16_TO_BE16(1,  xdata->removable);
+                           } else {
+	                     U16_TO_BE16(0,  xdata->removable);
+                           }
 	                 }
 	                 data_len = sizeof(struct XDATA);
 	               } else completition = (uint8) -result;
@@ -383,7 +388,8 @@ static void handle_ncp_serv()
 	                 int result = nw_get_vol_number((int)*(p+1));
                          memset(xdata, 0, sizeof(struct XDATA));
 	                 if (result > -1) {
-	                   result = nw_get_volume_name(result, xdata->name);
+                           int volume = result;
+	                   result = nw_get_volume_name(volume, xdata->name);
 	                   if (result > -1) {
                              struct fs_usage fsp;
                              if (!nw_get_fs_usage(xdata->name, &fsp)) {
@@ -392,7 +398,11 @@ static void handle_ncp_serv()
                                U16_TO_BE16(fsp.fsu_bavail/1000, xdata->avail_blocks);
                                U16_TO_BE16(fsp.fsu_files,  xdata->total_dirs);
                                U16_TO_BE16(fsp.fsu_ffree,  xdata->avail_dirs);
-                               U16_TO_BE16(0,  xdata->removable);
+                               if (get_volume_options(volume, 1) & VOL_OPTION_REMOUNT) {
+                                 U16_TO_BE16(1,  xdata->removable);
+                               } else {
+                                 U16_TO_BE16(0,  xdata->removable);
+                               }
                              }
 	                     data_len = sizeof(struct XDATA);
 	                     XDPRINTF((5,0,"GIVE VOLUME INFO von :%s:", xdata->name));
@@ -569,7 +579,7 @@ static void handle_ncp_serv()
                            uint8 namlen;
 	                   uint8 name[1];
 	                 } *xdata = (struct XDATA*) responsedata;
-                         char name[100];
+                         uint8 name[100];
 	                 int result = nw_get_volume_name(volume, name);
 	                 if (result > -1){
                            struct fs_usage fsp;
@@ -581,7 +591,7 @@ static void handle_ncp_serv()
 	                     U32_TO_32(fsp.fsu_files,  xdata->total_dirs);
 	                     U32_TO_32(fsp.fsu_ffree,  xdata->avail_dirs);
                            }
-                           xdata->namlen   = strlen(name);
+                           xdata->namlen   = strlen((char*)name);
                            strmaxcpy(xdata->name, name, xdata->namlen);
 	                   data_len = xdata->namlen + 30;
 	                 } else completition = (uint8) -result;
@@ -599,7 +609,7 @@ static void handle_ncp_serv()
                            uint8    name[1];  /* Volume Name  */
 	                 } *xdata = (struct XDATA*) responsedata;
 	                 int result = nw_get_vol_number(dir_handle);
-	                 char name[100];
+	                 uint8 name[100];
 	                 if (result > -1)
 	                   result = nw_get_volume_name(result, name);
                          if (result > -1) {
@@ -612,7 +622,7 @@ static void handle_ncp_serv()
 	                     U32_TO_32(fsp.fsu_files,  xdata->total_dirs);
 	                     U32_TO_32(fsp.fsu_ffree,  xdata->avail_dirs);
                            }
-                           xdata->namlen = strlen(name);
+                           xdata->namlen = strlen((char*)name);
                            strmaxcpy(xdata->name, name, xdata->namlen);
 	                   data_len = xdata->namlen + 22;
                          } else completition = (uint8) -result;
@@ -770,8 +780,8 @@ static void handle_ncp_serv()
 	               struct INPUT {
 	                 uint8   header[7];      /* Requestheader */
 	                 uint8   reserve;        /* 0x1 	  */
-	                 uint8   fhandle[4];     /* Filehandle 	  */
 	                 uint8   ext_fhandle[2]; /* all zero 	  */
+	                 uint8   fhandle[4];     /* Filehandle 	  */
 	                 uint8   offset[4];
 	                 uint8   size[4];
 	                 uint8   weisnicht[2];   /* lock timeout ??? */
@@ -836,8 +846,8 @@ static void handle_ncp_serv()
 	               struct INPUT {
 	                 uint8   header[7];     /* Requestheader */
 	                 uint8   reserve;
-	                 uint8   fhandle[4];     /* filehandle */
 	                 uint8   ext_fhandle[2]; /* all zero   */
+	                 uint8   fhandle[4];     /* filehandle */
 	               } *input = (struct INPUT *)ncprequest;
 	               uint32 fhandle = GET_BE32(input->fhandle);
                        XDPRINTF((2,0, "TODO: COMMIT FILE:fhandle=%ld", fhandle));
@@ -927,11 +937,11 @@ static void handle_ncp_serv()
 	               struct INPUT {
 	                 uint8   header[7];      /* Requestheader */
 	                 uint8   reserve;
-	                 uint8   fhandle[4];     /* filehandle */
 	                 uint8   ext_fhandle[2]; /* all zero   */
+	                 uint8   fhandle[4];     /* filehandle */
 	               } *input = (struct INPUT *)ncprequest;
 	               uint32 fhandle = GET_BE32(input->fhandle);
-	               completition = (uint8)(-nw_close_datei(fhandle));
+	               completition = (uint8)(-nw_close_datei(fhandle, 0));
 	               if (!completition && fhandle == test_handle) {
 	                 do_druck++;
 	                 test_handle = -1;
@@ -950,8 +960,8 @@ static void handle_ncp_serv()
 	                 uint8   data[1];       /* Name */
 	               } *input = (struct INPUT *)ncprequest;
 	               struct OUTPUT {
-	                 uint8   fhandle[4];   /* Filehandle */
 	                 uint8   extfhandle[2];
+	                 uint8   fhandle[4];   /* Filehandle */
 	                 uint8   reserved[2];  /* rese. by NOVELL */
 	                 NW_FILE_INFO fileinfo;
 	               } *xdata= (struct OUTPUT*)responsedata;
@@ -1041,8 +1051,8 @@ static void handle_ncp_serv()
 	               struct INPUT {
 	                 uint8   header[7];         /* Requestheader */
 	                 uint8   filler;
+	                 uint8   ext_filehandle[2]; /* all zero */
 	                 uint8   fhandle[4];        /* Dateihandle */
-	                 uint8   ext_filehandle[2]; /* ?? alles 0 */
 	               } *input = (struct INPUT *)ncprequest;
 	               struct OUTPUT {
 	                 uint8   size[4];    /* Position ??? */
@@ -1062,8 +1072,8 @@ static void handle_ncp_serv()
 	               struct INPUT {
 	                 uint8   header[7];     /* Requestheader */
 	                 uint8   filler;
+	                 uint8   ext_fhandle[2]; /* all zero */
 	                 uint8   fhandle[4];     /* filehandle */
-	                 uint8   reserve[2];     /* alles 0 */
 	                 uint8   offset[4];      /* alles 0 */
 	                 uint8   max_size[2];    /* zu lesende Bytes */
 	               } *input = (struct INPUT *)ncprequest;
@@ -1093,8 +1103,8 @@ static void handle_ncp_serv()
 	                 uint8   header[7];     /* Requestheader */
 
 	                 uint8   filler;         /* 0 Filler ?? */
-	                 uint8   fhandle[4];     /* Dateihandle   */
 	                 uint8   ext_handle[2];
+	                 uint8   fhandle[4];     /* Dateihandle   */
 	                 uint8   offset[4];      /* SEEK OFFSET    */
 	                 uint8   size[2];        /* Datasize       */
 	                 uint8   data[2];        /* Schreibdaten */
@@ -1116,15 +1126,15 @@ static void handle_ncp_serv()
 	 case 0x4a : {  /* File SERVER COPY  */
                        /* should be OK */
 	               struct INPUT {
-	                 uint8   header[7];     /* Requestheader */
-	                 uint8   reserved;      /* Reserved by Novell */
-	                 uint8   qfhandle[4];   /* Quellfile */
-	                 uint8   reserve1[2];   /* ext Filehandle */
-	                 uint8   zfhandle[4];   /* Zielfile */
-	                 uint8   reserve2[2];   /* ext Filehandle */
-	                 uint8   qoffset[4];    /* Quellfile Offset */
-	                 uint8   zoffset[4];    /* Zielfile Offset */
-	                 uint8   size[4];       /* Anzahl   */
+	                 uint8   header[7];       /* Requestheader */
+	                 uint8   reserved;        /* Reserved by Novell */
+	                 uint8   qext_fhandle[2]; /* ext Filehandle */
+	                 uint8   qfhandle[4];     /* Quellfile */
+	                 uint8   zext_fhandle[2]; /* ext Filehandle */
+	                 uint8   zfhandle[4];     /* Zielfile */
+	                 uint8   qoffset[4];      /* SourceFile Offset */
+	                 uint8   zoffset[4];      /* DestFile Offset   */
+	                 uint8   size[4];         /* copysize          */
 	               } *input = (struct INPUT *)ncprequest;
 	               int    qfhandle   = GET_BE32(input->qfhandle);
 	               int    zfhandle   = GET_BE32(input->zfhandle);
@@ -1150,8 +1160,8 @@ static void handle_ncp_serv()
 	               struct INPUT {
 	                 uint8   header[7];  /* Requestheader */
 	                 uint8   filler;
+	                 uint8   reserve[2]; /* ext Filehandle  */
 	                 uint8   fhandle[4]; /* Dateihandle */
-	                 uint8   reserve[2]; /* ext Filehandle ??? */
 	                 uint8   zeit[2];    /* time    */
 	                 uint8   datum[2];   /* date    */
 	               } *input = (struct INPUT *)ncprequest;
@@ -1177,8 +1187,8 @@ static void handle_ncp_serv()
 	                 uint8   data[2];       /* Name       */
 	               } *input = (struct INPUT *)ncprequest;
 	               struct OUTPUT {
+	                 uint8   ext_fhandle[2]; /* all zero       */
 	                 uint8   fhandle[4];     /* Dateihandle    */
-	                 uint8   ext_fhandle[2]; /* z.B  0x0   0x0 */
 	                 uint8   reserve2[2];    /* z.B  0x0   0x0 */
 	                 NW_FILE_INFO fileinfo;
 	               } *xdata= (struct OUTPUT*)responsedata;
@@ -1216,12 +1226,24 @@ static void handle_ncp_serv()
                      break;
 #endif
 
+#ifdef _MAR_TESTS_
+	 case 0x5f : { /* ????????????? UNIX Client */
+	               struct INPUT {
+	                 uint8   header[7];  /* Requestheader */
+                         uint8   unknown[4]; /* 0x10, 0,0,0  */
+	               } *input = (struct INPUT *)ncprequest;
+	               completition = 0;
+                     }
+                     break;
+
+#endif
 
 #if 0
 	 case 0x61 : { /* Negotiate Buffer Size, Packetsize new ??? */
                        /* > 3.11 */
                        /* similar request as 0x21 */
                      }
+
 #endif
 
 	   default : completition = 0xfb; /* unknown request */

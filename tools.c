@@ -19,6 +19,13 @@
 #include "net.h"
 #include <stdarg.h>
 
+#ifndef LINUX
+#include <errno.h>
+extern int _sys_nerr;
+extern char _sys_errlist[];
+#endif
+
+
 int  nw_debug=0;
 FILE *logfile=stdout;
 
@@ -27,7 +34,8 @@ static char *modnames[] =
 { "???????",
   "NWSERV ",
   "NCPSERV",
-  "NWCONN " };
+  "NWCONN ",
+  "NWCLIEN" };
 
 static char *get_modstr(void)
 {
@@ -59,9 +67,9 @@ void x_x_xfree(char **p)
   }
 }
 
-int strmaxcpy(char *dest, char *source, int len)
+int   strmaxcpy(uint8 *dest, uint8 *source, int len)
 {
-  int slen = (source != (char *)NULL) ? min(len, strlen(source)) : 0;
+  int slen = (source != (uint8 *)NULL) ? min(len, strlen((char*)source)) : 0;
   if (slen) memcpy(dest, source, slen);
   dest[slen] = '\0';
   return(slen);
@@ -69,7 +77,7 @@ int strmaxcpy(char *dest, char *source, int len)
 
 int x_x_xnewstr(uint8 **p,  uint8 *s)
 {
-  int len = (s == NULL) ? 0 : strlen(s);
+  int len = (s == NULL) ? 0 : strlen((char*)s);
   if (*p != (uint8 *)NULL) free((char*)*p);
   *p = (uint8*)xmalloc(len+1);
   if (len) strcpy((char*)(*p), (char*)s);
@@ -86,6 +94,7 @@ void dprintf(char *p, ...)
     vfprintf(logfile, p, ap);
     va_end(ap);
     fprintf(logfile, "\n");
+    fflush(logfile);
     fflush(logfile);
   }
 }
@@ -159,11 +168,11 @@ int get_ini_entry(FILE *f, int entry, char *str, int strsize)
       if (len > se+1 && se > 0 && se < 4 && ppi){
         char sx[10];
         int  fentry;
-        strmaxcpy(sx, buff, se);
+        strmaxcpy((uint8*)sx, (uint8*)buff, se);
         fentry = atoi(sx);
         if (fentry > 0 && ((!entry) || entry == fentry)) {
           if (ppe) *(ppe+1) = '\0';
-          strmaxcpy(str, ppi, strsize-1);
+          strmaxcpy((uint8*)str, (uint8*)ppi, strsize-1);
           if (do_open) fclose(f);
           return(fentry);
         }
@@ -194,6 +203,7 @@ void get_ini_debug(int module)
  * 1 = nwserv
  * 2 = ncpserv
  * 3 = nwconn
+ * 4 = nwclient
  */
 {
   int debug = get_ini_int(100+module);
@@ -222,7 +232,7 @@ void init_tools(int module)
     while (0 != (what=get_ini_entry(f, 0, buff, sizeof(buff)))) { /* daemonize */
       if (200 == what) dodaemon = atoi(buff);
       else if (201 == what) {
-        strmaxcpy(logfilename, buff, sizeof(logfilename)-1);
+        strmaxcpy((uint8*)logfilename, (uint8*)buff, sizeof(logfilename)-1);
         withlog++;
       } else if (202 == what) {
         new_log = atoi(buff);

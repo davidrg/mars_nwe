@@ -236,6 +236,8 @@ static int do_17_17(void)
   return(-1);
 }
 
+
+
 static int get_network_serial_number(void)
 {
   uint8  data[] = {0, 1, 0x12};
@@ -610,6 +612,17 @@ static void test2(void)
    }
 }
 
+static int do_5f(void)
+{
+  uint8  data[] = {0x10, 0, 0, 0};
+  RDATA(data, 0x17, "do_5f");
+  if (!handle_event()) {
+    return(0);
+  }
+  return(-1);
+}
+
+
 
 static void teste_reads(void)
 {
@@ -681,7 +694,7 @@ static void test_wdog(void)
 /* --------------------------------------------------------- */
 int main(int argc, char **argv)
 {
-  nw_debug = 1; /* dieses Modul dient nur zum Debuggen !! */
+  init_tools(NWCLIENT);
 
   if (argc != 3) {
     fprintf(stderr, "usage: nwclient MY_ADDR SERVER_ADDR\n");
@@ -701,6 +714,7 @@ int main(int argc, char **argv)
   get_pkt_size();
   get_connect();
   get_server_time();
+  do_5f();
 
   file_search_init(NULL, 1, NULL);
   get_bindery_access();

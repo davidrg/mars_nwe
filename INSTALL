@@ -1,3 +1,22 @@
+=========>  !! important NOTE !!
+You can configure mars_nwe in two ways.
+1. You want mars_nwe to handle routing/sap and configuring
+   ipx-interfaces. This is the default mode.
+   You do not need any other ipx-tool or routers/daemons.
+   In this modus the correct coexisting working
+   of mars_nwe, dosemu, ncpfs or Caldera's nwclient was tested.
+-> you must use kernel < 1.3.60 or use kernel >= 1.3.60 and compile
+   your kernel with IPX-option CONFIG_IPX_INTERN=N
+   In mars_nwe/config.h there must exist the following line:
+   #define INTERNAL_RIP_SAP  1
+
+2. You want to run mars_nwe only as a fileserver and use
+   special tools to configure ipx and rip/sap routers.
+-> In this mode you must use tools like ipx-configure and
+   ripd to configure ipx-interfaces, routes and handle rip/sap.
+   In mars_nwe/config.h there must exist the following line:
+   #define INTERNAL_RIP_SAP  0
+
 =========>   create programs
 1. call make.
 2. perhaps you must modify mk.li and config.h
@@ -28,7 +47,7 @@ kill of nwserv or with the right dos client programm
 nw.ini file gives the time in seconds, before the server
 really shuts down.
 
-Viel Erfolg / good Luck  :-)
+good luck  :-)
 
 Martin
 (mstover@freeway.de)

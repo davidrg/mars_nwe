@@ -1,6 +1,6 @@
 /* ncpserv.c */
-#define REVISION_DATE "22-Jan-96"
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+#define REVISION_DATE "08-Feb-96"
+/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -440,9 +440,9 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                        uint8 appl_number[2];
 	             } *xdata = (struct XDATA*) responsedata;
                      /* serial-number 4-Byte */
-	             U32_TO_BE32(0x44444444, xdata->serial_number);
+	             U32_TO_BE32(NETWORK_SERIAL_NMBR, xdata->serial_number);
                      /* applikation-number 2-Byte */
-	             U16_TO_BE16(0x2222,     xdata->appl_number);
+	             U16_TO_BE16(NETWORK_APPL_NMBR,  xdata->appl_number);
 	             data_len = sizeof(struct XDATA);
    	     	  }
                   break;
@@ -484,6 +484,31 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            } else completition = (uint8) -result;
 	          } break;
 
+     case 0x15 :  { /* Get Object Connection List */
+	            uint8  *p           =  rdata;
+	            int    result;
+	            NETOBJ obj;
+	            obj.type            =  GET_BE16(p);
+                    p+=2;
+	            strmaxcpy((char*)obj.name,  (char*)(p+1), (int) *(p));
+                    upstr(obj.name);
+	            result = find_obj_id(&obj, 0);
+	            if (!result){
+                      int k=-1;
+                      int anz  = 0;
+                      p = responsedata+1;
+                      while (++k < anz_connect && anz < 255) {
+                        CONNECTION *cn= &connections[k];
+                        if (cn->fd > -1 && cn->object_id == obj.id) {
+                          *p++=(uint8)k+1;
+                          anz++;
+                        }
+                      } /* while */
+                      *responsedata = anz;
+                      data_len = 1 + anz;
+                    } else completition=(uint8)-result;
+                  }
+                  break;
 
      case 0x16 :  { /* Get Connection Info, OLD */
 	            struct XDATA {
@@ -521,7 +546,12 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                     uint8 *p   = c->crypt_key;
                     uint8 *pp  = responsedata;
                     data_len   = k;
-                    while (k--) *pp++ = *p++ = (uint8) rand();
+                    while (k--) *pp++ = *p++ =
+#if 0
+                      (uint8) rand();
+#else
+                      (uint8) k;
+#endif
                     /* if all here are same (1 or 2) then the resulting key is */
                     /* 00000000  */
                   }
@@ -623,6 +653,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            NETOBJ obj;
 	            obj.type            =  GET_BE16(p);
 	            strmaxcpy((char*)obj.name,  (char*)(p+3), (int) *(p+2));
+                    upstr(obj.name);
 	            result = find_obj_id(&obj, 0);
 	            if (!result){
 	              U32_TO_BE32(obj.id,   xdata->object_id);
@@ -666,6 +697,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            NETOBJ obj;
 	            obj.type            =  GET_BE16(p);
 	            strmaxcpy((char*)obj.name, (char*)(p+3),(int) *(p+2));
+                    upstr(obj.name);
 	            result = find_obj_id(&obj, last_obj_id);
 	            if (!result){
 	              U32_TO_BE32(obj.id,    xdata->object_id);
@@ -969,7 +1001,8 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                        obj.name, result));
                   }
                   break;
-#if 0
+
+#ifdef _CHANGE_PASSWD_TESTING_
      case 0x4b :  { /* keyed change pasword  */
                     uint8  *p     =  rdata+sizeof(c->crypt_key);
 	            NETOBJ obj;
@@ -981,12 +1014,11 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                     p += (*p+1);  /* here is now password-type ?? 0x60,0x66 */
 
 	            if (0 == (result = find_obj_id(&obj, 0)))
-                      /*
 	              result=nw_test_passwd(obj.id, c->crypt_key, rdata);
+#if 0
                     if (result > -1)
-                      */
 	              result=nw_set_enpasswd(obj.id, p+1);
-
+#endif
 	            if (result< 0) completition = (uint8) -result;
                     XDPRINTF((1, 0, "Keyed Change PW from OBJECT='%s', result=0x%x",
                       obj.name, result));
@@ -1003,11 +1035,22 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                    XDPRINTF((1, 0, "TODO:Create QUEUE ??"));
 	          } break;
 
-     case 0x66 :  {   /* Read Queue Current Status */
+     case 0x66 :   {   /* Read Queue Current Status */
 	           /*  !!!!!! TO DO */
 	           NETOBJ    obj;
 	           obj.id =  GET_BE32(rdata);
                    XDPRINTF((1, 0, "TODO:READ QUEUE STATUS von Q=0x%lx", obj.id));
+                   completition=0xd5; /* no Queue Job */
+	          }break;
+
+     case 0x6A :    /* Remove Job from Queue OLD */
+     case 0x80 :  { /* Remove Job from Queue NEW */
+	           NETOBJ      obj;
+                   uint32 jobnr  = (ufunc == 0x6A)
+                                      ? GET_BE16(rdata+4)
+                                      : GET_BE32(rdata+4);
+	           obj.id        = GET_BE32(rdata);
+                   XDPRINTF((1, 0, "TODO:Remove Job=%ld from Queue Q=0x%lx", jobnr, obj.id));
                    completition=0xd5; /* no Queue Job */
 	          }break;
 
@@ -1028,7 +1071,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	          }break;
 
      case 0x68:     /* creat queue job and file old */
-     case 0x79:   { /* creat queue job and file */
+     case 0x79:   { /* creat queue job and file new */
                     uint32 q_id      = GET_BE32(rdata);
                     uint8  *dir_name = rdata+4+280+1;
                     int result       = nw_get_q_dirname(q_id, dir_name);
@@ -1054,6 +1097,14 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                   }
                   break;
 
+
+     case 0x7d :  { /* Read Queue Current Status, new */
+	           NETOBJ    obj;
+	           obj.id =  GET_BE32(rdata);
+                   XDPRINTF((1, 0, "TODO:READ QUEUE STATUS NEW of Q=0x%lx", obj.id));
+                   completition=0xd5; /* no Queue Job */
+	          }break;
+
      case 0xc8 :  { /* CHECK CONSOLE PRIVILEGES */
                    XDPRINTF((1, 0, "TODO: CHECK CONSOLE PRIV"));
 	           /*  !!!!!! TODO completition=0xc6 (no rights) */
@@ -1065,11 +1116,18 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	           char *revision_date = REVISION_DATE;
 	           char *copyright     = "(C)opyright Martin Stover";
 	           int  k=strlen(company)+1;
-
+                   int  l;
 	           memset(responsedata, 0, 512);
 	           strcpy(responsedata,   company);
-                   k += (1+sprintf(responsedata+k, revision,
-                             _VERS_H_, _VERS_L_ ));
+
+                   l = 1 + sprintf(responsedata+k, revision,
+                                     _VERS_H_, _VERS_L_ );
+#if 0
+                   k+=l;
+#else
+                   /* BUG in LIB */
+                   k += (1 + strlen(responsedata+k));
+#endif
 	           strcpy(responsedata+k, revision_date);
 	           k += (strlen(revision_date)+1);
 	           strcpy(responsedata+k, copyright);
@@ -1092,7 +1150,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                     int anz_conns = (int) *p++;
                     uint8    *co  = p;
                     int msglen    = (int) *(p+anz_conns);
-                    char  *msg    = p+anz_conns+1;
+                    char  *msg    = (char*) p+anz_conns+1;
                     int k = -1;
                     if (anz_conns) {
                       while (++k < anz_conns) {
@@ -1138,6 +1196,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
   ncpresponse->connection     = ncprequest->connection;
   ncpresponse->reserved       = 0;
   ncpresponse->completition   = completition;
+  if (c->message[0]) connect_status |= 0x40;
   ncpresponse->connect_status = connect_status;
   data_len=write(c->fd, (char*)ncpresponse,
                          sizeof(NCPRESPONSE) + data_len);
@@ -1267,7 +1326,7 @@ static int handle_ctrl(void)
 
       case 0x3333 : /* 'bindery' calls */
         if (sizeof(conn) == read(0, (char*)&conn, sizeof(conn))) {
-          uint8 *buff = xmalloc(conn+10);
+          uint8 *buff = (uint8*)  xmalloc(conn+10);
           XDPRINTF((2,0, "0x3333 len=%d", conn));
           if (conn == read(0, (char*)buff, conn))
              handle_bind_calls(buff);

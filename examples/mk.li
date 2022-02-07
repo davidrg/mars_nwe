@@ -1,6 +1,6 @@
 #!/bin/sh
-# mk.li 16-Nov-95 ###
-#
+# mk.li 30-Jan-96 ###
+# please edit this file !
 
 mk()
 {
@@ -14,12 +14,46 @@ mk()
     chmod 666 $ERRFILE
 }
 
-export CC=cc
-export CCP="cc -E"
-#export CFLAGS="-pipe -O2 -fomit-frame-pointer"
-#problems gcc2.5.8    ^^^^^^^^^^^^^^^^^^^^^^^^
-export CFLAGS="-pipe"
-export HOSTCFLAGS="-DLINUX"
-export TMP=/tmp
-MAKE=make
+TOLOWER='tr "[A-Z]" "[a-z]"'
+UNX=`uname -s | $TOLOWER`
+
+case $UNX in
+   linux)
+     CC=cc;
+     CCP="cc -E";
+#    CFLAGS="-pipe -O2 -fomit-frame-pointer"
+#    problems gcc2.5.8 ^^^^^^^^^^^^^^^^^^^^^
+     CFLAGS="-pipe"
+     HOSTCFLAGS="-DLINUX"
+     NDBMLIB="-ldbm"
+     NSLLIB=""
+     MAKE=make
+     TMP=/tmp
+     INSTALL=install
+     ;;
+########### USL UNIX ##############
+   unix_sv)
+     CC=cc
+     CCP="gcc -E"
+     CFLAGS="-pipe"
+     HOSTCFLAGS=""
+     NDBMLIB="/usr/ucblib/libucb.a"
+     NSLLIB="-lnsl"
+     MAKE=gmake
+     TMP=/tmp
+     INSTALL=/usr/ucb/install
+   ;;
+   *) echo "mk.li: Unknown or not supported OS, probably you must set \$UNX"
+   ;;
+esac
+
+export CC
+export CCP
+export CFLAGS
+export HOSTCFLAGS
+export NDBMLIB
+export NSLLIB
+export TMP
+export INSTALL
+
 mk $@

@@ -1,4 +1,4 @@
-/* nwroute.c 14-Jan-96 */
+/* nwroute.c 08-Feb-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -190,9 +190,12 @@ void insert_delete_server(uint8  *name,                 /* Server Name */
     nr->hops  = 0xffff;
   } else if (do_delete) {
     nr=nw_servers[k];
+#if !FILE_SERVER_INACTIV
     if (!IPXCMPNODE(nr->addr.node, my_server_adr.node) ||
-        !IPXCMPNET (nr->addr.net,  my_server_adr.net) )  {
-      if (nr->typ == 4) ins_del_bind_net_addr(nr->name, NULL);
+        !IPXCMPNET (nr->addr.net,  my_server_adr.net) )
+#endif
+    {
+      ins_del_bind_net_addr(nr->name, nr->typ, NULL);
       xfree(nr->name);
       memset(nr, 0, sizeof(NW_SERVERS));
     }
@@ -200,13 +203,15 @@ void insert_delete_server(uint8  *name,                 /* Server Name */
   } else nr=nw_servers[k];
   /* here now i perhaps must change the entry */
   if (nr->hops > 16 || memcmp(&(nr->addr), addr, sizeof(ipxAddr_t))) {
-    ins_del_bind_net_addr(nr->name, addr);
+    ins_del_bind_net_addr(nr->name, nr->typ, addr);
     memcpy(&(nr->addr), addr, sizeof(ipxAddr_t));
+#if !FILE_SERVER_INACTIV
     if (IPXCMPNODE(from_addr->node, my_server_adr.node) &&
         IPXCMPNET (from_addr->net,  my_server_adr.net)
         && GET_BE16(from_addr->sock) == SOCK_SAP) {
       hops = 0;
     }
+#endif
   }
   if (hops <= nr->hops && 0 != (net = GET_BE32(from_addr->net)) ) {
     nr->net  = net;
@@ -384,6 +389,48 @@ void handle_rip(int fd,       int ipx_pack_typ,
 }
 
 /* <========================= SAP ============================> */
+void send_server_response(int respond_typ,
+                                 int styp, ipxAddr_t *to_addr)
+/* respond_typ 2 = general, 4 = nearest service respond */
+{
+  IPX_DATA   ipx_data;
+  int           j=-1;
+  int        tics=99;
+  int        hops=15;
+  int        entry = -1;
+  memset(&ipx_data, 0, sizeof(ipx_data.sip));
+  while (++j < anz_servers) {
+    NW_SERVERS *nw=nw_servers[j];
+    if (nw->typ == styp && nw->name && *(nw->name)) {
+      int xtics=999;
+      if (nw->net != internal_net) {
+        NW_NET_DEVICE *nd=find_netdevice(nw->net);
+        if (nd) xtics = nd->ticks;
+      } else xtics =0;
+      if (xtics < tics || (xtics == tics && nw->hops <= hops)) {
+        tics  = xtics;
+        hops  = nw->hops;
+        entry = j;
+      }
+    }
+  }
+  if (entry > -1) {
+    NW_SERVERS *nw=nw_servers[entry];
+    strcpy((char*)ipx_data.sip.server_name, nw->name);
+    memcpy(&ipx_data.sip.server_adr, &nw->addr, sizeof(ipxAddr_t));
+    XDPRINTF((4, 0, "NEAREST SERVER=%s, typ=0x%x, tics=%d, hops=%d",
+                  nw->name, styp, tics, hops));
+    U16_TO_BE16(respond_typ, ipx_data.sip.response_type);
+    U16_TO_BE16(styp, ipx_data.sip.server_type);
+    U16_TO_BE16(hops, ipx_data.sip.intermediate_networks);
+    send_ipx_data(sockfd[SAP_SLOT],
+                       4,  /* this is the official packet typ for SAP's */
+	               sizeof(ipx_data.sip),
+	               (char *)&(ipx_data.sip),
+	               to_addr, "Nearest Server Response");
+  }
+}
+
 static void send_sap_broadcast(int mode)
 /* mode=0, standard broadcast */
 /* mode=1, first trie         */
@@ -448,9 +495,20 @@ void send_sap_rip_broadcast(int mode)
 /* mode=1, first trie         */
 /* mode=2, shutdown	      */
 {
-  send_sap_broadcast(mode);
-  send_rip_broadcast(mode);
-  if (!mode) {
+static int flipflop=0;
+  if (mode) {
+    send_sap_broadcast(mode);
+    send_rip_broadcast(mode);
+  } else {
+    if (flipflop) {
+      send_rip_broadcast(mode);
+      flipflop=0;
+    } else {
+      send_sap_broadcast(mode);
+      flipflop=1;
+    }
+  }
+  if (!mode && flipflop) { /* jedes 2. mal */
     FILE *f= open_route_info_fn();
     if (f) {
       int k=-1;

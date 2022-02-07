@@ -1,9 +1,9 @@
-/* emutli.c 22-Jan-96 */
+/* emutli.c 07-Feb-96 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
 
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993,1996 Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -237,30 +237,6 @@ void exit_dev(char *devname, int frame)
   del_interface(devname, frame);
 }
 
-int get_ipx_addr(ipxAddr_t *addr)
-{
-  int sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
-  int result=-1;
-  if (sock > -1) {
-    struct sockaddr_ipx ipxs;
-    int maxplen=sizeof(struct sockaddr_ipx);
-    result=0;
-    memset((char*)&ipxs, 0, sizeof(struct sockaddr_ipx));
-    ipxs.sipx_family=AF_IPX;
-    if (bind(sock, (struct sockaddr*)&ipxs, sizeof(struct sockaddr_ipx))==-1){
-      errorp(0, "EMUTLI:bind", NULL);
-      result = -1;
-    } else {
-      if (getsockname(sock, (struct sockaddr*)&ipxs, &maxplen) == -1){
-        errorp(0, "EMUTLI:init_ipx:getsockname", NULL);
-        result = -1;
-      } else sock2ipxadr(addr, &ipxs);
-    }
-    close(sock);
-  } else errorp(0, "EMUTLI:bind", NULL);
-  return(result);
-}
-
 void ipx_route_add(uint32  dest_net,
                    uint32  route_net,
                    uint8   *route_node)
@@ -351,7 +327,10 @@ int t_bind(int sock, struct t_bind *a_in, struct t_bind *a_out)
           && a_in->addr.len == sizeof(ipxAddr_t))
      ipx2sockadr(&ipxs, (ipxAddr_t*) (a_in->addr.buf));
 
-   ipxs.sipx_network = 0L;
+   ipxs.sipx_network = 0L;                    /* allways default net */
+
+   memset(ipxs.sipx_node, 0, IPX_NODE_SIZE);  /* allways default node */
+                                              /* Hi Volker  :)        */
 
    if (bind(sock, (struct sockaddr*)&ipxs, sizeof(struct sockaddr_ipx))==-1) {
      errorp(0, "TLI-BIND", "socket Nr:0x%x", (int)GET_BE16(&(ipxs.sipx_port)));
@@ -388,7 +367,7 @@ int t_close(int fd)
 
 
 int poll( struct pollfd *fds, unsigned long nfds, int timeout)
-/* z.Z. nur POLL-IN */
+/* only POLL-IN */
 {
    fd_set  readfs;
    /*

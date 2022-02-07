@@ -1,5 +1,5 @@
 Sorry, this is in German only.  :-(
-Aenderungen in mars_nwe bis zum : 22-Jan-96
+Aenderungen in mars_nwe bis zum : 08-Feb-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -61,4 +61,24 @@ Erste 'oeffentliche' Version
   net < angebbarer anzahl tics ist. (z.B. fuer IPX ueber ISDN)
 - Verarbeitung von 'PIPE Jobs' eingebaut.
 - Bug beim Drucken korrigiert. (nprint funktionierte nicht)
+- 0x17, 0x35 u. 0x37 upstr objname eingebaut.
+- auf USL 2.xx (UnixWare (tm)) wieder zum Laufen gebracht.
+- kann nun auch ohne internen Router (RIP/SAP) erzeugt werden.
+  dafuer define INTERNAL_RIP_SAP in config.h eingebaut.
+- kann auch als standalone router only Fileserver Aktivitaet
+  verwendet werden.
+  Dafuer define FILE_SERVER_INACTIV in config.h eingebaut.
+- mk.li erweitert.
+- Schalter zum Testen von namespace calls eingebaut. config.h
+- config.h um folgende Konstanten erweitert.
+  NETWORK_SERIAL_NMBR 0x44444444L /* Serial Number 4 Byte      */
+  NETWORK_APPL_NMBR   0x2222      /* Applikation Number 2 Byte */
+- Schalter fuer das aktivieren von Namespace services calls
+  in config.h eingebaut. define WITH_NAME_SPACE_CALLS
+- Schalter 'm' fuer removable volumes ( z.B. CDROMS )
+  eingebaut. (Lauri Tischler)
+- func 0x17, ufunc 0x15 eingebaut.
+
+
+
 

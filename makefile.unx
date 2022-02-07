@@ -1,4 +1,6 @@
-# makefile.unx 15-Jan-96
+#if 0
+#makefile.unx 07-Feb-96
+#endif
 VPATH=..
 O=.o
 C=.c
@@ -6,7 +8,7 @@ C=.c
 DEBUG=-DDB
 V_H=0
 V_L=96
-P_L=7
+P_L=8
 #define D_P_L 1
 DISTRIB=mars_nwe
 #if D_P_L
@@ -53,23 +55,11 @@ $(DESTMAKEFILE): makefile.unx config.h
 #endif
 
 
-PROG1=netinit
+PROG1=
 PROG2=nwserv
 PROG3=nwconn
 PROG4=ncpserv
 PROG5=nwclient
-
-#ifdef  LINUX
-EMUTLIOBJ=emutli$(O)
-PROG1=
-NDBMLIB=-ldbm
-NSLLIB=
-#else
-NDBMLIB=/usr/ucblib/libucb.a
-NSLLIB=-lnsl
-#endif
-
-PROGS=$(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5)
 
 #include "config.h"
 #ifdef FILENAME_NW_INI
@@ -84,25 +74,43 @@ M_PATHNAME_PROGS=PATHNAME_PROGS
 M_PATHNAME_PROGS="."
 #endif
 
+#ifndef INTERNAL_RIP_SAP
+#define INTERNAL_RIP_SAP  1
+#endif
+
+#ifdef  LINUX
+EMUTLIOBJ=emutli$(O)
+# if INTERNAL_RIP_SAP
+NWROUTE_O=nwroute$(O)
+# else
+NWROUTE_O=nwroute1$(O)
+# endif
+#else
+NWROUTE_O=nwroute1$(O)
+#endif
+
+PROGS=$(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5)
+
 OBJ1= $(EMUTLIOBJ) net1$(O) tools$(O)
-OBJ2= $(OBJ1) nwroute$(O)
-OBJ3= $(OBJ1) connect$(O) namspace$(O) nwvolume$(O)
+OBJ2= $(OBJ1) $(NWROUTE_O)
+OBJ3= $(OBJ1) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O)
 OBJ4= $(OBJ1) nwdbm$(O) nwcrypt$(O)
 OBJ5= $(OBJ1)
 
-OBJS= net1$(O) tools$(O) connect$(O) nwdbm$(O) nwroute$(O) \
+OBJS= net1$(O) tools$(O) connect$(O) nwdbm$(O) $(NWROUTE_O) \
       namspace$(O) nwvolume$(O) \
       $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O)
 
-HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O)
+HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O)
 
 $(PROG1):  $(PROG1)$(O) $(OBJ1)
 	   $(CC) -o ../$(PROG1) $(PROG1)$(O) $(OBJ1) $(NSLLIB)
 
 $(PROG2):  $(PROG2)$(O) $(OBJ2)
 	   $(CC) -o ../$(PROG2) $(PROG2)$(O) $(OBJ2) $(NSLLIB)
-
+#if 0
 #$(CC) -o ../$(PROG2) $(PROG2)$(O) $(OBJ2) $(NDBMLIB) $(NSLLIB)
+#endif
 
 $(PROG3):  $(PROG3)$(O) $(OBJ3)
 	   $(CC) -o ../$(PROG3) $(PROG3)$(O) $(OBJ3)  $(NSLLIB)
@@ -113,7 +121,7 @@ $(PROG4):  $(PROG4)$(O) $(OBJ4)
 $(PROG5):  $(PROG5)$(O) $(OBJ5)
 	   $(CC) -o ../$(PROG5) $(PROG5)$(O) $(OBJ5) $(NSLLIB)
 
-$(HOBJ3):  namspace.h connect.h nwvolume.h
+$(HOBJ3):  namspace.h connect.h nwvolume.h nwfile.h
 $(OBJS):   net.h config.h
 
 $(C)$(O):
@@ -123,11 +131,11 @@ $(C)$(O):
 n_all:   $(PROGS)
 
 n_install_ini:
-	 cd .. && install -m 664 nw.ini $(M_FILENAME_NW_INI) && cd obj
+	 cd .. && $(INSTALL) -m 664 nw.ini $(M_FILENAME_NW_INI) && cd obj
 
 n_install:
-	cd ..  && install -d $(M_PATHNAME_PROGS) && cd obj
-	cd ..  && install $(PROGS) $(M_PATHNAME_PROGS) && cd obj
+	cd ..  && $(INSTALL) -d $(M_PATHNAME_PROGS) && cd obj
+	cd ..  && $(INSTALL) $(PROGS) $(M_PATHNAME_PROGS) && cd obj
 	@cd .. && (if [ -r $(M_FILENAME_NW_INI) ] ; then \
 echo ""; \
 echo "********************************************************"; \
@@ -138,7 +146,7 @@ echo ""; \
 echo "********************************************************"; \
 echo ""; \
 else \
-install -m 664 nw.ini $(M_FILENAME_NW_INI); \
+$(INSTALL) -m 664 nw.ini $(M_FILENAME_NW_INI); \
 echo ""; \
 echo "********************************************************"; \
 echo ""; \
@@ -175,8 +183,6 @@ n_make_dir: n_clean1
  $(DISTRIB).lsm \
  $(DISTRIB)/. \
 ; rm -f  $(DISTRIB)/config.h \
-; rm -f  $(DISTRIB)/namspace.? \
-; cp old/namspace.?  $(DISTRIB)/. \
 ; ln -f  \
  examples/$(STERN) \
  $(DISTRIB)/examples/. \

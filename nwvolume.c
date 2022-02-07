@@ -1,4 +1,4 @@
-/* nwvolume.c  15-Jan-96 */
+/* nwvolume.c  07-Feb-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -20,6 +20,12 @@
 
 #include <dirent.h>
 #include <sys/vfs.h>
+
+#ifndef LINUX
+#include <sys/statvfs.h>
+#define statfs statvfs
+#endif
+
 #include <utime.h>
 
 #include "nwvolume.h"
@@ -73,6 +79,9 @@ void nw_init_volumes(FILE *f)
 
               case 'p' : nw_volumes[used_nw_volumes].options
                          |= VOL_OPTION_IS_PIPE;   break;
+
+              case 'm' : nw_volumes[used_nw_volumes].options
+                         |= VOL_OPTION_REMOUNT;   break;
 
               default : break;
             }
@@ -181,7 +190,7 @@ int nw_get_volume_name(int volnr, uint8 *volname)
     if (volnr < MAX_NW_VOLS) result=0;
   }
   if (nw_debug > 4) {
-    char xvolname[10];
+    uint8 xvolname[10];
     if (!volname) {
       volname = xvolname;
       *volname = '\0';
@@ -220,10 +229,10 @@ static int get_fs_usage(char *path, struct fs_usage *fsp)
   return(0);
 }
 
-int nw_get_fs_usage(char *volname, struct fs_usage *fsu)
+int nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu)
 /* returns 0 if OK, else errocode < 0 */
 {
-  int volnr = nw_get_volume_number(volname, strlen(volname));
+  int volnr = nw_get_volume_number(volname, strlen((char*)volname));
   return((volnr>-1 && !get_fs_usage(nw_volumes[volnr].unixname, fsu)) ? 0 : -1);
 }
 

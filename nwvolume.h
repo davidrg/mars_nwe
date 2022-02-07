@@ -1,4 +1,4 @@
-/* nwvolume.h  15-Jan-96 */
+/* nwvolume.h  07-Feb-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -15,6 +15,8 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+#ifndef _NWVOLUME_H_
+#define _NWVOLUME_H_
 
 #define MAX_DEV_NAMESPACE_MAPS  256
 
@@ -31,16 +33,16 @@ typedef struct {
 
 typedef struct {
   uint8 *sysname;       /* VOL_NAME                       */
-  uint8 *unixname;      /* UNIX-Verzeichnis               */
+  uint8 *unixname;      /* UNIX-DIR                       */
   int   unixnamlen;     /* len of unixname		  */
   DEV_NAMESPACE_MAP *dev_namespace_maps[MAX_DEV_NAMESPACE_MAPS];
   int   maps_count;     /* count of dev_namespace_maps    */
-  uint8 options;        /* *_1_* alles in Kleinbuchstaben */
+  uint8 options;        /* *_1_* all is lowercase         */
 } NW_VOL;
 
 #define VOL_OPTION_DOWNSHIFT    1
-#define VOL_OPTION_IS_PIPE      2  /* Volume has only pipes */
-
+#define VOL_OPTION_IS_PIPE      2  /* Volume has only pipes    */
+#define VOL_OPTION_REMOUNT      4  /* Volume can be remounted (cdroms) */
 
 /* stolen from GNU-fileutils */
 /* Space usage statistics for a filesystem.  Blocks are 512-byte. */
@@ -58,7 +60,7 @@ extern int       used_nw_volumes;
 extern void nw_init_volumes(FILE *f);
 extern int  nw_get_volume_number(uint8 *volname, int namelen);
 extern int  nw_get_volume_name(int volnr, uint8 *volname);
-extern int  nw_get_fs_usage(char *volname, struct fs_usage *fsu);
+extern int  nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu);
 extern int  get_volume_options(int volnr, int mode);
 
 extern uint32 nw_vol_inode_to_handle(int volume, ino_t inode,
@@ -66,3 +68,4 @@ extern uint32 nw_vol_inode_to_handle(int volume, ino_t inode,
 
 extern ino_t nw_vol_handle_to_inode(int volume, uint32 handle,
                                DEV_NAMESPACE_MAP *dnm);
+#endif

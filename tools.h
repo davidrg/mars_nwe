@@ -1,4 +1,4 @@
-/*  tools.h : 15-Jan-96    */
+/*  tools.h : 28-Jan-96    */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -21,6 +21,7 @@
 #define NWSERV   1
 #define NCPSERV  2
 #define NWCONN   3
+#define NWCLIENT 4
 
 extern  FILE *logfile;
 extern  void x_x_xfree(char **p);
@@ -31,7 +32,7 @@ extern  int x_x_xnewstr(uint8 **p,  uint8 *s);
 
 extern char  *xmalloc(uint size);
 extern char  *xcmalloc(uint size);
-extern int   strmaxcpy(char *dest, char *source, int len);
+extern int   strmaxcpy(uint8 *dest, uint8 *source, int len);
 extern void  dprintf(char *p, ...);
 extern void  xdprintf(int dlevel, int mode, char *p, ...);
 extern void  errorp(int mode, char *what, char *p, ...);
@@ -52,8 +53,10 @@ extern int nw_debug;
 #ifdef DB
 #  define DPRINTF(x)  dprintf x
 #  define XDPRINTF(x) xdprintf x
+#  define D() XDPRINTF((3, 0, "Z: %d" , __LINE__));
 #else
 #  define DPRINTF(x)  /* */
 #  define XDPRINTF(x) /* */
+#  define D()         /* */
 #endif
 
