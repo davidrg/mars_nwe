@@ -1,5 +1,5 @@
-/* connect.c  28-Nov-97 */
-/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
+/* connect.c  01-Feb-98 */
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,13 +45,16 @@ static int  act_umode_file=0;
 
 #include "nwfname.h"
 #include "nwvolume.h"
+#include "nwattrib.h"
 #include "nwfile.h"
 #include "nwconn.h"
+#include "namspace.h"
 #include "connect.h"
 
 
 typedef struct {
-   ino_t  inode;        /* Unix Inode dieses Verzeichnisses */
+   int    dev;          /* unix dev           */
+   ino_t  inode;        /* unix inode         */
    time_t timestamp;    /* Zeitmarke          */
    uint8  *path;        /* path ab Volume     */
    uint8  volume;       /* Welches Volume     */
@@ -77,10 +80,11 @@ static int       connect_is_init = 0;
 
 typedef struct {
   DIR    *f;
-  char   unixname[256]; /* kompletter unixname       */
+  char   unixname[256]; /* full unixname             */
+  int    dev;           /* Unix dev                  */
   ino_t  inode;         /* Unix Inode                */
-  time_t timestamp;     /* fÅr letzte Allocierung    */
-  char   *kpath;        /* Ein Zeichen nach unixname */
+  time_t timestamp;     /* last allocation           */
+  char   *kpath;        /* one char after unixname   */
   int    vol_options;   /* searchoptions             */
   int    volume;        /* Volume Number	     */
 
@@ -127,7 +131,7 @@ static char *build_unix_name(NW_PATH *nwpath, int modus)
 }
 
 
-static int new_dir_handle(ino_t inode, NW_PATH *nwpath)
+static int new_dir_handle(int dev, ino_t inode, NW_PATH *nwpath)
 /*
  * RETURN=errorcode (<0) or dir_handle
  */
@@ -147,7 +151,8 @@ static int new_dir_handle(ino_t inode, NW_PATH *nwpath)
     if (!dh->inode) {
       if (!nhandle)
         nhandle = rethandle+1;
-    } else if (dh->inode == inode && dh->volume == nwpath->volume){
+    } else if (dh->dev == dev && dh->inode == inode 
+                && dh->volume == nwpath->volume){
       nhandle   = rethandle+1;
       break;
     } else if (dh->timestamp < last_time){
@@ -177,6 +182,7 @@ static int new_dir_handle(ino_t inode, NW_PATH *nwpath)
   if ((dh->f        = opendir(dh->unixname)) != (DIR*) NULL){
     dh->volume      = nwpath->volume;
     dh->vol_options = nw_volumes[dh->volume].options;
+    dh->dev         = dev;
     dh->inode       = inode;
     dh->timestamp   = akttime;
     dh->sequence    = 0;
@@ -877,12 +883,11 @@ static int build_path( NW_PATH *path,
   return(0);
 }
 
-static int nw_path_ok(NW_PATH *nwpath)
+static int nw_path_ok(NW_PATH *nwpath, struct stat *stbuff)
 /* returns UNIX inode of path  */
 {
   int j = 0;
   NW_DIR *d=&(dirs[0]);
-  struct stat stbuff;
   int    result=0;
 
   if ((!act_obj_id) && !(entry8_flags & 1)) {
@@ -904,20 +909,23 @@ static int nw_path_ok(NW_PATH *nwpath)
     while (j++ < (int)used_dirs){
       if (d->inode && d->volume == nwpath->volume
                    && !strcmp((char*)nwpath->path, (char*)d->path)){
+        stbuff->st_ino = d->inode;
+        stbuff->st_dev = d->dev;
         return(d->inode);
       }
       d++;
     } /* while */
-    if (!s_stat(build_unix_name(nwpath, 1 | 2 ), &stbuff, NULL)
-      && S_ISDIR(stbuff.st_mode))
-      return(stbuff.st_ino);
+    if (!s_stat(build_unix_name(nwpath, 1 | 2 ), stbuff, NULL)
+      && S_ISDIR(stbuff->st_mode))
+      return(stbuff->st_ino);
     result = -0x9c;   /* wrong path */
   }
   XDPRINTF((4,0x10, "NW_PATH_OK failed:`%s`", conn_get_nwpath_name(nwpath)));
   return(result);
 }
 
-static int build_verz_name(NW_PATH *nwpath,    /* gets complete path     */
+static int build_dir_name(NW_PATH *nwpath,     /* gets complete path     */
+                           struct  stat *stbuff,
                            int     dir_handle) /* search with dirhandle  */
 
 /* return -completition code or inode */
@@ -954,7 +962,7 @@ static int build_verz_name(NW_PATH *nwpath,    /* gets complete path     */
      int    state = 0;
      while ((!completition) && (w = *p++) > 0){
        if (!state){
-         XDPRINTF((5,0,"in build_verz_name path=:%s:", nwpath->path));
+         XDPRINTF((5,0,"in build_dir_name path=:%s:", nwpath->path));
          if (w == '.')      state = 20;
          else if (w == '/') state = 30;
          else state++;
@@ -1036,13 +1044,13 @@ static int build_verz_name(NW_PATH *nwpath,    /* gets complete path     */
            memcpy(nwpath->fn, pp+pathlen, fnlen);
        }
      } else return(-0x98); /* wrong volume */
-     completition = nw_path_ok(nwpath);
+     completition = nw_path_ok(nwpath, stbuff);
    }
    return(completition);
 }
 
-int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
-                          uint8 *data, int len, int only_dir)
+static int conn_get_kpl_path(NW_PATH *nwpath, struct stat *stbuff, 
+                          int dirhandle, uint8 *data, int len, int only_dir)
 /*
  * if ok then the inode of dir will be returned
  * else a negativ errcode will be returned
@@ -1051,7 +1059,7 @@ int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
    int completition = build_path(nwpath, data, len, only_dir);
    XDPRINTF((5, 0, "compl=0x%x, conn_get_kpl_path %s",
       completition, conn_get_nwpath_name(nwpath)));
-   if (!completition) completition = build_verz_name(nwpath, dirhandle);
+   if (!completition) completition = build_dir_name(nwpath, stbuff, dirhandle);
    return(completition);
 }
 
@@ -1060,10 +1068,11 @@ int conn_get_full_path(int dirhandle, uint8 *data, int len,
 /* returns path in form VOLUME:PATH */
 {  
   NW_PATH nwpath;
+  struct stat stbuff;
   int result = build_path(&nwpath, data, len, 0);
   fullpath[0]='\0';
   if (!result)
-     result = build_verz_name(&nwpath, dirhandle);
+     result = build_dir_name(&nwpath, &stbuff, dirhandle);
   if (result > -1) {
     uint8 *p=(*nwpath.path=='/') ? nwpath.path+1 : nwpath.path;
     int len=sprintf(fullpath, "%s:%s",
@@ -1087,9 +1096,10 @@ int conn_get_kpl_unxname(char *unixname,
  */
 {
   NW_PATH nwpath;
+  struct stat stbuff;
   int completition = build_path(&nwpath, data, len, 0);
   if (!completition)
-     completition = build_verz_name(&nwpath, dirhandle);
+     completition = build_dir_name(&nwpath, &stbuff, dirhandle);
   if (completition > -1) {
     if (unixname)
       strcpy(unixname, build_unix_name(&nwpath, 0));
@@ -1151,6 +1161,7 @@ time_t nw_2_un_time(uint8 *d, uint8 *t)
   return(mktime(&s_tm));
 }
 
+#if !NEW_ATTRIB_HANDLING
 int un_nw_attrib(struct stat *stb, int attrib, int mode)
 /* mode: 0 = un2nw , 1 = nw2un */
 {
@@ -1166,6 +1177,7 @@ int un_nw_attrib(struct stat *stb, int attrib, int mode)
   
   if (!mode) {
     /* UNIX access -> NW access */
+    
     if (!is_dir) {
       attrib = FILE_ATTR_A;
     } else {
@@ -1190,6 +1202,7 @@ int un_nw_attrib(struct stat *stb, int attrib, int mode)
   } else {
     /* NW access -> UNIX access */
     int mode = S_IRUSR | S_IRGRP;
+
 #if 0
     /* this is sometimes very BAD */
     if (attrib & FILE_ATTR_H)   /* hidden */
@@ -1211,10 +1224,10 @@ int un_nw_attrib(struct stat *stb, int attrib, int mode)
       else
         stb->st_mode &= ~S_IXGRP;
     }
-    
     return(stb->st_mode);
   }
 }
+#endif
 
 int un_nw_rights(struct stat *stb)
 /* returns eff rights of file/dir */
@@ -1250,9 +1263,21 @@ static int get_file_attrib(NW_FILE_INFO *f, struct stat *stb,
                            NW_PATH *nwpath)
 {
   int voloptions=get_volume_options(nwpath->volume);
+  uint32  dwattrib;
   strncpy((char*)f->name, (char*)nwpath->fn, sizeof(f->name));
   f->attrib=0;  /* d->name could be too long */
   up_fn(f->name);
+#if NEW_ATTRIB_HANDLING
+  dwattrib  = get_nw_attrib_dword(stb, voloptions);
+  f->attrib = (uint8)(dwattrib & 0xff);
+# if 0  
+  /* is this OK or next ??? */
+  dwattrib >>=8;
+  f->ext_attrib = (uint8)(dwattrib & 0xff);
+# else
+  f->ext_attrib = 0;
+# endif
+#else  
   if (voloptions & VOL_OPTION_IS_PIPE)
     f->attrib      = FILE_ATTR_SHARE;
   else
@@ -1261,6 +1286,7 @@ static int get_file_attrib(NW_FILE_INFO *f, struct stat *stb,
          (int)f->attrib, conn_get_nwpath_name(nwpath),
          stb->st_uid, stb->st_gid));
   f->ext_attrib  = 0;
+#endif  
   un_date_2_nw(stb->st_mtime, f->create_date, 1);
   un_date_2_nw(stb->st_atime, f->acces_date,  1);
   un_date_2_nw(stb->st_mtime, f->modify_date, 1);
@@ -1272,15 +1298,23 @@ static int get_file_attrib(NW_FILE_INFO *f, struct stat *stb,
 static int get_dir_attrib(NW_DIR_INFO *d, struct stat *stb,
                          NW_PATH *nwpath)
 {
+  int voloptions=get_volume_options(nwpath->volume);
   XDPRINTF((5,0, "get_dir_attrib of %s", conn_get_nwpath_name(nwpath)));
   strncpy((char*)d->name, (char*)nwpath->fn, sizeof(d->name));
   d->attrib=0;  /* d->name could be too long */
   up_fn(d->name);
-  d->attrib     = (uint8) un_nw_attrib(stb, 0, 0);
-#if 0  /* changed: 02-Nov-96 */
-  d->ext_attrib = 0xff; /* effektive rights ?? */
-#else
+  
+#if NEW_ATTRIB_HANDLING
+  d->attrib     = (uint8)get_nw_attrib_dword(stb, voloptions);
+  
   d->ext_attrib = (uint8) un_nw_rights(stb); /* effektive rights ?? */
+#else  
+  d->attrib     = (uint8) un_nw_attrib(stb, 0, 0);
+# if 0  /* changed: 02-Nov-96 */
+  d->ext_attrib = 0xff; /* effektive rights ?? */
+# else
+  d->ext_attrib = (uint8) un_nw_rights(stb); /* effektive rights ?? */
+# endif
 #endif
   un_date_2_nw(stb->st_mtime, d->create_date, 1);
   un_time_2_nw(stb->st_mtime, d->create_time, 1);
@@ -1302,7 +1336,8 @@ static int do_delete_file(NW_PATH *nwpath, FUNC_SEARCH *fs)
 int nw_delete_datei(int dir_handle, uint8 *data, int len)
 {
   NW_PATH nwpath;
-  int completition = conn_get_kpl_path(&nwpath, dir_handle, data, len, 0);
+  struct stat stbuff;
+  int completition = conn_get_kpl_path(&nwpath, &stbuff, dir_handle, data, len, 0);
   if (completition >  -1) {
     completition = func_search_entry(&nwpath, 0x6, do_delete_file, NULL);
     if (completition < 0) return(completition);
@@ -1316,11 +1351,11 @@ static int do_set_file_info(NW_PATH *nwpath, FUNC_SEARCH *fs)
   char unname[256];
   int  result=0;
   NW_FILE_INFO *f=(NW_FILE_INFO*)fs->ubuf;
-  int voloption;
+  int voloptions;
   strcpy(unname, build_unix_name(nwpath, 0));
-  if ((voloption = get_volume_options(nwpath->volume)) & VOL_OPTION_IS_PIPE){
+  if ((voloptions = get_volume_options(nwpath->volume)) & VOL_OPTION_IS_PIPE){
     ;;   /* don't change 'pipe commands' */
-  } else if (voloption & VOL_OPTION_READONLY) {
+  } else if (voloptions & VOL_OPTION_READONLY) {
     result=(-0x8c); /* no modify rights */
   } else {
     struct utimbuf ut;
@@ -1329,10 +1364,24 @@ static int do_set_file_info(NW_PATH *nwpath, FUNC_SEARCH *fs)
     S_STATB stb;
 #endif
     ut.actime = ut.modtime = nw_2_un_time(f->modify_date, f->modify_time);
-    if ( 0 == (result=s_stat(unname,  &statb, &stb)) &&
-         0 == (result=s_utime(unname, &ut, &stb))){
+    if (0 == (result=s_stat(unname,  &statb, &stb))) {
+#if NEW_ATTRIB_HANDLING
+      result = set_nw_attrib_byte(&statb, voloptions, (int) f->attrib);
+      if (result < 0  && !(f->attrib & FILE_ATTR_R)) {
+        result = s_chmod(unname, statb.st_mode | S_IWUSR, &stb);
+        if (!result) {
+          statb.st_mode |= S_IWUSR;
+          result = set_nw_attrib_byte(&statb, voloptions, (int)f->attrib);
+        }  
+      }
+      if (!result)
+        result=s_utime(unname, &ut, &stb);
+#else  
+      if (0 == (result=s_utime(unname, &ut, &stb))){
       result = s_chmod(unname,
                un_nw_attrib(&statb, (int)f->attrib, 1), &stb);
+    }
+#endif    
     }
     if (result)
       result= (-0x8c); /* no modify rights */
@@ -1345,7 +1394,8 @@ int nw_set_file_information(int dir_handle, uint8 *data, int len,
                              int searchattrib, NW_FILE_INFO *f)
 {
   NW_PATH nwpath;
-  int completition = conn_get_kpl_path(&nwpath, dir_handle, data, len, 0);
+  struct stat stbuff;
+  int completition = conn_get_kpl_path(&nwpath, &stbuff, dir_handle, data, len, 0);
   if (completition >  -1) {
     FUNC_SEARCH  fs;
     fs.ubuf = (uint8*)f;
@@ -1357,30 +1407,42 @@ int nw_set_file_information(int dir_handle, uint8 *data, int len,
   return(completition);
 }
 
-int nw_chmod_datei(int dir_handle, uint8 *data, int len,
-                          int attrib, int access)
+int nw_set_file_attributes(int dir_handle, uint8 *data, int len,
+                          int attrib, int newattrib)
 
 {
   char          unname[256];
   struct stat   stbuff;
   int           completition=-0x9c;
   NW_PATH       nwpath;
+  int           voloptions;
 #if PERSISTENT_SYMLINKS
   S_STATB       stb;
 #endif
   build_path(&nwpath, data, len, 0);
   if (nwpath.fn[0] != '.') { /* Files with . at the beginning are not ok */
-    completition = build_verz_name(&nwpath, dir_handle);
+    completition = build_dir_name(&nwpath, &stbuff, dir_handle);
   }
   if (completition < 0) return(completition);
+  voloptions=get_volume_options(nwpath.volume);
   strcpy(unname, build_unix_name(&nwpath, 2));
-  XDPRINTF((5,0,"set file attrib 0x%x, unname:%s:", access,  unname));
+  XDPRINTF((5,0,"set file attrib 0x%x, unname:%s:", newattrib,  unname));
 
   if (!s_stat(unname, &stbuff, &stb)){
-    int result = s_chmod(unname, un_nw_attrib(&stbuff, access, 1), &stb);
+#if NEW_ATTRIB_HANDLING   
+    int result = set_nw_attrib_byte(&stbuff, voloptions, newattrib);
+    if (result < 0  && !(newattrib & FILE_ATTR_R)) {
+       result = s_chmod(unname, stbuff.st_mode | S_IWUSR, &stb);
+       if (!result) {
+         stbuff.st_mode |= S_IWUSR;
+         result = set_nw_attrib_byte(&stbuff, voloptions, newattrib);
+       }
+    }
+#else    
+    int result = s_chmod(unname, un_nw_attrib(&stbuff, newattrib, 1), &stb);
+#endif    
     return( (result != 0) ? -0x8c : 0);  /* no modify rights */
   }
-
   return(-0x9c); /* wrong path */
 }
 
@@ -1408,8 +1470,18 @@ int nw_creat_node(int volnr, uint8 *unname, int mode)
       return(0);
     }
   } else {  /* file */
-    int fd=(mode & 2) ? open(unname, O_CREAT|O_TRUNC|O_RDWR, 0777)
-                      : creat(unname, 0777); 
+    int fd=-1;
+    if (mode & 2) {
+      struct stat stbuff;
+      int    voloptions  = get_volume_options(volnr);
+      if (!stat(unname, &stbuff)) {  /* exists */
+        if (get_nw_attrib_dword(&stbuff, voloptions) & FILE_ATTR_R)
+          fd=-2;
+      }
+      if (fd!=-2)
+        fd=open(unname, O_CREAT|O_TRUNC|O_RDWR, 0777);
+    } else
+      fd = creat(unname, 0777); 
     
     if (fd < 0 && (mode & 8)) {  /* creat always */
       if ( (!seteuid(0)) && (-1 < (fd =
@@ -1438,13 +1510,16 @@ int nw_creat_node(int volnr, uint8 *unname, int mode)
 int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
 {
   NW_PATH nwpath;
-  int completition = conn_get_kpl_path(&nwpath, dir_handle, data, len, !mode);
-
+  struct stat stbuff;
+  int completition = conn_get_kpl_path(&nwpath, &stbuff,
+                    dir_handle, data, len, !mode);
   if (completition > -1) {
     char unname[256];
+    int voloptions;
     strcpy(unname, build_unix_name(&nwpath, 2));
-    if (get_volume_options(nwpath.volume) & VOL_OPTION_READONLY)
+    if ((voloptions=get_volume_options(nwpath.volume)) & VOL_OPTION_READONLY)
        return(mode ? -0x84 : -0x8a);
+    
     if (mode) {
       XDPRINTF((5,0,"MKDIR dirname:%s:", unname));
       if (!nw_creat_node(nwpath.volume, unname, 1)) 
@@ -1455,9 +1530,13 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
         completition = -0x84; /* No Create Priv.*/  /* -0x9f Direktory Aktive */
     } else { /* rmdir */
       int  j = -1;
+      if (get_nw_attrib_dword(&stbuff, voloptions) & FILE_ATTR_R)
+        return(-0x8a); /* don't delete 'readonly' */
+      
       while (++j < (int)anz_dirhandles){
         DIR_HANDLE  *dh=&(dir_handles[j]);
-        if (dh->inode == completition && dh->f != (DIR*) NULL) {
+        if ( dh->dev   == stbuff.st_dev && 
+             dh->inode == stbuff.st_ino && dh->f != (DIR*) NULL) {
           closedir(dh->f);
           dh->f = (DIR*)NULL;
         }
@@ -1468,7 +1547,8 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
         NW_DIR *d=&(dirs[0]);
         j = 0;
         while (j++ < (int)used_dirs){
-          if (d->inode == completition) d->inode = 0;
+          if ( d->dev   == stbuff.st_dev && 
+               d->inode == stbuff.st_ino) d->inode = 0;
           d++;
         }
         j = -1;
@@ -1476,6 +1556,7 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
           DIR_HANDLE  *dh=&(dir_handles[j]);
           if (dh->inode == completition) free_dir_handle(j+1);
         }
+        free_attr_from_disk(stbuff.st_dev, stbuff.st_ino);
         completition = 0;
       } else if (errno == EEXIST)
          completition = -0xa0;    /* dir not empty */
@@ -1489,13 +1570,15 @@ int mv_file(int qdirhandle, uint8 *q, int qlen,
             int zdirhandle, uint8 *z, int zlen)
 {
   NW_PATH quellpath;
+  struct stat qstbuff;
   NW_PATH zielpath;
+  struct stat zstbuff;
   int completition;
   zlen=apply_wildcards(q, qlen, z, zlen);
-  completition=conn_get_kpl_path(&quellpath, qdirhandle, q, qlen, 0);
+  completition=conn_get_kpl_path(&quellpath, &qstbuff, qdirhandle, q, qlen, 0);
   
   if (completition > -1) {
-    completition=conn_get_kpl_path(&zielpath,    zdirhandle, z, zlen, 0);
+    completition=conn_get_kpl_path(&zielpath, &zstbuff, zdirhandle, z, zlen, 0);
     if (completition > -1) {
       int optq = get_volume_options(quellpath.volume);
       int optz = get_volume_options(zielpath.volume);
@@ -1529,8 +1612,10 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
                            uint8 *z, int zlen)
 {
   NW_PATH quellpath;
+  struct stat qstbuff;
   NW_PATH zielpath;
-  int completition=conn_get_kpl_path(&quellpath, dir_handle, q, qlen, 0);
+  struct stat zstbuff;
+  int completition=conn_get_kpl_path(&quellpath, &qstbuff, dir_handle, q, qlen, 0);
   if (completition > -1){
 #if 1
     /* I do not know anymore why I did these ??? */
@@ -1544,7 +1629,7 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
      */
 #else
     /* and NOT these, perhaps this will also be ok ?! -- TODO -- */
-    completition=conn_get_kpl_path(&zielpath, dir_handle, z, zlen, 0);
+    completition=conn_get_kpl_path(&zielpath, &zstbuff, dir_handle, z, zlen, 0);
 #endif
     if (completition > -1) {
       int optq = get_volume_options(quellpath.volume);
@@ -1584,7 +1669,8 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
 }
 
 static int change_dir_entry( NW_DIR *dir,     int volume,
-                             uint8 *path,     ino_t inode,
+                             uint8 *path,     
+                             int dev,         ino_t inode,
                              int driveletter, int is_temp,
                              int new_entry,   int task)
 {
@@ -1605,6 +1691,7 @@ static int change_dir_entry( NW_DIR *dir,     int volume,
       ++len;
     }
     *(dir->path+len)  = '\0';
+    dir->dev          = dev;
     dir->inode        = inode;
     dir->volume       = (uint8) volume;
     dir->timestamp    = time(NULL);
@@ -1627,6 +1714,9 @@ void nw_exit_connect(void)
   if (connect_is_init) {
     init_file_module(-1);
   }
+#if WITH_NAME_SPACE_CALLS
+  exit_name_space_module();
+#endif
 }
 
 int nw_init_connect(void)
@@ -1642,6 +1732,8 @@ int nw_init_connect(void)
     int            what;
     int k        = MAX_NW_DIRS;
     NW_DIR *d    = &(dirs[0]);
+    int namspace_max_baseh=0;
+    int namspace_max_searchh=0;
     strcpy((char*)nwlogin.path, (char*)login);
     nwlogin.fn[0]   = '\0';
     nwlogin.volume  = 0;
@@ -1695,15 +1787,21 @@ int nw_init_connect(void)
         }
       } else if (50 == what) {
         init_nwfname(buff);
+      } else if (63 == what) {  /* MAX_DIR_BASE */
+        namspace_max_baseh=atoi(buff);
       } else if (68 == what) {  /* USE_MMAP */
         use_mmap=atoi(buff);
+      } else if (80 == what) { 
+        namspace_max_searchh=atoi(buff);
       } else if (what == 103) { /* Debug */
         get_debug_level(buff);
       }
     } /* while */
     nw_init_volumes(f);
     fclose(f);
-
+#if WITH_NAME_SPACE_CALLS
+    init_name_space_module(namspace_max_baseh, namspace_max_searchh);
+#endif
     if (used_nw_volumes < 1) {
       errorp(1, "No Volumes defined. Look at ini file entry 1, Abort !!", NULL);
       return(-1);
@@ -1715,7 +1813,8 @@ int nw_init_connect(void)
             "UnixPath=`%s`", build_unix_name(&nwlogin, 0));
       return(-1);
     }
-    (void)change_dir_entry(&(dirs[0]), 0, nwlogin.path, stbuff.st_ino,
+    (void)change_dir_entry(&(dirs[0]), 0, nwlogin.path, 
+                       stbuff.st_dev, stbuff.st_ino,
                        0, 0, 1, 0);
     /* first Handle must be known und must not be temp */
     /* and has no Drive-Character                      */
@@ -1760,7 +1859,7 @@ int nw_free_handles(int task)
   return(0);
 }
 
-int xinsert_new_dir(int volume, uint8 *path, int inode, int drive, int is_temp, int task)
+int xinsert_new_dir(int volume, uint8 *path, int dev, int inode, int drive, int is_temp, int task)
 {
   int j              = 0;
   int    freehandle  = 0;
@@ -1786,17 +1885,18 @@ int xinsert_new_dir(int volume, uint8 *path, int inode, int drive, int is_temp, 
 #endif
   if (freehandle){
     (void)change_dir_entry(&(dirs[freehandle-1]),
-          volume, path, inode,
+          volume, path, dev, inode,
           drive, is_temp, 1, task);
     while (used_dirs > freehandle && !dirs[used_dirs-1].inode) used_dirs--;
     return(freehandle);
   } else return(-0x9d);  /* no dir Handles */
 }
 
-int insert_new_dir(NW_PATH *nwpath, int inode, int drive, int is_temp, int task)
+static int insert_new_dir(NW_PATH *nwpath, int dev, int inode, 
+                    int drive, int is_temp, int task)
 {
  return(xinsert_new_dir(nwpath->volume, nwpath->path,
-                       inode, drive, is_temp, task));
+                       dev, inode, drive, is_temp, task));
 }
 
 
@@ -1806,7 +1906,8 @@ int nw_search(uint8 *info, uint32 *fileowner,
 
 {
    NW_PATH nwpath;
-   int     completition = conn_get_kpl_path(&nwpath, dirhandle, data, len, 0);
+   struct stat stbuff;
+   int     completition = conn_get_kpl_path(&nwpath, &stbuff, dirhandle, data, len, 0);
    XDPRINTF((5,0,"nw_search path:%s:, fn:%s:, completition:0x%x",
      nwpath.path, nwpath.fn, completition));
    if (completition > -1) {
@@ -1889,9 +1990,11 @@ int nw_alloc_dir_handle( int    dir_handle,  /* source directory handle   */
                          int    task)          /* Prozess Task            */
 {
    NW_PATH nwpath;
-   int inode=conn_get_kpl_path(&nwpath, dir_handle, data, len, 1);
+   struct stat stbuff;
+   int inode=conn_get_kpl_path(&nwpath, &stbuff, dir_handle, data, len, 1);
    if (inode > -1)
-     inode = insert_new_dir(&nwpath, inode, driveletter, is_temphandle, task);
+     inode = insert_new_dir(&nwpath, stbuff.st_dev, stbuff.st_ino, 
+                           driveletter, is_temphandle, task);
    XDPRINTF((2,0,"Allocate %shandle:%s, Qhandle=%d, drive=%d, Task=%d, result=0x%x",
        (is_temphandle) ? "Temp" : "Perm", conn_get_nwpath_name(&nwpath),
                dir_handle, driveletter, task, inode));
@@ -1913,12 +2016,13 @@ int nw_open_dir_handle( int        dir_handle,
 
 {
    NW_PATH nwpath;
-   int completition = conn_get_kpl_path(&nwpath, dir_handle, data, len, 1);
+   struct stat stbuff;
+   int completition = conn_get_kpl_path(&nwpath, &stbuff, dir_handle, data, len, 1);
    if (completition > -1) {
      XDPRINTF((5,0,"NW_OPEN_DIR: completition = 0x%x; nwpath= %s",
            (int)completition, conn_get_nwpath_name(&nwpath) ));
 
-     completition = new_dir_handle((ino_t)completition, &nwpath);
+     completition = new_dir_handle(stbuff.st_dev, stbuff.st_ino, &nwpath);
      if (completition > -1) {
        struct stat stb;
        DIR_HANDLE *dh  = &(dir_handles[completition-1]);
@@ -1956,7 +2060,7 @@ int nw_free_dir_handle(int dir_handle, int task)
 }
 
 int alter_dir_handle(int targetdir, int volume, uint8 *path,
-                     int inode, int task)
+                     int dev, int inode, int task)
 /* targetdir will be changed */
 {
   if (targetdir > 0 && --targetdir < used_dirs
@@ -1965,7 +2069,7 @@ int alter_dir_handle(int targetdir, int volume, uint8 *path,
     XDPRINTF((5,0,"Change dhandle:%d(%d) -> '%d:%s'", targetdir+1, task,
               volume, path));
     return(change_dir_entry(&dirs[targetdir],
-                    volume, path, inode,
+                    volume, path, dev, inode,
                     -1, -1, 0, task));
     /* here the existing handle is only modified */
   } else return(-0x9b); /* BAD DIR Handle */
@@ -1977,10 +2081,11 @@ int nw_set_dir_handle(int targetdir, int dir_handle,
 /* targetdirs gets path of dirhandle + data */
 {
   NW_PATH nwpath;
-  int inode = conn_get_kpl_path(&nwpath, dir_handle, data, len, 1);
+  struct stat stbuff;
+  int inode = conn_get_kpl_path(&nwpath, &stbuff,  dir_handle, data, len, 1);
   if (inode > -1)
     inode = alter_dir_handle(targetdir, nwpath.volume, nwpath.path,
-                              inode, task);
+                              stbuff.st_dev, stbuff.st_ino, task);
   return(inode);  /* invalid PATH */
 }
 
@@ -2020,7 +2125,7 @@ int nw_get_eff_dir_rights(int dir_handle, uint8 *data, int len, int modus)
   char          unname[256];
   struct stat   stbuff;
   NW_PATH       nwpath;
-  int completition = conn_get_kpl_path(&nwpath, dir_handle, data, len,
+  int completition = conn_get_kpl_path(&nwpath, &stbuff, dir_handle, data, len,
                      (modus) ? 0 : 1);
   if (completition < 0) return(completition);
   strcpy(unname, build_unix_name(&nwpath, 0));
@@ -2041,9 +2146,9 @@ int nw_creat_open_file(int dir_handle, uint8 *data, int len,
  */
 {
   NW_PATH nwpath;
-  int completition = conn_get_kpl_path(&nwpath, dir_handle, data, len, 0);
-  if (completition > -1) {
      struct stat stbuff;
+  int completition = conn_get_kpl_path(&nwpath, &stbuff, dir_handle, data, len, 0);
+  if (completition > -1) {
      completition=file_creat_open(nwpath.volume, (uint8*)build_unix_name(&nwpath, 0),
                       &stbuff, attrib, access, creatmode, task);
 
@@ -2161,10 +2266,14 @@ void get_dos_file_attrib(NW_DOS_FILE_INFO *f,
   /* Attribute */
   /* 0x20   Archive Flag */
   /* 0x80   Sharable     */
+#if NEW_ATTRIB_HANDLING
+  f->attributes[0] = (uint8) get_nw_attrib_dword(stb, voloptions);
+#else
   if (voloptions & VOL_OPTION_IS_PIPE)
     f->attributes[0] = FILE_ATTR_SHARE;
   else
     f->attributes[0] = (uint8) un_nw_attrib(stb, 0, 0);
+#endif  
   un_date_2_nw(stb->st_mtime, f->created.date, 0);
   un_time_2_nw(stb->st_mtime, f->created.time, 0);
   U32_TO_BE32(nw_owner, f->created.id);
@@ -2183,11 +2292,16 @@ void get_dos_dir_attrib(NW_DOS_DIR_INFO *f,
                                 uint8 *path)
 {
   uint8 spath[14];
+  int voloptions=get_volume_options(volume);
   f->namlen=min(strlen((char*)path), 12);
   strmaxcpy(spath, path, 12);
   up_fn(spath);
   strncpy((char*)f->name, (char*)spath, f->namlen);
+#if NEW_ATTRIB_HANDLING
+  f->attributes[0] = (uint8) get_nw_attrib_dword(stb, voloptions);
+#else  
   f->attributes[0] = (uint8) un_nw_attrib(stb, 0, 0);
+#endif  
   un_date_2_nw(stb->st_mtime, f->created.date,0);
   un_time_2_nw(stb->st_mtime, f->created.time,0);
   U32_TO_BE32(get_file_owner(stb), f->created.id);
@@ -2205,11 +2319,11 @@ int nw_scan_a_directory(uint8   *rdata,
                         uint32  searchbeg)   /* 32 bit */
 {
   NW_PATH nwpath;
-  int     completition = conn_get_kpl_path(&nwpath, dirhandle, data, len, 0);
+  struct stat stbuff;
+  int     completition = conn_get_kpl_path(&nwpath, &stbuff, dirhandle, data, len, 0);
   XDPRINTF((5,0,"nw_scan_a_directory path:%s:, fn:%s:, completition:0x%x",
     nwpath.path, nwpath.fn, completition));
   if (completition > -1) {
-     struct stat stbuff;
      int searchsequence = (searchbeg == MAX_U32) ? MAX_U16 : searchbeg;
      if (get_dir_entry(&nwpath,
                        &searchsequence,
@@ -2240,12 +2354,12 @@ int nw_scan_a_root_dir(uint8   *rdata,
                        int     dirhandle)
 {
   NW_PATH nwpath;
+  struct stat stbuff;
   uint8   data[2];
-  int     completition = conn_get_kpl_path(&nwpath, dirhandle, data, 0, 1);
+  int     completition = conn_get_kpl_path(&nwpath, &stbuff, dirhandle, data, 0, 1);
   XDPRINTF((5,0,"nw_scan_a_root_directory_2 path:%s:, fn:%s:, completition:0x%x",
     nwpath.path, nwpath.fn, completition));
   if (completition > -1) {
-    struct stat stbuff;
     if (!s_stat(build_unix_name(&nwpath, 2), &stbuff, NULL)) {
       NW_DOS_DIR_INFO  *d=(NW_DOS_DIR_INFO*)rdata;
       memset(rdata, 0, sizeof(NW_DOS_DIR_INFO));

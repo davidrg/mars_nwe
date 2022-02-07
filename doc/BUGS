@@ -24,8 +24,8 @@ If you have problems.
 some short notes for problem- or bug-reports.
 ---------------------------------------------
 - report your running environment
-  full mars_nwe version, example: 0.99.pl0
-  linux-kernel,                   2.0.29
+  full mars_nwe version, example: 0.99.pl5
+  linux-kernel,                   2.0.32
   exact typ of client (NCPFS, DOS (NETX,VLM), OS/2, Win .. )
   changes you made into nwserv.conf(nw.ini), config.h.
 - if you send nwserv.conf, please remove the comments first.

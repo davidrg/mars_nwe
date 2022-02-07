@@ -1,4 +1,4 @@
-/* config.h: 10-Nov-97 */
+/* config.h: 04-Feb-98 */
 /* some of this config is needed by make, others by cc                     */
 
 #define DO_DEBUG      1              /* compile in debug code              */
@@ -33,19 +33,20 @@
                                      /* connections handled by mars_nwe    */
  /* !! NOTE !! */
  /* If set > 255 some NCP calls will probably not work, try it with caution */
- /* and you should apply examples/kpatch2.0.29 	  	       	    	    */
+ /* and you should apply examples/kpatch2.0.29 to kernels prior 2.0.32      */
 
 
-#define IPX_DATA_GR_546        1     /* 0 = max. IPX Packets = 546  +30 Byte ( 512 Byte RWBuff) */
+#define IPX_DATA_GR_546        2     /* 0 = max. IPX Packets = 546  +30 Byte ( 512 Byte RWBuff) */
                                      /* 1 = max. IPX packets = 1058 +30 Byte (1024 Byte RWBuff) */
                                      /* 2 = max. IPX packets = 1470 +30 Byte (1444 Byte RWBuff) */
                                      /* 3 = max. IPX packets = 4130 +30 Byte (4096 Byte RWBuff) */
 
 #define ENABLE_BURSTMODE       0     /* 0 = disable burstmode, 1 = enable burstmode */
-  /* in 0.98.pl11 still NOT working !! */
+  /* still NOT working correct !!!!!                           */
   /* to get Burstmode really enabled, section '6' in conf-file */
   /* must be set to a value > 1 (3.12 Server)                  */
-  /* and kernel-patch examples/kpatch2.0.29 should be used     */
+  /* and kernel-patch examples/kpatch2.0.29 should be used for */
+  /* kernels prior 2.0.32                                      */
 
 
 #define USE_MMAP               1     /* use mmap systen call, not always best choice */
@@ -69,7 +70,7 @@
                                      /* entry '6' in ini file should be set*/
                                      /* to > '0', too.                     */
 /* <-------------------------------------------------------------------->  */
-#define HANDLE_ALL_SAP_TYPS    0     /* if set to 0 only SAP-Typ 4 Servers */
+#define HANDLE_ALL_SAP_TYPS    1     /* if set to 0 only SAP-Typ 4 Servers */
                                      /* will be put into routing table and */
                                      /* if set to 1 all SAP Typs will be   */
                                      /* used.  	    	    	      	   */
@@ -77,6 +78,8 @@
 #define PERSISTENT_SYMLINKS    0     /* change to '1' for persistent symlinks */
                                      /* main idea from Victor Khimenko */
   /* in 0.99.pl0 still NOT working !! */
+
+#define NEW_ATTRIB_HANDLING    0     /* better (if working ;)) attrib handling */
 
 /* <---------------  next is for linux only ---------------------------->  */
 #define INTERNAL_RIP_SAP    1        /* use internal/own rip/sap routines  */

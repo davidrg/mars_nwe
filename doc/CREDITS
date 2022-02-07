@@ -79,6 +79,9 @@ Andrew Sapozhnikov <sapa@hq.icb.chel.su>
         added extend "Volume is home" feature.
         fixed "rename wildcard" bug.
 
+Hayo Schmidt <100305.1424@compuserve.com>
+        added patch to let ATARI client work.
+
 Gregory Steuck <greg@nsu.ru>
         testings and errorreports
 

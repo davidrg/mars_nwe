@@ -1,6 +1,6 @@
-/* namspace.h 01-Aug-97 : NameSpace Services, mars_nwe */
+/* namspace.h 01-Feb-98 : NameSpace Services, mars_nwe */
 
-/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -111,6 +111,9 @@ extern int handle_func_0x56(uint8 *p, uint8 *responsedata, int task);
 extern int fill_namespace_buffer(int volume, uint8 *rdata);
 extern int get_namespace_dir_entry(int volume, uint32 basehandle,
                                    int namspace, uint8 *rdata);
+
+extern void exit_name_space_module(void);
+extern void init_name_space_module(int max_baseh, int max_searchh);
 
 #endif
 #endif

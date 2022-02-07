@@ -53,7 +53,7 @@ static uint8        readbuff[IPX_MAX_DATA];
 
 static uint8        saved_readbuff[IPX_MAX_DATA];
 static int          saved_sequence=-1;
-static int rw_buffer_size = 512;  /* default */
+static int rw_buffer_size = LOC_RW_BUFFERSIZE;  /* default */
 
 static NCPREQUEST   *ncprequest  = (NCPREQUEST*)readbuff;
 static uint8        *requestdata = readbuff + sizeof(NCPREQUEST);
@@ -1106,12 +1106,25 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
 
          case 0x21 : { /* Negotiate Buffer Size,  Packetsize  */
                        uint8 *getsize=responsedata;
-                       rw_buffer_size = min(LOC_RW_BUFFERSIZE,
-                                        (int) (GET_BE16((uint8*)requestdata)));
-                       U16_TO_BE16(rw_buffer_size, getsize);
-                       data_len = 2;
+                       int buffer_size = (int) (GET_BE16((uint8*)requestdata));
+                       /* Der Novell-Client der PAM's Net/E-Ethernetkarte
+                          für Atari ST/TT meldet ein Packetsize von 0 wenn
+                          nwserv NACH dem Novell Client NET_S1.PRG
+                          gestartet wird. Da 0 in jedem Falle ein unsinniger
+                          Wert ist, wird rw_buffer_size nicht verwendet.
+                          Hayo Schmidt <100305.1424@compuserve.com>, 7-Dec-97
+                       */
+                       if (buffer_size >= 512) {
+                         rw_buffer_size = min(LOC_RW_BUFFERSIZE, buffer_size);
                        XDPRINTF((2,0, "Negotiate Buffer size = 0x%04x,(%d)",
                               (int) rw_buffer_size, (int) rw_buffer_size));
+                       } else {
+                         XDPRINTF((1,0, "Invalid Packetsize = %d, "
+                                         "Negotiate Buffer Size is set to %d",
+                                      buffer_size, rw_buffer_size));
+                       }
+                       U16_TO_BE16(rw_buffer_size, getsize);
+                       data_len = 2;
                      }
                      break;
 
@@ -1389,7 +1402,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          uint8   data[2];        /* filename */
                        } *input = (struct INPUT *)ncprequest;
                        completition =
-                         (uint8) (-nw_chmod_datei((int)input->dir_handle,
+                         (uint8) (-nw_set_file_attributes((int)input->dir_handle,
                                            input->data, (int)input->len,
                                            (int)input->attrib,
                                            (int)input->access));

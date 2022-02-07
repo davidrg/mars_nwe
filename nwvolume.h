@@ -1,5 +1,5 @@
-/* nwvolume.h  28-Nov-97 */
-/* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
+/* nwvolume.h  01-Feb-98 */
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -80,6 +80,7 @@ extern int       loaded_namespaces;
 extern uint8     *home_dir;
 extern int       home_dir_len;
 extern char      *path_vol_inodes_cache;  /* for namespace routines */
+extern char      *path_attributes;        /* for attribute handling */
 
 extern void nw_init_volumes(FILE *f);
 extern void nw_setup_vol_opts(int act_gid, int act_uid, 

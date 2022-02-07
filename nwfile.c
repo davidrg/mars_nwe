@@ -1,5 +1,5 @@
-/* nwfile.c  26-Nov-97 */
-/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
+/* nwfile.c  01-Feb-98 */
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,7 +27,9 @@
 #include "nwshare.h"
 #include "nwfile.h"
 #include "connect.h"
+#include "nwattrib.h"
 #include "nwconn.h"
+#include "unxfile.h"
 
 # include <sys/mman.h>
 
@@ -225,7 +227,11 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                            ? get_real_access(stbuff) : -1;
 
      int did_grpchange = 0;
-     if (dowrite && (voloptions & VOL_OPTION_READONLY)) {
+     
+     if (dowrite && (acc > -1) && (acc & W_OK) && !(creatmode&0x8) &&
+        (get_nw_attrib_dword(stbuff, voloptions) & FILE_ATTR_R))
+       completition = -0x94;
+     else if (dowrite && (voloptions & VOL_OPTION_READONLY)) {
        completition = (creatmode&3) ? -0x84 : -0x94;
      } else if (acc > -1) {
        /* do exist */
@@ -726,17 +732,7 @@ int nw_write_file(int fhandle, uint8 *data, int size, uint32 offset)
           } else size = -1;
           return(size);
         } else {  /* truncate FILE */
-          int result;
-#ifdef LINUX
-          result = ftruncate(fh->fd, offset);
-#else
-          struct flock flockd;
-          flockd.l_type   = 0;
-          flockd.l_whence = SEEK_SET;
-          flockd.l_start  = offset;
-          flockd.l_len    = 0;
-          result = fcntl(fh->fd, F_FREESP, &flockd);
-#endif
+          int result = unx_ftruncate(fh->fd, offset);
           XDPRINTF((5,0,"File %s is truncated, result=%d", fh->fname, result));
           fh->offd = -1L;
           return(result);
@@ -875,20 +871,26 @@ int get_nwfd(int fhandle)
 int nw_unlink(int volume, char *name)
 {
   struct stat stbuff;
-  if (get_volume_options(volume) & VOL_OPTION_IS_PIPE)
+  int voloptions=get_volume_options(volume); 
+  if (voloptions & VOL_OPTION_IS_PIPE)
     return(0); /* don't delete 'pipe commands' */
   else if (get_volume_options(volume) & VOL_OPTION_READONLY)
     return(-0x8a); /* don't delete 'readonly' */
   if (stat(name, &stbuff))
     return(-0x9c); /* wrong path */
+  if (get_nw_attrib_dword(&stbuff, voloptions) & FILE_ATTR_R)
+    return(-0x8a); /* don't delete 'readonly' */
 
   if (  -1 == share_file(stbuff.st_dev, stbuff.st_ino, 0x12|0x8)
      || ( !(entry8_flags&0x10) &&
        -1 == share_file(stbuff.st_dev, stbuff.st_ino, 0x11|0x4)) )
-    return(-0x8a); /* NO Delete Privileges */
-  if (!unlink(name))
+    return(-0x8a); /* NO Delete Privileges, file is shared open */
+  if (!unlink(name)) {
+    free_attr_from_disk(stbuff.st_dev, stbuff.st_ino);
     return(0);
+  }
   return(-0x8a); /* NO Delete Privileges */
 }
+
 
 

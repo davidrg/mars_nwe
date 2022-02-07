@@ -1,4 +1,4 @@
-/* unxfile.c:  09-Jul-97*/
+/* unxfile.c:  05-Dec-97*/
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -79,4 +79,18 @@ int unx_mvdir(uint8 *oldname, uint8 *newname)
   return(system(command));
 }
 #endif
+
+int unx_ftruncate(int fd, uint32 size)
+{
+#ifdef LINUX
+  return(ftruncate(fd, size));
+#else
+  struct flock flockd;
+  flockd.l_type   = 0;
+  flockd.l_whence = SEEK_SET;
+  flockd.l_start  = size;
+  flockd.l_len    = 0;
+  result = fcntl(fd, F_FREESP, &flockd);
+#endif
+}
 

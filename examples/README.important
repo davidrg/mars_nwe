@@ -1,4 +1,4 @@
-This is an important kernel ipx patch for all known kernels. 
+This is an important kernel ipx patch for all known kernels prior 2.0.32 
 
 In linux/net/ipx/af_ipx.c routine ipx_create one line is missing.
 

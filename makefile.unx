@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 10-Nov-97
+#makefile.unx 01-Feb-98
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=99
-P_L=4
+P_L=5
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -116,7 +116,8 @@ PROGS=$(INSTALLPROGS) $(PROG8)
 OBJ1= $(EMUTLIOBJ) net1$(O) tools$(O)
 OBJ2= $(OBJ1) $(EMUTLIOBJ1) $(NWROUTE_O)
 OBJ3= $(OBJ1) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) unxfile$(O) \
-nwqconn$(O) nameos2$(O) nwfname$(O) nwshare$(O) extpipe$(O)
+nwqconn$(O) nameos2$(O) nwfname$(O) nwshare$(O) extpipe$(O) \
+nwattrib$(O)
 OBJ4= $(OBJ1)
 OBJ5= $(OBJ1)
 OBJ6= $(OBJ1) nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O)
@@ -127,6 +128,7 @@ OBJS= $(EMUTLIOBJ) net1$(O) tools$(O) \
       $(EMUTLIOBJ1) $(NWROUTE_O) \
       connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) unxfile$(O)\
       nwqconn$(O) nameos2$(O) nwfname$(O) nwshare$(O) extpipe$(O) \
+      nwattrib$(O) \
       nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O)  \
       $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O) $(PROG6)$(O) \
       $(PROG7)$(O) $(PROG8)$(O)
@@ -219,8 +221,7 @@ echo "********************************************************"; \
 cd $(OBJDIR) )
 
 n_reboot: n_install
-	  -nwserv -k
-	  nwserv
+	  -(nwserv -k ; nwserv)&
 
 clean_d:
 	cd $(VPATH) && (\
@@ -230,7 +231,9 @@ clean_d:
 
 n_clean:
 	rm -f *.o
-	cd $(VPATH) && (rm -f $(PROGS) $(PROG7); cd $(OBJDIR) )
+	cd $(VPATH) && (rm -f $(PROGS) $(PROG7) \
+; rm -rf $(OBJDIR)/$(VPATH)/$(DISTRIB) \
+; cd $(OBJDIR) )
 
 n_distclean: n_clean clean_d
 	cd $(VPATH) && (rm -f *.dir *.pag; cd $(OBJDIR))

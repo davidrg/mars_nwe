@@ -123,6 +123,7 @@ extern int errno;
 #define MAX_U32    ((uint32)0xffffffffL)
 #define MAX_U16    ((uint16)0xffff)
 
+#define MAX_I32     0x7fffffff
 
 /* ===================>  config.h  <======================= */
 #ifdef CALL_NWCONN_OVER_SOCKET
@@ -202,7 +203,7 @@ extern int errno;
 #endif
 
 #ifndef IPX_DATA_GR_546
-# define IPX_DATA_GR_546 1
+# define IPX_DATA_GR_546 2
 #endif
 
 #ifndef USE_MMAP
@@ -222,7 +223,7 @@ extern int errno;
 #endif
 
 #ifndef HANDLE_ALL_SAP_TYPS
-# define HANDLE_ALL_SAP_TYPS 0
+# define HANDLE_ALL_SAP_TYPS 1
 #endif
 
 #if IPX_DATA_GR_546
@@ -256,6 +257,11 @@ extern int errno;
 #ifndef DO_TESTING
 # define DO_TESTING            0
 #endif
+
+#ifndef NEW_ATTRIB_HANDLING
+# define NEW_ATTRIB_HANDLING   1
+#endif
+
 
 #ifdef LINUX
 # ifndef QUOTA_SUPPORT

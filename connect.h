@@ -1,4 +1,4 @@
-/* connect.h 27-Nov-97 */
+/* connect.h 01-Feb-98 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
 
@@ -124,8 +124,8 @@ extern int nw_delete_datei(int dir_handle,  uint8 *data, int len);
 extern int nw_set_file_information(int dir_handle, uint8 *data, int len,
                              int searchattrib, NW_FILE_INFO *f);
 
-extern int nw_chmod_datei(int dir_handle, uint8 *data, int len,
-                          int attrib, int access);
+extern int nw_set_file_attributes(int dir_handle, uint8 *data, int len,
+                          int attrib, int newattrib);
 
 extern int mv_file(int qdirhandle, uint8 *q, int qlen,
             int zdirhandle, uint8 *z, int zlen);
@@ -153,30 +153,31 @@ extern int nw_find_dir_handle( int dir_handle,
                                int         len); /* L„nge Pfad        */
 
 extern int xinsert_new_dir(int volume, uint8 *path,
-                           int inode, int drive, int is_temp, int task);
+                           int dev,   int inode, 
+                           int drive, int is_temp, int task);
 
 extern int nw_alloc_dir_handle(
-                      int dir_handle,  /* Suche ab Pfad dirhandle   */
-                      uint8  *data,       /* zus„tzl. Pfad             */
-                      int    len,         /* L„nge DATA                */
+                      int dir_handle,       /* directory handle     */
+                      uint8  *data,         /* extra path           */
+                      int    len,           /* len of datat         */
                       int    driveletter, /* A .. Z normal             */
-                      int    is_temphandle, /* tempor„res Handle 1     */
+                      int    is_temphandle, /* temp Handle 1        */
                                                /* spez. temp Handle  2    */
                       int    task);          /* Prozess Task            */
 
 
 extern int nw_open_dir_handle( int        dir_handle,
-                        uint8      *data,     /* zus„tzlicher Pfad  */
-                        int        len,       /* L„nge DATA         */
+                        uint8      *data,   /* extra path           */
+                        int        len,     /* len data             */
                         int        *volume,   /* Volume             */
-                        int        *dir_id,   /* „hnlich Filehandle */
+                        int        *dir_id, /* similar to filehandle*/
                         int        *searchsequence);
 
 
 extern int nw_free_dir_handle(int dir_handle, int task);
 
 extern int alter_dir_handle(int targetdir, int volume, uint8 *path,
-                     int inode, int task);
+                     int dev, int inode, int task);
 
 extern int nw_set_dir_handle(int targetdir, int dir_handle,
                              uint8 *data, int len, int task);
@@ -187,7 +188,8 @@ extern int nw_get_vol_number(int dir_handle);
 
 
 
-extern int nw_get_eff_dir_rights(int dir_handle, uint8 *data, int len, int modus);
+extern int nw_get_eff_dir_rights(int dir_handle, uint8 *data, int len, 
+                                 int modus);
 
 extern int nw_scan_dir_info(int dir_handle, uint8 *data, int len,
                             uint8 *subnr, uint8 *subname,
@@ -211,8 +213,6 @@ extern int     act_gid;
 extern int     act_obj_id;   /* not login == 0             */
 extern int     entry8_flags; /* special flags, see examples nw.ini, entry 8 */
 
-extern int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
-	                  uint8 *data,   int len, int only_dir) ;
 extern int conn_get_full_path(int dirhandle, uint8 *data, int len, 
                           uint8 *fullpath);
 
@@ -248,7 +248,11 @@ extern int fn_dos_match(uint8 *s, uint8 *p, int options);
 
 extern void   un_date_2_nw(time_t time, uint8 *d, int high_low);
 extern time_t nw_2_un_time(uint8 *d, uint8 *t);
+
+#if !NEW_ATTRIB_HANDLING
 extern int    un_nw_attrib(struct stat *stb, int attrib, int mode);
+#endif
+
 extern int    un_nw_rights(struct stat *stb);
 
 extern void   un_time_2_nw(time_t time, uint8 *d, int high_low);

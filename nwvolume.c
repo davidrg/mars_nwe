@@ -1,5 +1,5 @@
-/* nwvolume.c  28-Nov-97 */
-/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
+/* nwvolume.c  01-Feb-98 */
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,6 +38,7 @@ int        loaded_namespaces=0;
 uint8      *home_dir=NULL;
 int        home_dir_len=0;
 char       *path_vol_inodes_cache=NULL;
+char       *path_attributes=NULL;
 
 static int max_nw_vols=MAX_NW_VOLS;
 
@@ -82,6 +83,7 @@ void nw_init_volumes(FILE *f)
   used_nw_volumes   = 0;
   loaded_namespaces = 0;
   new_str(path_vol_inodes_cache, "/var/spool/nwserv/.volcache");
+  new_str(path_attributes, "/var/lib/nwserv/attrib");
   while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))) {
     if ( what == 1 && used_nw_volumes < max_nw_vols && strlen((char*)buff) > 3){
       uint8 sysname[256];
@@ -183,6 +185,8 @@ void nw_init_volumes(FILE *f)
       }
     } else if (what==40) {  /* path for vol/dev/inode->path cache */
       new_str(path_vol_inodes_cache, buff);
+    } else if (what==46) {  /* path for attribute handling */
+      new_str(path_attributes, buff);
     }
   } /* while */
 }
