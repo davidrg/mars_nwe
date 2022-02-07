@@ -213,6 +213,9 @@ extern int     act_umode_file;
 
 extern int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
 	                  uint8 *data,   int len, int only_dir) ;
+extern int conn_get_full_path(int dirhandle, uint8 *data, int len, 
+                          uint8 *fullpath);
+
 extern int conn_get_kpl_unxname(char *unixname,
                          int dirhandle,
                          uint8 *data, int len);

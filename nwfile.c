@@ -338,7 +338,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
              fh->fd       = creat(fh->fname, 0777);
              if (fh->fd < 0)
                 completition = -0x84; /* no create Rights */
-             else
+             else  if (act_umode_file)
                chmod(fh->fname, act_umode_file);
            } else {
              XDPRINTF((5,0,"CREAT FILE, ever with attrib:0x%x, access:0x%x, fh->fname:%s: handle:%d",
@@ -355,7 +355,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                }
                if (fh->fd < 0)
                  completition = -0x85; /* no delete /create Rights */
-             } else
+             } else if (act_umode_file)
                chmod(fh->fname, act_umode_file);
            }
            if (fh->fd > -1) {

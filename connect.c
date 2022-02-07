@@ -72,6 +72,7 @@ static gid_t *act_grouplist=NULL;  /* first element is counter !! */
 static int       connect_is_init = 0;
 
 #define MAX_DIRHANDLES    80
+#define EXPIRE_COST	  86400 /* Is one day enough? :) */
 
 typedef struct {
   DIR    *f;
@@ -629,15 +630,18 @@ static DIR *give_dh_f(DIR_HANDLE    *dh)
     *(dh->kpath) = '\0';
     dh->f  = opendir(dh->unixname);
   }
+  dh->timestamp=time(NULL); /* tnx to Andrew Sapozhnikov */
   return(dh->f);
 }
 
-static void release_dh_f(DIR_HANDLE *dh)
+static void release_dh_f(DIR_HANDLE *dh, int expire)
 {
   if (dh->f && (dh->vol_options & VOL_OPTION_REMOUNT) ) {
     closedir(dh->f);
     dh->f = NULL;
   }
+  if (expire)
+    dh->timestamp-=EXPIRE_COST; /* tnx to Andrew Sapozhnikov */
 }
 
 static int get_dh_entry(DIR_HANDLE *dh,
@@ -667,7 +671,7 @@ static int get_dh_entry(DIR_HANDLE *dh,
       while (dh->sequence < *sequence) {
         if (NULL == readdir(f)) {
           dh->dirpos = telldir(f);
-          release_dh_f(dh);
+          release_dh_f(dh, 1);
           return(0);
         }
         dh->sequence++;
@@ -709,7 +713,7 @@ static int get_dh_entry(DIR_HANDLE *dh,
     dh->kpath[0] = '\0';
     *sequence  = dh->sequence;
     dh->dirpos = telldir(f);
-    release_dh_f(dh);
+    release_dh_f(dh, (dirbuff==NULL));
   } /* if */
   return(okflag);
 }
@@ -979,6 +983,29 @@ int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
    return(completition);
 }
 
+int conn_get_full_path(int dirhandle, uint8 *data, int len, 
+                       uint8 *fullpath)
+/* returns path in form VOLUME:PATH */
+{  
+  NW_PATH nwpath;
+  int result = build_path(&nwpath, data, len, 0);
+  fullpath[0]='\0';
+  if (!result)
+     result = build_verz_name(&nwpath, dirhandle);
+  if (result > -1) {
+    uint8 *p=(*nwpath.path=='/') ? nwpath.path+1 : nwpath.path;
+    int len=sprintf(fullpath, "%s:%s",
+       nw_volumes[nwpath.volume].sysname, p);
+    if (nwpath.fn[0]) {
+      if (*p) fullpath[len++]='/';
+      strcpy(fullpath+len, nwpath.fn);
+    }
+    result=len+strlen(nwpath.fn);
+  }
+  XDPRINTF((1, 0, "conn_get_full_path: result=%d,(0x%x),`%s`", result, result, fullpath));
+  return(result);
+}
+
 int conn_get_kpl_unxname(char *unixname,
                          int dirhandle,
                          uint8 *data, int len)
@@ -1048,7 +1075,7 @@ time_t nw_2_un_time(uint8 *d, uint8 *t)
   s_tm.tm_hour   = hour;
   s_tm.tm_min    = minu;
   s_tm.tm_sec    = sec;
-  s_tm.tm_isdst  = -1;  
+  s_tm.tm_isdst  = -1;
   return(mktime(&s_tm));
 }
 
@@ -1223,14 +1250,14 @@ static int do_set_file_info(NW_PATH *nwpath, FUNC_SEARCH *fs)
     struct stat statb;
 #if PERSISTENT_SYMLINKS
     S_STATB stb;
-#endif    
+#endif
     ut.actime = ut.modtime = nw_2_un_time(f->modify_date, f->modify_time);
     if ( 0 == (result=s_stat(unname,  &statb, &stb)) &&
          0 == (result=s_utime(unname, &ut, &stb))){
-      result = s_chmod(unname, 
+      result = s_chmod(unname,
                un_nw_attrib(&statb, (int)f->attrib, 1), &stb);
     }
-    if (result) 
+    if (result)
       result= (-0x8c); /* no modify rights */
   }
   XDPRINTF((5,0,"set_file_info result=0x%x, unname:%s:", unname, -result));
@@ -1263,7 +1290,7 @@ int nw_chmod_datei(int dir_handle, uint8 *data, int len,
   NW_PATH       nwpath;
 #if PERSISTENT_SYMLINKS
   S_STATB       stb;
-#endif  
+#endif
   build_path(&nwpath, data, len, 0);
   if (nwpath.fn[0] != '.') { /* Files with . at the beginning are not ok */
     completition = build_verz_name(&nwpath, dir_handle);
@@ -1271,12 +1298,12 @@ int nw_chmod_datei(int dir_handle, uint8 *data, int len,
   if (completition < 0) return(completition);
   strcpy(unname, build_unix_name(&nwpath, 2));
   XDPRINTF((5,0,"set file attrib 0x%x, unname:%s:", access,  unname));
-  
+
   if (!s_stat(unname, &stbuff, &stb)){
     int result = s_chmod(unname, un_nw_attrib(&stbuff, access, 1), &stb);
     return( (result != 0) ? -0x8c : 0);  /* no modify rights */
   }
-  
+
   return(-0x9c); /* wrong path */
 }
 
@@ -1296,7 +1323,10 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
         chmod(unname, act_umode_dir);
         return(0);
       }
-      completition = -0x84; /* No Create Priv.*/  /* -0x9f Direktory Aktive */
+      if (errno == EEXIST)
+        completition = -0xff; 
+      else
+        completition = -0x84; /* No Create Priv.*/  /* -0x9f Direktory Aktive */
     } else { /* rmdir */
       int  j = -1;
       while (++j < (int)anz_dirhandles){
@@ -1509,13 +1539,13 @@ int nw_init_connect(void)
 
     while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))) {
       if (what == 6) { /* version */
-        if (2 != sscanf((char*)buff, "%d %x", 
+        if (2 != sscanf((char*)buff, "%d %x",
                &tells_server_version,
-               &server_version_flags)) 
+               &server_version_flags))
           server_version_flags=0;
       } else if (what == 8) { /* entry8_flags */
         entry8_flags = hextoi((char*)buff);
-      } else if (what == 9) { /* GID */
+      } else if (what == 9) { /* umode */
         int  umode_dir, umode_file;
         if (2 == sscanf((char*)buff, "%o %o", &umode_dir, &umode_file)) {
           default_umode_dir  = umode_dir;

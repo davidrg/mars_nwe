@@ -1,4 +1,4 @@
-/* nwqueue.c 24-Aug-97       */
+/* nwqueue.c 08-Oct-97       */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -250,6 +250,7 @@ static void r_w_queue_jobs(NWE_QUEUE *q, int mode)
             /* correct some possible wrong values */
             qj->server_station=0;
             qj->server_id=0;
+            qj->job_control_flags &= ~0x20;
             add_queue_job(q, qj);
             qj=(INT_QUEUE_JOB*)xmalloc(sizeof(INT_QUEUE_JOB));
           }
@@ -380,7 +381,10 @@ static int fill_q_job_entry(INT_QUEUE_JOB *jo,
   set_time_field(job->target_execute_time, jo->execute_time);
   set_time_field(job->job_entry_time,      jo->entry_time);
   
-  U32_TO_BE32(jo->job_id,   job->job_id);
+  U16_TO_BE16(jo->job_id,   job->job_id);
+  *(job->job_id+2) = 0;
+  *(job->job_id+3) = 0;
+
   U16_TO_BE16(jo->job_typ,  job->job_typ);
 
   U16_TO_16(jo->job_position, job->job_position);
@@ -409,8 +413,9 @@ int nw_creat_queue_job(int connection, int task, uint32 object_id,
                                    : responsedata+sizeof(QUEUE_JOB);
   int result          = nw_get_q_dirname(q_id, fulldirname+1);
   NWE_QUEUE *que=find_queue(q_id);
+  INT_QUEUE_JOB *jo=NULL;
   if (result > 0 && que) {
-    INT_QUEUE_JOB *jo = new_queue_job(que, connection, task, object_id);
+    jo = new_queue_job(que, connection, task, object_id);
     *fulldirname=(uint8) result++;
     if (jo == NULL) return(-0xd4); /* queue full */
     if (old_call) {  /* before 3.11 */
@@ -439,6 +444,8 @@ int nw_creat_queue_job(int connection, int task, uint32 object_id,
   } else {
     result=-0xd3; /* no rights */
   }
+  XDPRINTF((6, 0, "creat_q_job, id=%d, result=%d", jo ? jo->job_id : -1, 
+    result));
   return(result);
 }
 
@@ -486,7 +493,7 @@ int nw_get_queue_status(uint32 q_id,  int *status, int *entries,
   return(-0xff);
 }
 
-int nw_get_q_job_entry(uint32 q_id, int job_id, 
+int nw_get_q_job_entry(uint32 q_id, int job_id,  uint32 fhandle,
                        uint8 *responsedata, int old_call)
 {
   int result=-0xd5;
@@ -496,9 +503,12 @@ int nw_get_q_job_entry(uint32 q_id, int job_id,
     if (old_call) {
       QUEUE_JOB_OLD *job=(QUEUE_JOB_OLD*)responsedata;
       result=fill_q_job_entry_old(qj, job, 1);
+      U16_TO_BE16(0,           job->job_file_handle);
+      U32_TO_32(fhandle,       job->job_file_handle+2);
     } else {
       QUEUE_JOB *job=(QUEUE_JOB*)responsedata;
       result=fill_q_job_entry(qj, job, 1);
+      U32_TO_32(fhandle,       job->job_file_handle);
     }
   }
   return(result);
@@ -545,8 +555,13 @@ static int remove_queue_job_file(NWE_QUEUE *q, INT_QUEUE_JOB *qj)
   struct stat stb;
   uint8 buf[300];
   build_unix_queue_file(buf, q, qj);
-  if (!stat(buf, &stb))
-    return(unlink(buf));
+  if (!stat(buf, &stb)) {
+    int result=unlink(buf);
+    if (result) {
+      XDPRINTF((1, 0, "remove_queue_job_file, cannot remove `%s`.", buf));
+    }
+    return(result);
+  }
   return(0);
 }
 
@@ -560,7 +575,8 @@ int nw_remove_job_from_queue(uint32 user_id, uint32 q_id, int job_id)
       result=remove_queue_job_file(q, qj);
       if (!result)
         free_queue_job(q, job_id);
-      else result=-0xd6;
+      else 
+        result=-0xd6;
     } else result=-0xd6; /* no queue user rights */
   }
   return(result);
@@ -590,6 +606,12 @@ int nw_attach_server_to_queue(uint32 user_id,
   NWE_QUEUE *q = find_queue(q_id);
   if (q) {
     if (!(result=nw_is_member_in_set(q_id, "Q_SERVERS", user_id))){
+#if 1      
+      if (q->qserver) {
+        free_qserver(q->qserver);
+        q->qserver=NULL;
+      }
+#endif
       if (!q->qserver) {
         q->qserver=new_qserver(user_id, connection);
       } else result=-0xdb; /* too max queue servers */
@@ -634,6 +656,7 @@ int nw_service_queue_job(uint32 user_id, int connection, int task,
       INT_QUEUE_JOB *fqj=NULL;
       time_t acttime=time(NULL);
       *fulldirname=(uint8) len++;
+      *(fulldirname+len)=0; /* for testprints only */
       while(qj) {
         if (  (!qj->server_id)
            && !(qj->job_control_flags&0x20)  /* not actual queued */
@@ -663,6 +686,7 @@ int nw_service_queue_job(uint32 user_id, int connection, int task,
           result=fill_q_job_entry(fqj, job, 1);
         }
         result+=len;
+        XDPRINTF((3, 0, "nw service queue job dirname=`%s`", fulldirname+1));
       } else {
         XDPRINTF((3, 0, "No queue job found for q_id=0x%x, user_id=0x%x,job_typ=0x%x", 
              q_id, user_id, job_typ));
@@ -718,45 +742,133 @@ void exit_queues(void)
         free_queue_job(q, job_id);
       }
       q=q->next;
-      
       free_queue(qid);
     }
     nwe_queues=NULL;
   }
 }
 
-int build_unix_queue_dir(uint8 *buf, 
-                          uint8 *unixname, 
-                          int   unixname_len, 
-                          int   downshift, 
-                          uint8 *sysname,
-                          uint32 q_id)
+static int build_unix_queue_dir(uint8 *buf, uint32 q_id)
 {
   int result = -0xff;
   uint8 buf1[300];
   uint8 *p;
-  memcpy(buf, unixname, unixname_len);
+  memcpy(buf, sys_unixname, sys_unixnamlen);
   result=nw_get_q_dirname(q_id, buf1);
   upstr(buf1);
   if (result > -1 && NULL != (p=strchr(buf1, ':')) ) {
     *p++='\0';
     result -= (int)(p - buf1);
-    if (!strcmp(buf1, sysname)) {
-      memcpy(buf+unixname_len, p, result);
-      result+=unixname_len;
+    if (!strcmp(buf1, sys_sysname)) {
+      memcpy(buf+sys_unixnamlen, p, result);
+      result+=sys_unixnamlen;
       if (buf[result-1]=='/')
         --result;
       buf[result]='\0';
-      if (downshift)
-        downstr(buf+unixname_len);
+      if (sys_downshift)
+        downstr(buf+sys_unixnamlen);
     }
   }
-  XDPRINTF((3,0, "build_unix_queue_dir=`%s`, len=%d", buf, result));
+  XDPRINTF((result<0?1:5,0, "build_unix_queue_dir=`%s`, len=%d", buf, result));
   return(result);
 }
 
-void init_queues(uint8 *unixname, int unixname_len, 
-                 int downshift, uint8 *sysname)
+
+int nw_creat_queue(int q_typ, uint8 *q_name, int q_name_len, 
+                   uint8 *path, int path_len, uint32 *q_id)
+{
+  NETOBJ obj;
+  int result;
+  if (q_typ != 0x3) return(-0xfb); /* we only support print queues */
+  strmaxcpy(obj.name, q_name, min(47, q_name_len));
+  obj.type      =  q_typ;
+  obj.flags     =  (uint8)  O_FL_STAT;
+  obj.security  =  (uint8)  0x31;
+  obj.id        =  0L;
+  result        =  nw_create_obj(&obj, 0);
+  
+  if (!result) {
+    uint8 q_directory[300];
+    if (path_len && path_len < 230) {
+      memcpy(q_directory, path, path_len);
+      path=q_directory+path_len;
+      *path=0;
+      upstr(q_directory);
+    } else {
+      strcpy(q_directory, "SYS:SYSTEM");
+      path_len=10;
+      path=q_directory+path_len;
+    }
+    sprintf(path, "/%08lX.QDR", obj.id);
+    *q_id = obj.id;
+    nw_new_obj_prop(obj.id, NULL,            0,     0,    0,
+	             "Q_DIRECTORY",      P_FL_ITEM,   0x31,
+	              q_directory,  strlen(q_directory), 1);
+    
+    nw_new_obj_prop(obj.id , NULL,             0  ,   0  ,   0,
+	             "Q_USERS",           P_FL_SET,   0x31,
+	              NULL,  0, 0);
+    nw_new_obj_prop(obj.id , NULL,             0  ,   0  ,   0,
+	             "Q_OPERATORS",       P_FL_SET,   0x31,
+	              NULL,  0, 0);
+    nw_new_obj_prop(obj.id , NULL,             0  ,   0  ,   0,
+ 	             "Q_SERVERS",         P_FL_SET,   0x31,
+	              NULL,  0, 0);
+
+    nwdbm_mkdir(get_div_pathes(q_directory, NULL, 4, "%x", obj.id), 
+                  0700, 0);
+
+    result=build_unix_queue_dir(q_directory, obj.id);
+    
+    if (result > 0) {
+      NWE_QUEUE *que=new_queue(obj.id);
+      nwdbm_mkdir(q_directory, 0775, 0);
+      new_str(que->queuedir, q_directory);
+      que->queuedir_len=result;
+      que->queuedir_downshift=sys_downshift;
+      r_w_queue_jobs(que, 0);
+      result=0;
+    } else result=-1;
+  }
+  return(result);
+}
+
+int nw_destroy_queue(uint32 q_id)
+{
+  NETOBJ obj;
+  int result;
+  obj.id=q_id;
+  result=nw_get_obj(&obj);
+  if (!result) {
+    if (obj.type == 3) { /* only print queues */
+      uint8 buf[300];
+      get_div_pathes(buf, NULL, 4, "%x", obj.id);
+      nwdbm_rmdir(buf);
+      result=build_unix_queue_dir(buf, obj.id);
+      if (result > 0) {
+        NWE_QUEUE *q=find_queue(obj.id);
+        if (q) {
+          INT_QUEUE_JOB *qj=q->queue_jobs;
+          while(qj) {
+            int job_id=qj->job_id;
+            qj=qj->next;
+            free_queue_job(q, job_id);
+          }
+          free_queue(obj.id);
+        }
+        nwdbm_rmdir(buf);
+        nw_delete_obj(&obj);
+        result=0;
+      } else
+        result=result=-0xd3;  /* no rights */
+    } else 
+      result=result=-0xd3;  /* no rights */
+  }
+  return(result);
+}
+
+
+void init_queues(void)
 {
   NETOBJ obj;
   uint8 buf[300];
@@ -764,11 +876,12 @@ void init_queues(uint8 *unixname, int unixname_len,
   uint8 *wild="*";
   uint32 last_obj_id=MAX_U32;
   exit_queues();
-  strmaxcpy(buf, unixname, unixname_len);
+  strmaxcpy(buf, sys_unixname, sys_unixnamlen);
   XDPRINTF((3,0, "init_queues:unixname='%s'", buf));
   obj.type = 3; /* queue */
   strcpy(obj.name, wild);
-  result = scan_for_obj(&obj, last_obj_id);
+  
+  result = scan_for_obj(&obj, last_obj_id, 1);
   while (!result) {
     NWE_QUEUE *que;
     nwdbm_mkdir(get_div_pathes(buf, NULL, 4, "%x", obj.id), 
@@ -776,19 +889,17 @@ void init_queues(uint8 *unixname, int unixname_len,
     strmaxcpy(buf, obj.name, 47);
     XDPRINTF((3, 0, "init queue, id=0x%x, '%s'",
       obj.id, buf));
-    
-    result=build_unix_queue_dir(buf, unixname, unixname_len, 
-                         downshift, sysname, obj.id);
+    result=build_unix_queue_dir(buf, obj.id);
     if (result > 0) {
       que=new_queue(obj.id);
       new_str(que->queuedir, buf);
       que->queuedir_len=result;
-      que->queuedir_downshift=downshift;
+      que->queuedir_downshift=sys_downshift;
       r_w_queue_jobs(que, 0);
     }
     last_obj_id=obj.id;
     strcpy(obj.name, wild);
-    result = scan_for_obj(&obj, last_obj_id);
+    result = scan_for_obj(&obj, last_obj_id, 1);
   }
 }
 

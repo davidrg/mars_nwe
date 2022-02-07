@@ -1,4 +1,4 @@
-/* nwdbm.h 24-Aug-97 */
+/* nwdbm.h 01-Oct-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -70,6 +70,12 @@ typedef struct {
 
 extern int tells_server_version;
 extern int password_scheme;
+
+extern uint8 *sys_unixname; /* Unixname of SYS: ends with '/'  */
+extern int   sys_unixnamlen;   /* len of unixname   */
+extern int   sys_downshift;    /* is SYS downshift  */
+extern uint8 *sys_sysname;  /* Name of first Volume, normally SYS */
+
 extern uint32 network_serial_nmbr;
 extern uint16 network_appl_nmbr;
 
@@ -93,7 +99,7 @@ extern int nw_get_prop(int object_type,
 
 
 extern int find_obj_id(NETOBJ *o);
-extern int scan_for_obj(NETOBJ *o, uint32 last_obj_id);
+extern int scan_for_obj(NETOBJ *o, uint32 last_obj_id, int ignore_rights);
 
 extern int nw_delete_obj(NETOBJ *obj);
 extern int nw_rename_obj(NETOBJ *o, uint8 *newname);
@@ -199,6 +205,7 @@ extern int nw_test_adr_time_access(uint32 obj_id, ipxAddr_t *client_adr);
 
 
 extern int nwdbm_mkdir(char *unixname, int mode, int flags);
+extern int nwdbm_rmdir(char *path);
 extern void test_ins_unx_user(uint32 id);
 extern int  test_allow_password_change(uint32 id);
 

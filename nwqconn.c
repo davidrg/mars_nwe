@@ -1,4 +1,4 @@
-/* nwqconn.c 26-Aug-97 */
+/* nwqconn.c 24-Sep-97 */
 /* (C)opyright (C) 1997  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -130,7 +130,7 @@ int creat_queue_job(uint32 q_id,
 {
   uint8 *dirname  = (old_call) ? queue_job+sizeof(QUEUE_JOB_OLD)
   		    	       : queue_job+sizeof(QUEUE_JOB);
-  int   job_id;
+  int   job_id=-1;
   INT_QUEUE_JOB *jo;
   int result;
   memcpy(responsedata, queue_job, (old_call) ? sizeof(QUEUE_JOB_OLD)
@@ -149,7 +149,7 @@ int creat_queue_job(uint32 q_id,
     }
   } else {
     QUEUE_JOB *job=(QUEUE_JOB*)responsedata; 
-    job_id=GET_BE32(job->job_id);
+    job_id=GET_BE16(job->job_id);
     jo     = new_queue_job(q_id, job_id);
     result = open_creat_queue_file(0, job->job_file_name+1, *(job->job_file_name),
                                dirname+1, *dirname);
@@ -161,6 +161,9 @@ int creat_queue_job(uint32 q_id,
   }
   if (result < 0)
     free_queue_job(q_id, job_id);
+  
+  XDPRINTF((6, 0, "creat_q_job, id=%d, result=%d", jo ? jo->job_id : -1, 
+    result));
   return(result);
 }
 
@@ -240,6 +243,7 @@ int close_queue_job2(uint32 q_id, int job_id,
         } else XDPRINTF((1,0,"Cannot open queue-file `%s`", unixname));
       }
     } else {
+      result=0;
       nw_close_file(jo->fhandle, 1);
     }
     free_queue_job(q_id, job_id);
@@ -274,7 +278,7 @@ int service_queue_job(uint32 q_id,
     }
   } else {
     QUEUE_JOB *job=(QUEUE_JOB*)responsedata; 
-    job_id=GET_BE32(job->job_id);
+    job_id = GET_BE16(job->job_id);
     jo     = new_queue_job(q_id, job_id);
     result = open_creat_queue_file(1,
                                job->job_file_name+1, *(job->job_file_name),
@@ -285,8 +289,9 @@ int service_queue_job(uint32 q_id,
       result = sizeof(QUEUE_JOB) - 202;
     }
   }
-  if (result < 0)
+  if (result < 0) {
     free_queue_job(q_id, job_id);
+  }
   return(result);
 }
 
@@ -302,6 +307,14 @@ int finish_abort_queue_job(uint32 q_id, int job_id)
   XDPRINTF((5,0,"finish_abort_queue_job Q=0x%x, job=%d, result=%d", 
         q_id, job_id, result));
   return(result);
+}
+
+uint32 get_queue_job_fhandle(uint32 q_id, int job_id)
+{
+  INT_QUEUE_JOB *jo=find_queue_job(q_id, job_id);
+  if (jo) 
+    return(jo->fhandle);
+  return(0);
 }
 
 void free_queue_jobs(void)

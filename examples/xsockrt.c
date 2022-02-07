@@ -25,7 +25,8 @@ static int usage(char *prog)
   fprintf(stderr, "\tsocknr defaults to 0x869b (doom)\n");
   fprintf(stderr, "\tother known sockets are:\n");
   fprintf(stderr, "\t-0x8813 virgin games, Red Alert\n");
-  fprintf(stderr, "\tdel 0 removes all socknr !!\n");
+  fprintf(stderr, "\tadd 0 activates automatic add of socknr !!\n");
+  fprintf(stderr, "\tdel 0 removes all socknr and deactivates automatic add !!\n");
   return(1);
 }
 
@@ -60,8 +61,6 @@ int main(int argc, char *argv[])
   if (argc > 2 && 1 != sscanf(argv[2],"%i", &socknr))
     return(usage(argv[0]));
   if (!strncasecmp(argv[1], "add", 3)) {
-    if (!socknr)
-      return(usage(argv[0]));
     return(handle_ioctl(1, socknr));
   } else if (!strncasecmp(argv[1], "del", 3)) {
     return(handle_ioctl(0, socknr));

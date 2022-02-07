@@ -1,4 +1,4 @@
-/* nwconn.c 14-Aug-97       */
+/* nwconn.c 08-Oct-97       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -64,6 +64,7 @@ static char         *prog_title;
 
 static int req_printed=0;
 
+#if ENABLE_BURSTMODE
 typedef struct {
   BURSTPACKET *sendburst;   /* buffer for sending burstpacket
                              * allocated and prefilled by response to
@@ -101,6 +102,7 @@ typedef struct {
 } BURST_W;
 
 static BURST_W *burst_w=NULL;
+#endif
 
 static void set_program_title(char *s)
 {
@@ -135,22 +137,39 @@ static int ncp_response(int sequence, int task,
   return(0);
 }
 
-static int call_nwbind(void)
+static int call_nwbind(int mode)
+/* modes 0:  'standard' call
+ *       1:  activate wdog
+ */
 {
   ipxAddr_t to_addr;
+  int result;
   memcpy(&to_addr, &my_addr, sizeof(ipxAddr_t));
   U16_TO_BE16(sock_nwbind, to_addr.sock);
-  ud.udata.len = ud.udata.maxlen = sizeof(NCPREQUEST) + requestlen;
-  ud.udata.buf = (char*)&readbuff;
   ud.addr.buf  = (char*)&to_addr;
-  if (t_sndudata(FD_NCP_OUT, &ud) < 0){
+  if (mode==1) {  /* reset wdogs */
+    NCPREQUEST buf;
+    buf.type[0]    = buf.type[1]=0x22;
+    buf.sequence   = ncprequest->sequence;
+    buf.connection = ncprequest->connection;
+    buf.task       = ncprequest->task;
+    buf.high_connection = ncprequest->high_connection;
+    buf.function = 0;
+    ud.udata.len = ud.udata.maxlen = sizeof(buf);
+    ud.udata.buf = (char*)&buf;
+    XDPRINTF((3, 0, "send wdog reset"));
+    result=t_sndudata(FD_NCP_OUT, &ud);
+  } else {
+    ud.udata.len = ud.udata.maxlen = sizeof(NCPREQUEST) + requestlen;
+    ud.udata.buf = (char*)&readbuff;
+    result=t_sndudata(FD_NCP_OUT, &ud);
+  }
+  ud.addr.buf   = (char*)&from_addr;
+  ud.udata.buf  = (char*)&ipxdata;
+  if (result< 0){
     if (nw_debug) t_error("t_sndudata in NWCONN !OK");
-    ud.addr.buf   = (char*)&from_addr;
-    ud.udata.buf  = (char*)&ipxdata;
     return(-1);
   }
-  ud.addr.buf     = (char*)&from_addr;
-  ud.udata.buf    = (char*)&ipxdata;
   return(0);
 }
 
@@ -282,6 +301,12 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          }
                          data_len = sizeof(struct XDATA);
                        } else completition = (uint8) -result;
+                     } break;
+
+         case 0x13 : { /* Get connection ?? */
+                       /* TODO !!!!!!! */
+                       *responsedata=(uint8) act_connection;
+                       data_len = 1;
                      } break;
 
          case 0x14 : { /* GET DATE und TIME */
@@ -830,12 +855,12 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                        } else completition = 0xfb;  /* unkwown request */
                      }
                      break;
+
          case 0x17 : {  /* FILE SERVER ENVIRONMENT */
            /* uint8 len   = *(requestdata+1); */
            uint8 ufunc    = *(requestdata+2);
-#if DO_DEBUG
            uint8 *rdata   = requestdata+3;
-#endif
+           
            switch (ufunc) {
 #if FUNC_17_02_IS_DEBUG
              case 0x02 :  {
@@ -933,10 +958,46 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
              }
              break;
 
+             case 0x64:  { /* create queue */
+#if 0               
+               int    q_typ      = GET_BE16(rdata);
+#endif               
+               int    q_name_len = *(rdata+2);
+#if 0
+               uint8  *q_name    = rdata+3;
+#endif               
+               uint8 *dirhandle  = rdata+3+q_name_len;
+               int pathlen       = *(rdata+3+q_name_len+1);
+               uint8  *path      = rdata+3+q_name_len+2;
+               uint8  new_path[257];
+               int result        = conn_get_full_path(*dirhandle, 
+                                    path, pathlen, new_path);
+               if (result > -1) {
+                 int diffsize = result - pathlen;
+                 *dirhandle   = 0;
+                 memcpy(path, new_path, result);
+                 if (diffsize)   
+                   requestlen+=diffsize;  /* !!!!!! */
+                 return(-1);  /* nwbind must do the rest    */
+               } else
+                 completition = (uint8)(-result);
+             }
+             break;
+
              case 0x68:   /* create queue job and file old */
              case 0x79:   /* create queue job and file     */
              return(-2);  /* nwbind must do prehandling    */
 
+             
+             case 0x6C:  { /* Get Queue Job Entry old */
+                uint32 q_id = GET_BE32(rdata);
+                int job_id  = GET_BE16(rdata+4);
+                uint32 fhandle = get_queue_job_fhandle(q_id, job_id);
+                U32_TO_BE32(fhandle, rdata+8);
+                requestlen+=6;  /* !!!!!! */
+             }
+             return(-1);  /* nwbind must do the rest    */
+             
              case 0x69:    /* close file and start queue old ?? */
              case 0x7f: {  /* close file and start queue */
                struct INPUT {
@@ -949,7 +1010,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                } *input = (struct INPUT *) (ncprequest);
                uint32 q_id = GET_BE32(input->queue_id);
                int  job_id = (ufunc==0x69) ? GET_BE16(input->job_id)
-                                           : GET_BE32(input->job_id);
+                                           : GET_BE16(input->job_id);
                int result  = close_queue_job(q_id, job_id);
                if (result < 0) {
                  completition = (uint8)-result;
@@ -959,9 +1020,12 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
              }
              break;
 
+             case 0x71 :  /* service queue job (old) */
              case 0x7c :  /* service queue job */
              return(-2);  /* nwbind must do prehandling    */
 
+             case 0x72 :  /* finish queue job (old) */
+             case 0x73 :  /* abort queue job (old) */
              case 0x83 :  /* finish queue job */
              case 0x84 : { /* abort queue job */
                struct INPUT {
@@ -973,7 +1037,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                                              /* if 0x69 then only first 2 byte ! */
                } *input = (struct INPUT *) (ncprequest);
                uint32 q_id = GET_BE32(input->queue_id);
-               int  job_id = GET_BE32(input->job_id);
+               int  job_id = GET_BE16(input->job_id);
                int result  = finish_abort_queue_job(q_id, job_id);
                if (result <0)
                  completition=(uint8) -result;
@@ -1859,7 +1923,7 @@ static void handle_after_bind()
            } *rinput = (struct RINPUT *) (bindresponse);
            uint32 q_id = GET_BE32(input->queue_id);
            int  job_id = (ufunc==0x69) ? GET_BE16(input->job_id)
-                                       : GET_BE32(input->job_id);
+                                       : GET_BE16(input->job_id);
 
            int result = close_queue_job2(q_id, job_id,
                                             rinput->client_area,
@@ -1869,18 +1933,20 @@ static void handle_after_bind()
          }
          break;
 
+         case 0x71 :    /* service queue job (old) */
          case 0x7c : {  /* service queue job */
            struct INPUT {
              uint8   header[7];          /* Requestheader   */
              uint8   packetlen[2];       /* low high        */
-             uint8   func;               /* 0x7c            */
+             uint8   func;               /* 0x7c,0x71       */
              uint8   queue_id[4];        /* Queue ID        */
              uint8   job_typ[2];         /* service typ     */
            } *input = (struct INPUT *) (ncprequest);
            uint32  q_id = GET_BE32(input->queue_id);
            uint8  *qjob = bindresponse;
-           int result = service_queue_job(q_id, qjob,
-                                      responsedata, 0);
+           int result   = service_queue_job(q_id, qjob,
+                                      responsedata, 
+                                      ufunc==0x71);
            if (result > -1) 
              data_len=result;
            else
@@ -2089,6 +2155,7 @@ static void set_sig(void)
 
 int main(int argc, char **argv)
 {
+  time_t last_time=time(NULL);
   if (argc != 4 || 3!=sscanf(argv[3], "()INIT-:%x,%x,%x-",
      &father_pid, &sock_nwbind, &sock_echo)) {
     fprintf(stderr, "usage nwconn connid FROM_ADDR ()INIT-:pid,nwbindsock,echosock-\n");
@@ -2146,6 +2213,7 @@ int main(int argc, char **argv)
 
   while (fl_get_int >= 0) {
     int data_len = read(0, readbuff, sizeof(readbuff));
+    
     /* this read is a pipe or a socket read,
      * depending on CALL_NWCONN_OVER_SOCKET
      */
@@ -2180,25 +2248,36 @@ int main(int argc, char **argv)
                        ncprequest->function, data_len);
         }
         saved_sequence = -1;
-#if ENABLE_BURSTMODE
-      } else if (ncp_type == 0x7777) { /* BURST-MODE */
-        XDPRINTF((16, 0, "GOT BURSTPACKET"));
-        handle_burst((BURSTPACKET*)readbuff, data_len);
-#endif
       } else { /* this calls I must handle, it is a request */
-        int result;
-        requestlen  = data_len - sizeof(NCPREQUEST);
-        if (0 != (result = handle_ncp_serv()) ) {
-          if (result == -2) {
-            /* here the actual call must be saved
-             * because we need it later, when the request to nwbind
-             * returns.
-             */
-            memcpy(saved_readbuff, readbuff, data_len);
-            saved_sequence = (int)(ncprequest->sequence);
-          } else saved_sequence = -1;
-          /* this call must go to nwbind */
-          call_nwbind();
+        time_t act_time=time(NULL);
+        
+        if (act_time > last_time+300 && saved_sequence == -1) { 
+           /* ca. 5 min. reset wdogs */
+           call_nwbind(1);    
+           last_time=act_time;
+        }
+
+#if ENABLE_BURSTMODE
+        if (ncp_type == 0x7777) { /* BURST-MODE */
+          XDPRINTF((16, 0, "GOT BURSTPACKET"));
+          handle_burst((BURSTPACKET*)readbuff, data_len);
+        } else
+#endif
+        {
+          int result;
+          requestlen  = data_len - sizeof(NCPREQUEST);
+          if (0 != (result = handle_ncp_serv()) ) {
+            if (result == -2) {
+              /* here the actual call must be saved
+               * because we need it later, when the request to nwbind
+               * returns.
+               */
+              memcpy(saved_readbuff, readbuff, data_len);
+              saved_sequence = (int)(ncprequest->sequence);
+            } else saved_sequence = -1;
+            /* this call must go to nwbind */
+            call_nwbind(0);
+          }
         }
       }
     }

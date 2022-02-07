@@ -46,6 +46,9 @@ Ruedi Kneubuehler <pingu@satu.baboon.ch>
 Volker Lendecke <lendecke@math.uni-goettingen.de>
         helps distributing
 
+Leslie <leslie@petra.hos.u-szeged.hu>
+        fixed getpwnam/getspnam problem.
+
 Ambrose Li <acli@acli.interlog.com>
         gave hints, patches, docs
 
@@ -67,6 +70,9 @@ Jiri A. Randus <Jiri.Randus@vslib.cz>
 Mark Robson <mark@mythras.demon.co.uk>
         fixed bindery security hole and added bindery options
 
+Andrew Sapozhnikov <sapa@hq.icb.chel.su>
+        fixed findfirst/findnext bug
+
 Gregory Steuck <greg@nsu.ru>
         testings and errorreports
 
@@ -76,7 +82,7 @@ Morio Taneda <eb04@rz.uni-karlsruhe.de>
 Erik Thiele <erik@escape.mos.unterland.de>
         testings and doc
 
-Winfried Truemper <truemper@mi.uni-koeln.de>:
+Winfried Truemper <winni@xpilot.org>:
         re-wrote `INSTALL' and added explanations to `nw.ini'
 
 

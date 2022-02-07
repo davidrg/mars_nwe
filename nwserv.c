@@ -1,4 +1,4 @@
-/* nwserv.c 17-Jul-97 */
+/* nwserv.c 08-Oct-97 */
 /* MAIN Prog for NWSERV + NWROUTED  */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -1417,20 +1417,24 @@ int main(int argc, char **argv)
                             if (sizeof(int) == read(p->fd,
                                  (char*)&conn, sizeof(int))
                             &&   sizeof(int) == read(p->fd,
-                                 (char*)&what, sizeof(what)))
-                            if (what == 1) {
-                              while (conn++ < hi_conn) {
+                                 (char*)&what, sizeof(what))) {
+                              if (what == 1) {
+                                while (conn++ < hi_conn) {
+                                  modify_wdog_conn(conn, what);
+                                }
+                                call_wdog++;
+                              } else if (what == 0) { /* reset wdog */
                                 modify_wdog_conn(conn, what);
                               }
-                              call_wdog++;
                             }
                             break;
 
                       case  0x5555 :  /* close connection */
                             if (sizeof(int) == read(p->fd,
-                                 (char*)&conn, sizeof(int)))
+                                 (char*)&conn, sizeof(int))) {
                               modify_wdog_conn(conn, 99);
                               write_to_nwbind(what, conn, NULL, 0);
+                            }
                             break;
 
                       case  0x6666 :  /* bcast message */

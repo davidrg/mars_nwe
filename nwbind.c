@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "26-Aug-97"
+#define REVISION_DATE "08-Oct-97"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -47,6 +47,14 @@ static void write_to_nwserv(int what, int connection, int mode,
                                 char *data, int size)
 {
   switch (what) {
+    case 0x4444  : /* tell the wdog there's no need to look  0 */
+                   /* activate wdogs to free connection      1 */
+                   /* the connection ist closed        	    99 */
+                   write(FD_NWSERV, &what,       sizeof(int));
+                   write(FD_NWSERV, &connection, sizeof(int));
+                   write(FD_NWSERV, &mode,       sizeof(int));
+                   break;
+
     case 0x6666  : /* send to client that server holds message */
                    write(FD_NWSERV, &what,       sizeof(int));
                    write(FD_NWSERV, &connection, sizeof(int));
@@ -61,12 +69,14 @@ static void write_to_nwserv(int what, int connection, int mode,
   }
 }
 
+#define nwserv_reset_wdog(connection) \
+   write_to_nwserv(0x4444, (connection), 0,  NULL, 0)
+
 #define nwserv_handle_msg(connection) \
    write_to_nwserv(0x6666, (connection), 0, NULL, 0)
 
 #define nwserv_down_server() \
    write_to_nwserv(0xffff, 0, 0, NULL, 0)
-
 
 static int        max_nw_vols=MAX_NW_VOLS;
 static int        max_connections=MAX_CONNECTIONS;
@@ -715,7 +725,7 @@ static void handle_fxx(int gelen, int func)
                     obj.type            =  GET_BE16(p);
                     strmaxcpy((char*)obj.name, (char*)(p+3),(int) *(p+2));
                     upstr(obj.name);
-                    result = scan_for_obj(&obj, last_obj_id);
+                    result = scan_for_obj(&obj, last_obj_id, 0);
                     if (!result){
                       U32_TO_BE32(obj.id,    xdata->object_id);
                       U16_TO_BE16(obj.type,  xdata->object_type);
@@ -1088,14 +1098,34 @@ static void handle_fxx(int gelen, int func)
                    completition=0xfb;
                   } break;
 
-     case 0x64 :  {   /* Create Queue */
-                   XDPRINTF((1, 0, "TODO:Create QUEUE ??"));
-                   completition=0xfb;
+     case 0x64 :  {  /* Create Queue, prehandled by nwconn  */
+                   int   q_typ      = GET_BE16(rdata);
+                   int   q_name_len = *(rdata+2);
+                   uint8 *q_name    = rdata+3;
+                   /* inserted by nwconn !!! */
+#if 0
+                   int    dummy     = *(rdata+3+q_name_len);
+#endif
+                   int    pathlen   = *(rdata+3+q_name_len+1);
+                   uint8  *path     = rdata+3+q_name_len+2;
+                   uint32 q_id;
+                   int  result  =  nw_creat_queue(q_typ, 
+                       q_name, q_name_len,
+                       path, pathlen, &q_id);
+                   if (result > -1) {
+                     U32_TO_BE32(q_id, responsedata);
+                     data_len=4;
+                   } else
+                     completition=(uint8)(-result);
                   } break;
 
-     case 0x65 :  {   /* Delete Queue */
-                   XDPRINTF((1, 0, "TODO:Delete QUEUE ??"));
-                   completition=0xfb;
+     case 0x65 :  {   /* Destroy Queue */
+                   uint32 q_id =  GET_BE32(rdata);
+                   int result=-0xd3;  /* no rights */
+                   if (1 == act_c->object_id)
+                     result=nw_destroy_queue(q_id);
+                   if (result < 0)
+                      completition=(uint8)(-result);
                   } break;
 
      case 0x66 :  { /* Read Queue Current Status,old */
@@ -1142,7 +1172,7 @@ static void handle_fxx(int gelen, int func)
                    uint32 q_id   = GET_BE32(rdata);
                    uint32 job_id = (ufunc == 0x6A)
                                       ? GET_BE16(rdata+4)
-                                      : GET_BE32(rdata+4);
+                                      : GET_BE16(rdata+4);
                    int result=nw_remove_job_from_queue(
                                            act_c->object_id,
                                            q_id, job_id);
@@ -1161,16 +1191,6 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
-     case 0x6C :  {   /* Get Queue Job Entry old */
-                    uint32 q_id = GET_BE32(rdata);
-                    int job_id  = GET_BE16(rdata+4);
-                    int result=nw_get_q_job_entry(q_id, job_id, 
-                                   responsedata, 1);
-                    if (result > -1) 
-                      data_len=result;
-                    else completition=(uint8)-result;
-                  }
-                  break;
 
      case 0x68:     /* creat queue job and file old */
      case 0x79:   { /* creat queue job and file new */
@@ -1190,12 +1210,25 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
+     case 0x6C :  {   /* Get Queue Job Entry old */
+                    uint32 q_id = GET_BE32(rdata);
+                    int job_id  = GET_BE16(rdata+4);
+                     /* added by nwconn */
+                    uint32 fhandle = GET_BE32(rdata+8);
+                    int result=nw_get_q_job_entry(q_id, job_id, fhandle,
+                                   responsedata, 1);
+                    if (result > -1) 
+                      data_len=result;
+                    else completition=(uint8)-result;
+                  }
+                  break;
+
      case 0x69:      /* close file and start queue old ?? */
      case 0x7f:   {  /* close file and start queue */
                     uint32 q_id      = GET_BE32(rdata);
      		    uint32 job_id    = (ufunc==0x69) 
      		                         ? GET_BE16(rdata+4)
-     		                         : GET_BE32(rdata+4);
+     		                         : GET_BE16(rdata+4);
                     int result       = nw_close_queue_job(q_id, job_id, 
                                                          responsedata);
                     if (result > -1) 
@@ -1237,7 +1270,7 @@ static void handle_fxx(int gelen, int func)
                     uint32 q_id   = GET_BE32(rdata);
      		    uint32 job_id = (ufunc==0x78) 
      		                    ? GET_BE16(rdata+4)
-     		                    : GET_BE32(rdata+4);
+     		                    : GET_BE16(rdata+4);
                     int result = nw_get_queue_job_file_size(q_id, job_id);
                     if (result > -1) {
                       uint8 *p=responsedata;
@@ -1245,7 +1278,10 @@ static void handle_fxx(int gelen, int func)
                       if (ufunc==0x78) {
                         U16_TO_BE16(job_id, p); p+=2;
                       } else {
-                        U32_TO_BE32(job_id, p); p+=4;
+                       /* U32_TO_BE32(job_id, p); p+=4; */
+                        U16_TO_BE16(job_id, p); p+=2;
+                        *(p++)=0;
+                        *(p++)=0;
                       }
                       U32_TO_BE32(result, p); p+=4;
                       data_len=(int)(p-responsedata);
@@ -1254,13 +1290,15 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
+     case 0x71 :     /* service queue job old */
      case 0x7c :  {  /* service queue job */
                     uint32 q_id      = GET_BE32(rdata);
                     int    type      = GET_BE16(rdata+4);
                     int result=nw_service_queue_job(
                          act_c->object_id,
                          act_connection, ncprequest->task,  
-                         q_id, type, responsedata, 0);
+                         q_id, type, responsedata, 
+                              ufunc==0x71 );
                     if (result > -1)
                       data_len=result;
                     else
@@ -1321,9 +1359,10 @@ static void handle_fxx(int gelen, int func)
                    data_len=sizeof(struct XDATA);
                   }break;
 
+     case 0x72:      /* finish servicing queue job  (old)*/
      case 0x83:   {  /* finish servicing queue job */
                     uint32 q_id       = GET_BE32(rdata);
-     		    uint32 job_id     = GET_BE32(rdata+4);
+     		    uint32 job_id     = GET_BE16(rdata+4);
 #if 0
                     uint32 chargeinfo = GET_BE32(rdata+8);
 #endif
@@ -1335,9 +1374,10 @@ static void handle_fxx(int gelen, int func)
                       completition=(uint8) -result;
                   }break;
 
+     case 0x73:      /* abort servicing queue job (old) */
      case 0x84:   {  /* abort servicing queue job */
                     uint32 q_id       = GET_BE32(rdata);
-     		    uint32 job_id     = GET_BE32(rdata+4);
+     		    uint32 job_id     = GET_BE16(rdata+4);
                     int result        = nw_finish_abort_queue_job(1,
                                            act_c->object_id,
                                            act_connection, 
@@ -1676,7 +1716,11 @@ int main(int argc, char *argv[])
           internal_act = 0;
           if (act_c->active && IPXCMPNODE(from_addr.node, my_addr.node)
                         && IPXCMPNET (from_addr.net,  my_addr.net)) {
-            handle_fxx(ud.udata.len, (int)ncprequest->function);
+            if (!ncprequest->function){ /* wdog reset */
+              nwserv_reset_wdog(act_connection);
+              XDPRINTF((3, 0, "send wdog reset"));
+            } else   
+              handle_fxx(ud.udata.len, (int)ncprequest->function);
           } else {
             XDPRINTF((1, 0, "NWBIND-LOOP addr=%s of connection=%d is wrong",
              visable_ipx_adr(&from_addr), act_connection));

@@ -18,6 +18,7 @@ extern int service_queue_job(uint32 q_id,
                     uint8 old_call);
 
 extern int finish_abort_queue_job(uint32 q_id, int job_id);
+extern uint32 get_queue_job_fhandle(uint32 q_id, int job_id);
 
 extern void free_queue_jobs(void);
 #endif

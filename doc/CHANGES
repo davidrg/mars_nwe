@@ -346,17 +346,32 @@ Erste 'oeffentliche' Version
 - 'Home Volumes' werden nun generell als 'remountable' behandelt.
 - Bindery Pfad kann nun in section 45 bestimmt werden.
 - File-sharing abgeaendert.
-- Internen Router Code fuer SAP Anfragen des internen Netzes (slist usw.) 
+- Internen Router Code fuer SAP Anfragen des internen Netzes (slist usw.)
   korrigiert.
 <----- ^^^^^^^^^^ pl0 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-- namespace routine delete file/dir um wildcardhandling erweitert fuer 
+- namespace routine delete file/dir um wildcardhandling erweitert fuer
   client32. (W95)
 - einfache Semaphore Routinen eingebaut.
 - Routine 0x16,0x2f eingebaut. (fuer Pete)
-- Quota Support wieder zum Laufen gebracht. 
-  Durch Bindery Security Fixes funktionierte Quota Support 
+- Quota Support wieder zum Laufen gebracht.
+  Durch Bindery Security Fixes funktionierte Quota Support
   nicht mehr.
-- im MAIL Verzeichnis werden nun im Unterverzeichnis user symbolische Links 
+- im MAIL Verzeichnis werden nun im Unterverzeichnis user symbolische Links
   der Login Namen erzeugt.
+- Print queue handling stark veraendert.
 <----- ^^^^^^^^^^ pl1 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Nested FINDFIRST/FINDNEXT bug korrigiert durch Andrew Sapozhnikov.
+- getpwnam/getspnam problem gefixed durch Leslie.
+- Neues queue handling funktioniert nun auch mit netx.
+  Die Queue-job-id wird nun bei den 'neuen' calls, obwohl eigentlich 
+  4 Byte gross, immer als 2 Byte Zahl behandelt. 
+- Resultcode in close_queue_job2() (nwqconn.c) korrigiert. Es wurde
+  immer Fehlercode zurueckgeliefert wodurch der capture aufgehoben
+  wurde.
+- creat directory liefert nun bei EEXIST 0xff zurueck.
+- pserver Unterstuetzung erweitert. 
+- creat queue, destroy queue Calls eingebaut.
+- Routine nw_add_obj_to_set traegt nun keine doppelten Eintraege in das Set
+  ein.
+<----- ^^^^^^^^^^ pl2 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

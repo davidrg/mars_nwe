@@ -400,8 +400,10 @@ static DIR_BASE_ENTRY *allocate_dbe_p(int namespace)
       } else {
         while (j && dir_base[--j]->locked) ;;
       }
-      if (S_ISDIR(dir_base[j]->nwpath.statb.st_mode))
+      if (S_ISDIR(dir_base[j]->nwpath.statb.st_mode)
+            || (entry8_flags & 0x20) ) {
         put_dbe_to_disk(dir_base[j]);
+      }
       xfree(dir_base[j]);
     } else
       anz_dbe++;
@@ -715,12 +717,13 @@ static int insert_get_base_entry(N_NW_PATH *nwpath,
        /* creat dir */
       if (mkdir(unname, 0777))
         result=-0x84;
-      else
+      else if (act_umode_dir)
         chmod(unname, act_umode_dir);
     } else {
        /* creat file */
       if ((result = creat(unname, 0777)) > -1) {
-        chmod(unname, act_umode_file);
+        if (act_umode_file)
+          chmod(unname, act_umode_file);
         close(result);
         result = 0;
       } else result=-0x84;
