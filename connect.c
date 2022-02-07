@@ -1,4 +1,4 @@
-/* connect.c  02-Jan-96 */
+/* connect.c  13-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -698,7 +698,7 @@ static int build_verz_name(NW_PATH *nwpath,    /* gets complete path     */
                while (*xp++ == '.' && completition > -1) {
                  p1--; /* steht nun auf letztem Zeichen '/' od. ':' */
                  if (p1 < panf) completition = -0x9c ;
-                  /* Falscher Pfad, denn weiter zurueck gehts nicht */
+                  /* wrong path, don't can go back any more */
                  else {
                    while (p1 > panf && *(--p1) != '/');;
                    if (p1 == panf) *p1='\0';
@@ -1081,7 +1081,7 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
       return(retsize);
     }
   }
-  return(- 0x88); /* Falscher Filehandle */
+  return(- 0x88); /* wrong filehandle */
 }
 
 
@@ -1374,7 +1374,7 @@ int nw_search(uint8 *info,
          }
          return(searchsequence);
       } else return(-0xff); /* not found */
-   } else return(completition); /* Falscher Pfad */
+   } else return(completition); /* wrong path */
 }
 
 int nw_dir_search(uint8 *info,
@@ -1468,7 +1468,7 @@ int nw_free_dir_handle(int dir_handle)
 {
   if (dir_handle && --dir_handle < (int)used_dirs) {
     NW_DIR *d=&(dirs[dir_handle]);
-    if (!d->inode) return(-0x9b); /* Falscher Handle */
+    if (!d->inode) return(-0x9b); /* wrong handle */
     else {
       d->inode = 0;
       xfree(d->path);
@@ -1500,7 +1500,7 @@ int nw_get_directory_path(int dir_handle, uint8 *name)
   name[0] = '\0';
   if (dir_handle > 0 && --dir_handle < (int)used_dirs) {
     int volume = dirs[dir_handle].volume;
-    if (volume < used_vols){
+    if (volume > -1 && volume < used_vols){
       result=sprintf((char*)name, "%s:%s", vols[volume].sysname, dirs[dir_handle].path);
       if (name[result-1] == '/') name[--result] = '\0';
     } else result = -0x98;
@@ -1512,10 +1512,10 @@ int nw_get_directory_path(int dir_handle, uint8 *name)
 int nw_get_vol_number(int dir_handle)
 /* Get Volume Nummmer with Handle */
 {
-  int     result   = -0x9b; /* Falsches Handle */
+  int     result   = -0x9b; /* wrong handle */
   if (dir_handle > 0 && --dir_handle < (int)used_dirs) {
     result = dirs[dir_handle].volume;
-    if (result >= used_vols) result = -0x98; /* Falsches Volume */
+    if (result < 0 || result >= used_vols) result = -0x98; /* wrong volume */
   }
   XDPRINTF((5,0,"nw_get_vol_number:0x%x: von Handle=%d", result, dir_handle+1));
   return(result);
@@ -1543,12 +1543,24 @@ int nw_get_volume_number(uint8 *volname, int namelen)
 int nw_get_volume_name(int volnr, uint8 *volname)
 /* returns < 0 if error, else len of volname  */
 {
-  int result = -0x98; /* Volume not exist */;
+  int  result = -0x98; /* Volume not exist */;
   if (volnr < used_vols) {
-    strcpy(volname, vols[volnr].sysname);
-    result = strlen(volname);
-  } else volname[0] = '\0';
-  XDPRINTF((5,0,"GET_VOLUME_NAME von:%d = %s: ,result=0x%x", volnr, volname, result));
+    if (volname != NULL) {
+      strcpy(volname, vols[volnr].sysname);
+      result = strlen(volname);
+    } else result= strlen(vols[volnr].sysname);
+  } else {
+    if (NULL != volname) *volname = '\0';
+    if (volnr < MAX_NW_VOLS) result=0;
+  }
+  if (nw_debug > 4) {
+    char xvolname[10];
+    if (!volname) {
+      volname = xvolname;
+      *volname = '\0';
+    }
+    XDPRINTF((5,0,"GET_VOLUME_NAME von:%d = %s: ,result=0x%x", volnr, volname, result));
+  }
   return(result);
 }
 
@@ -1675,7 +1687,7 @@ int nw_get_vol_info(int volnr)
 /* returns >= 0 if OK, else errocode < 0 */
 {
   int result = -0x98; /* Volume not exist */;
-  if (volnr < used_vols) {
+  if (volnr > -1 && volnr < used_vols) {
     result =0;
   }
   XDPRINTF((5,0,"NW_GET_VOL_INFO von VOLNR:%d, result=0x%x", volnr, result));

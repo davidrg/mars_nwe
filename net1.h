@@ -1,4 +1,4 @@
-/* net1.h 11-Sep-95 */
+/* net1.h 14-Jan-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -23,7 +23,9 @@ extern void print_t_info(struct t_info *t);
 extern void print_ud_data(struct t_unitdata *ud);
 #endif
 
-extern char *visable_ipx_adr(ipxAddr_t *p);
+extern char *xvisable_ipx_adr(ipxAddr_t *p, int modus);
+#define visable_ipx_adr(adr) xvisable_ipx_adr((adr), 0)
+
 extern void print_ipx_addr(ipxAddr_t   *p);
 extern void print_ipx_data(IPX_DATA    *p);
 extern void print_sip_data(SIP         *sip);

@@ -1,4 +1,4 @@
-/* net1.c,  09-Jan-96 */
+/* net1.c,  14-Jan-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -39,17 +39,23 @@ void print_t_info(struct t_info *t)
 }
 #endif
 
-char *visable_ipx_adr(ipxAddr_t *p)
+char *xvisable_ipx_adr(ipxAddr_t *p, int modus)
 {
 static char str[200];
-  if (p)
+  if (p) {
+    if (!modus) {
     sprintf(str,"net=%x:%x:%x:%x, node=%x:%x:%x:%x:%x:%x, sock=%02x:%02x",
        (int)p->net[0],  (int)p->net[1],  (int)p->net[2],  (int)p->net[3],
        (int)p->node[0], (int)p->node[1], (int)p->node[2], (int)p->node[3],
        (int)p->node[4], (int)p->node[5], (int)p->sock[0], (int)p->sock[1]);
-  else
+    } else if (modus== 1) {
+      sprintf(str,"%02X:%02X:%02X:%02X,%02x:%02x:%02x:%02x:%02x:%02x,%02x:%02x",
+         (int)p->net[0],  (int)p->net[1],  (int)p->net[2],  (int)p->net[3],
+         (int)p->node[0], (int)p->node[1], (int)p->node[2], (int)p->node[3],
+         (int)p->node[4], (int)p->node[5], (int)p->sock[0], (int)p->sock[1]);
+    } else strcpy(str, "??");
+  } else
     strcpy(str, "net=UNKOWN(NULLPOINTER)");
-
   return(str);
 }
 

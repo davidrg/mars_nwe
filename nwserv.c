@@ -1,4 +1,4 @@
-/* nwserv.c 09-Jan-96 */
+/* nwserv.c 14-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -19,29 +19,32 @@
 #include "net.h"
 #include "nwserv.h"
 
-uint32     internal_net  = 0x0L; /* NETWORKNUMMER INTERN (SERVER) */
-ipxAddr_t  my_server_adr;        /* Address of this server    */
-char       my_nwname[50];        /* Name of this server       */
-
+uint32     internal_net  = 0x0L;     /* NETWORKNUMMER INTERN (SERVER) */
+ipxAddr_t  my_server_adr;            /* Address of this server        */
+char       my_nwname[50];            /* Name of this server           */
+int        print_route_tac   = 0;    /* every x broadcasts print it   */
+int        print_route_mode  = 0;    /* append                        */
+char       *pr_route_info_fn = NULL; /* filename                      */
+int        wdogs_till_tics   = 0;    /* send wdogs to all             */
 /* <========== DEVICES ==========> */
-int            anz_net_devices=0;
+int           anz_net_devices=0;
 NW_NET_DEVICE *net_devices[MAX_NET_DEVICES];
 
 uint16  ipx_sock_nummern[]={
 #ifdef WDOG_SLOT
                              0,                 /*  auto sock */
 #endif
-			     SOCK_SAP,
-			     SOCK_RIP,
-	                     SOCK_ROUTE,
-	                     SOCK_DIAGNOSE
+                             SOCK_SAP,
+                             SOCK_RIP,
+                             SOCK_ROUTE,
+                             SOCK_DIAGNOSE
 #ifdef ECHO_SLOT
-	                     , SOCK_ECHO
+                             , SOCK_ECHO
 #endif
 #ifdef ERROR_SLOT
-	                     , SOCK_ERROR
+                             , SOCK_ERROR
 #endif
-	                     };
+                             };
 
 #define NEEDED_SOCKETS  (sizeof(ipx_sock_nummern) / sizeof(uint16))
 #define NEEDED_POLLS    (NEEDED_SOCKETS+1)
@@ -55,16 +58,16 @@ static uint16        spx_diag_socket;    /* SPX DIAGNOSE SOCKET       */
 static ipxAddr_t     nw386_adr;          /* Address of NW-TEST Server */
 static int           nw386_found    = 0;
 static int           client_mode    = 0;
-static int    	     ipxdebug	    =  0;
-static int    	     pid_ncpserv    = -1;
+static int           ipxdebug       =  0;
+static int           pid_ncpserv    = -1;
 static int           fd_ncpserv_out = -1;  /* ctrl-pipe out to  ncpserv  */
 static int           fd_ncpserv_in  = -1;  /* ctrl-pipe in  from ncpserv */
 
-static	time_t 	     akttime_stamp             =  0;
-static  int 	     broadsecs		       =  2048;
-static  time_t 	     server_down_stamp         =  0;
+static  time_t       akttime_stamp             =  0;
+static  int          broadsecs                 =  2048;
+static  time_t       server_down_stamp         =  0;
 static  int          server_goes_down_secs     = 10;
-static  int          save_ipx_routes	       =  0;
+static  int          save_ipx_routes           =  0;
 
 
 static void write_to_ncpserv(int what, int connection,
@@ -159,30 +162,30 @@ static int start_ncpserv(char *nwname, ipxAddr_t *addr)
 
   switch (pid=fork()) {
     case 0 : {  /* new Process */
-	       char *progname="ncpserv";
-	       char addrstr[100];
-	       char pathname[300];
-	       int j = FD_NWSERV;
-	       close(fds_out[1]);   /* no need to write      */
-	       dup2(fds_out[0], 0); /* becommes stdin        */
-	       close(fds_out[0]);   /* no  longer needed     */
+               char *progname="ncpserv";
+               char addrstr[100];
+               char pathname[300];
+               int j = FD_NWSERV;
+               close(fds_out[1]);   /* no need to write      */
+               dup2(fds_out[0], 0); /* becommes stdin        */
+               close(fds_out[0]);   /* no  longer needed     */
 
-	       close(fds_in[0]);            /* no need to read       */
-	       dup2(fds_in[1], FD_NWSERV);  /* becommes fd FD_NWSERV */
-	       close(fds_in[1]);            /* no  longer needed     */
-	       while (j++ < 100) close(j);  /* close all > 4 	     */
-	       ipx_addr_to_adr(addrstr, addr);
-	       execl(get_exec_path(pathname, progname), progname,
-	              nwname,  addrstr, NULL);
-	       exit(1);
-	     }
-	     break;
+               close(fds_in[0]);            /* no need to read       */
+               dup2(fds_in[1], FD_NWSERV);  /* becommes fd FD_NWSERV */
+               close(fds_in[1]);            /* no  longer needed     */
+               while (j++ < 100) close(j);  /* close all > 4         */
+               ipx_addr_to_adr(addrstr, addr);
+               execl(get_exec_path(pathname, progname), progname,
+                      nwname,  addrstr, NULL);
+               exit(1);
+             }
+             break;
 
     case -1: close(fds_out[0]);
-    	     close(fds_out[1]);
-    	     close(fds_in[0]);
-    	     close(fds_in[1]);
-    	     return(-1);  /* error */
+             close(fds_out[1]);
+             close(fds_in[0]);
+             close(fds_in[1]);
+             return(-1);  /* error */
   }
   fds_out[0]     = -1;
   fd_ncpserv_out = fds_out[1];
@@ -196,16 +199,16 @@ static int start_nwclient(void)
 {
   switch (fork()){
     case 0 : {  /* new Process */
-	       char *progname="nwclient";
-	       char pathname[300];
-	       char my_addrstr[100];
-	       char serv_addrstr[100];
-	       ipx_addr_to_adr(my_addrstr,     &my_server_adr);
-	       ipx_addr_to_adr(serv_addrstr,   &nw386_adr);
-	       execl(get_exec_path(pathname, progname), progname,
-	              my_addrstr, serv_addrstr, NULL);
-	     }
-	     exit(1);
+               char *progname="nwclient";
+               char pathname[300];
+               char my_addrstr[100];
+               char serv_addrstr[100];
+               ipx_addr_to_adr(my_addrstr,     &my_server_adr);
+               ipx_addr_to_adr(serv_addrstr,   &nw386_adr);
+               execl(get_exec_path(pathname, progname), progname,
+                      my_addrstr, serv_addrstr, NULL);
+             }
+             exit(1);
 
     case -1: return(-1);  /* error */
   }
@@ -223,13 +226,18 @@ static int start_nwclient(void)
 # define MAX_WDOG_TRIES        11   /* Standardtries */
 #endif
 
+static void modify_wdog_conn(int conn, int mode);
 
 static void send_wdog_packet(ipxAddr_t *addr, int conn, int what)
 {
   uint8     data[2];
   data[0] = (uint8) conn;
   data[1] = (uint8) what;
-  send_ipx_data(sockfd[WDOG_SLOT], 17, 2, data, addr, "WDOG");
+  if (what == '?' && dont_send_wdog(addr)) {
+    modify_wdog_conn(conn, 0);
+    XDPRINTF((2,0, "No wdog to %s", visable_ipx_adr(addr)));
+  } else
+    send_ipx_data(sockfd[WDOG_SLOT], 17, 2, data, addr, "WDOG");
 }
 
 static void send_bcast_packet(ipxAddr_t *addr, int conn, int signature)
@@ -288,7 +296,7 @@ static void modify_wdog_conn(int conn, int mode)
                   break;
 
         default : c->counter = 0;  /* reset */
-        	  break;
+                  break;
       } /* switch */
     } else if (mode == 99) {  /* remove */
       memset(c, 0, sizeof(CONN));
@@ -341,8 +349,8 @@ static void send_bcasts(int conn)
 
 
 static void send_server_respons(int fd, uint8 ipx_pack_typ,
-	                 int respond_typ, int server_typ,
-	                 ipxAddr_t *to_addr)
+                         int respond_typ, int server_typ,
+                         ipxAddr_t *to_addr)
 {
   IPX_DATA           ipx_data;
   memset(&ipx_data, 0, sizeof(ipx_data.sip));
@@ -356,9 +364,9 @@ static void send_server_respons(int fd, uint8 ipx_pack_typ,
   U16_TO_BE16(server_typ,    ipx_data.sip.server_type);
   U16_TO_BE16(0,             ipx_data.sip.intermediate_networks);
   send_ipx_data(fd, ipx_pack_typ,
-	            sizeof(ipx_data.sip),
-	            (char *)&(ipx_data.sip),
-	            to_addr, "Server Response");
+                    sizeof(ipx_data.sip),
+                    (char *)&(ipx_data.sip),
+                    to_addr, "Server Response");
 }
 
 void get_server_data(char *name,
@@ -377,10 +385,10 @@ void get_server_data(char *name,
 }
 
 static void handle_sap(int fd,
-     	        int 	   ipx_pack_typ,
-	        int 	   data_len,
-	        IPX_DATA   *ipxdata,
-	        ipxAddr_t  *from_addr)
+                int        ipx_pack_typ,
+                int        data_len,
+                IPX_DATA   *ipxdata,
+                ipxAddr_t  *from_addr)
 {
   int query_type   = GET_BE16(ipxdata->sqp.query_type);
   int server_type  = GET_BE16(ipxdata->sqp.server_type);
@@ -463,7 +471,7 @@ static void handle_sap(int fd,
 
 
 static void response_ipx_diag(int fd, int ipx_pack_typ,
-	                 ipxAddr_t *to_addr)
+                         ipxAddr_t *to_addr)
 {
   IPX_DATA           ipxdata;
   DIAGRESP           *dia = &ipxdata.diaresp;
@@ -490,14 +498,14 @@ static void response_ipx_diag(int fd, int ipx_pack_typ,
   memcpy(p, my_server_adr.node, IPX_NODE_SIZE);
   datalen += IPX_NODE_SIZE;
   send_ipx_data(fd, ipx_pack_typ,
-	            datalen,
-	            (char*)&ipxdata,
-	            to_addr, "DIAG Response");
+                    datalen,
+                    (char*)&ipxdata,
+                    to_addr, "DIAG Response");
 }
 
 static void handle_diag(int fd, int ipx_pack_typ,
-	        int data_len, IPX_DATA *ipxdata,
-	        ipxAddr_t *from_addr)
+                int data_len, IPX_DATA *ipxdata,
+                ipxAddr_t *from_addr)
 /* should handle CONFIGURATION REQUESTS one time */
 {
   CONFREQ *conf       = &(ipxdata->confreq);
@@ -512,7 +520,7 @@ static void handle_diag(int fd, int ipx_pack_typ,
     exnodes += IPX_NODE_SIZE;
   }
   XDPRINTF((2,0,"DIAG Request, ipx_pack_typ %d, data_len %d, count %d",
-	 (int)ipx_pack_typ, data_len, count));
+         (int)ipx_pack_typ, data_len, count));
   response_ipx_diag(fd, ipx_pack_typ, from_addr);
 }
 
@@ -597,8 +605,8 @@ static void handle_event(int fd, uint16 socknr, int slot)
                 /*
                 print_ud_data(&ud);
                 */
-	      }
-	      break;
+              }
+              break;
   }
 }
 
@@ -676,7 +684,7 @@ static void get_ini(int full)
                      break;
 #ifdef LINUX
            case   5 : save_ipx_routes=atoi(inhalt);
-           	      break;
+                      break;
 #endif
            case 104 : /* nwclient */
                       if (client_mode && atoi(inhalt))
@@ -689,6 +697,18 @@ static void get_ini(int full)
                         server_goes_down_secs = 10;
                       break;
 
+           case 300 : print_route_tac=atoi(inhalt);
+                      break;
+
+           case 301 : new_str(pr_route_info_fn, inhalt);
+                      break;
+
+           case 302 : print_route_mode=atoi(inhalt);
+                      break;
+
+           case 310 : wdogs_till_tics=atoi(inhalt);
+                      break;
+
            default : break;
          } /* switch */
       } /* if */
@@ -696,6 +716,9 @@ static void get_ini(int full)
     fclose(f);
   }
   if (client_mode < 2) client_mode=0;
+  if (print_route_tac && !pr_route_info_fn && !*pr_route_info_fn)
+    print_route_tac = 0;
+  if (!print_route_tac) xfree(pr_route_info_fn);
   if (full) {
 #ifdef LINUX
     init_ipx(internal_net, node, ipxdebug);
@@ -730,8 +753,7 @@ static void get_ini(int full)
 
 static void send_down_broadcast(void)
 {
-  send_sap_broadcast(2);
-  send_rip_broadcast(2); /* shutdown rip */
+  send_sap_rip_broadcast(2);
 }
 
 static void close_all(void)
@@ -840,8 +862,8 @@ int main(int argc, char **argv)
       int fd = open_ipx_socket(ipx_sock_nummern[j], j, O_RDWR);
       if (fd < 0) {
         while (j--) {
-	  t_unbind(sockfd[j]);
-	  t_close(sockfd[j]);
+          t_unbind(sockfd[j]);
+          t_close(sockfd[j]);
         }
         return(1);
       } else {
@@ -855,11 +877,15 @@ int main(int argc, char **argv)
 
   U16_TO_BE16(SOCK_NCP, my_server_adr.sock);
   if (!start_ncpserv(my_nwname, &my_server_adr)) {
-    /* Jetzt POLLEN */
+    ipxAddr_t server_adr_sap;
+    /* now do polling */
     time_t broadtime;
     time(&broadtime);
     set_sigs();
     polls[NEEDED_SOCKETS].fd = fd_ncpserv_in;
+    memcpy(&server_adr_sap, &my_server_adr, sizeof(ipxAddr_t));
+    U16_TO_BE16(SOCK_SAP, server_adr_sap.sock);
+    insert_delete_server(my_nwname, 0x4, &my_server_adr, &server_adr_sap, 0, 0, 0);
     while (1) {
       int anz_poll = poll(polls, NEEDED_POLLS, broadsecs);
       time(&akttime_stamp);
@@ -868,19 +894,19 @@ int main(int argc, char **argv)
         else if (fl_get_int == 2) down_server();
       }
       if (anz_poll > 0) { /* i have to work */
-	struct pollfd *p = &polls[0];
-	j = -1;
-	while (++j < NEEDED_POLLS) {
-	  if (p->revents){
+        struct pollfd *p = &polls[0];
+        j = -1;
+        while (++j < NEEDED_POLLS) {
+          if (p->revents){
             if (j < NEEDED_SOCKETS) {  /* socket */
-	      XDPRINTF((99, 0,"POLL %d, SOCKET %x", p->revents, sock_nummern[j]));
-	      if (p->revents & ~POLLIN)
-	        errorp(0, "STREAM error", "revents=0x%x", p->revents );
-	      else handle_event(p->fd, sock_nummern[j], j);
+              XDPRINTF((99, 0,"POLL %d, SOCKET %x", p->revents, sock_nummern[j]));
+              if (p->revents & ~POLLIN)
+                errorp(0, "STREAM error", "revents=0x%x", p->revents );
+              else handle_event(p->fd, sock_nummern[j], j);
             }  else {  /* fd_ncpserv_in */
-	      XDPRINTF((2, 0, "POLL %d, fh=%d", p->revents, p->fd));
-	      if (p->revents & ~POLLIN)
-	         errorp(0, "STREAM error", "revents=0x%x", p->revents );
+              XDPRINTF((2, 0, "POLL %d, fh=%d", p->revents, p->fd));
+              if (p->revents & ~POLLIN)
+                 errorp(0, "STREAM error", "revents=0x%x", p->revents );
               else {
                 if (p->fd == fd_ncpserv_in) {
                   int       what;
@@ -889,7 +915,7 @@ int main(int argc, char **argv)
                   ipxAddr_t adr;
                   if (sizeof(int) == read(fd_ncpserv_in,
                             (char*)&what, sizeof(int))) {
-	            XDPRINTF((2, 0, "GOT ncpserv_in what=0x%x", what));
+                    XDPRINTF((2, 0, "GOT ncpserv_in what=0x%x", what));
                     switch (what) {
                       case  0x2222 :  /* insert wdog connection */
                             if (sizeof(int) == read(fd_ncpserv_in,
@@ -904,7 +930,7 @@ int main(int argc, char **argv)
                       case  0x4444 :  /* reset wdog connection   =  0 */
                                       /* force test wdog conn 1  =  1 */
                                       /* force test wdog conn 2  =  2 */
-                                      /* remove wdog	         = 99 */
+                                      /* remove wdog             = 99 */
                             if (sizeof(int) == read(fd_ncpserv_in,
                                  (char*)&conn, sizeof(int))
                             &&   sizeof(int) == read(fd_ncpserv_in,
@@ -932,10 +958,10 @@ int main(int argc, char **argv)
                 }
               }
             }
-	    if (! --anz_poll) break;
-	  } /* if */
-	  p++;
-	} /* while */
+            if (! --anz_poll) break;
+          } /* if */
+          p++;
+        } /* while */
       } else {
         XDPRINTF((99,0,"POLLING ..."));
       }
@@ -943,8 +969,7 @@ int main(int argc, char **argv)
         if (akttime_stamp - server_down_stamp > server_goes_down_secs) break;
       } else {
         if (akttime_stamp - broadtime > (broadsecs / 1000)) { /* ca. 60 seconds */
-          send_sap_broadcast(broadsecs<3000);  /* firsttime broadcast */
-          send_rip_broadcast(broadsecs<3000);  /* firsttime broadcast */
+          send_sap_rip_broadcast((broadsecs<3000) ? 1 :0);  /* firsttime broadcast */
           if (broadsecs < 32000) {
             rip_for_net(MAX_U32);
             get_servers();

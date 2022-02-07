@@ -1,4 +1,4 @@
-/* nwserv.h 11-Jan-96 */
+/* nwserv.h 14-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -16,10 +16,13 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-extern uint32    internal_net;  /* NETWORKNUMMER INTERN (SERVER) */
-extern ipxAddr_t my_server_adr; /* Address of this server    */
-extern char      my_nwname[50]; /* Name of this server       */
-
+extern uint32    internal_net;        /* NETWORKNUMMER INTERN (SERVER) */
+extern ipxAddr_t my_server_adr;       /* Address of this server    */
+extern char      my_nwname[50];       /* Name of this server       */
+extern int       print_route_tac;     /* every x broadcasts print it   */
+extern int       print_route_mode;    /* append    */
+extern char      *pr_route_info_fn;   /* filename */
+extern int       wdogs_till_tics;
 
 typedef struct {
   char     *devname;   /* "eth0" or "isdnX"         */
@@ -46,8 +49,7 @@ extern  NW_NET_DEVICE *net_devices[];
 extern  int     sockfd[];
 
 extern void ins_del_bind_net_addr(char *name, ipxAddr_t *adr);
-extern void send_rip_broadcast(int mode);
-extern void send_sap_broadcast(int mode);
+extern void send_sap_rip_broadcast(int mode);
 extern void rip_for_net(uint32 net);
 extern void get_servers(void);
 
@@ -64,4 +66,5 @@ extern  void insert_delete_server(uint8  *name,
                                  int        do_delete,  /* delete = 1 */
                                  int        flags);
 
+extern int dont_send_wdog(ipxAddr_t *addr);
 

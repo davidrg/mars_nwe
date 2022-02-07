@@ -1,4 +1,4 @@
-/* nwroute.c 11-Jan-96 */
+/* nwroute.c 14-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,16 +32,16 @@ static int        anz_routes=0;
 static NW_ROUTES *nw_routes[MAX_NW_ROUTES];
 
 typedef struct {
-  uint8     *name;
-  int         typ;
-  ipxAddr_t  addr;
-  int         net; /* routing over NET */
+  uint8     *name; /* Server Name      */
+  int         typ; /* Server Typ       */
+  ipxAddr_t  addr; /* Server Addr      */
+  uint32      net; /* routing over NET */
   int        hops;
   int       flags;
 } NW_SERVERS;
 
 static int        anz_servers=0;
-static NW_SERVERS *nw_servers[MAX_NW_ROUTES];
+static NW_SERVERS *nw_servers[MAX_NW_SERVERS];
 
 static void insert_delete_net(uint32 destnet,
                               uint32 rnet,      /* routernet  */
@@ -116,9 +116,35 @@ static void insert_delete_net(uint32 destnet,
   }
 }
 
-void insert_delete_server(uint8  *name,
-                                 int        styp,
-                                 ipxAddr_t *addr,
+
+NW_NET_DEVICE *find_netdevice(uint32 network)
+/* return the device over which the network is routed, I hope */
+{
+  uint32 net=network;
+  int l=2;
+  XDPRINTF((3, 0, "find_netdevice of network=%lX", net));
+  while (l--) {
+    int  k=-1;
+    while (++k < anz_net_devices) {
+      NW_NET_DEVICE *nd=net_devices[k];
+      if (nd->net == net) {
+        XDPRINTF((3, 0, "found netdevive %s, frame=%d, ticks=%d",
+          nd->devname, nd->frame, nd->ticks));
+        return(nd);
+      }
+    }
+    if (!l) return(NULL);
+    k=-1;
+    while (++k < anz_routes && nw_routes[k]->net != network);;
+    if (k < anz_routes) net=nw_routes[k]->rnet;
+    else return(NULL);
+  }
+  return(NULL);
+}
+
+void insert_delete_server(uint8  *name,                 /* Server Name */
+                                 int        styp,       /* Server Typ  */
+                                 ipxAddr_t *addr,       /* Server Addr */
                                  ipxAddr_t *from_addr,
                                  int        hops,
                                  int        do_delete,  /* delete = 1 */
@@ -141,7 +167,7 @@ void insert_delete_server(uint8  *name,
   while (++k < anz_servers && (nw_servers[k]->typ != styp ||
      !nw_servers[k]->name || strcmp(nw_servers[k]->name, sname)) ) {
     if (nw_servers[k]->name) {
-      XDPRINTF((3,0, "Server %s = typ=0x%04x",
+      XDPRINTF((10,0, "Server %s = typ=0x%04x",
               nw_servers[k]->name, nw_servers[k]->typ));
     }
     if (freeslot < 0 && !nw_servers[k]->typ) freeslot=k;
@@ -151,8 +177,8 @@ void insert_delete_server(uint8  *name,
     if (do_delete) return;  /* nothing to delete   */
 
     if (freeslot < 0) {
-      if (anz_servers == MAX_NW_ROUTES) {
-        XDPRINTF((1, 0, "too many servers=%d, increase MAX_NW_ROUTES in config.h", anz_servers));
+      if (anz_servers == MAX_NW_SERVERS) {
+        XDPRINTF((1, 0, "too many servers=%d, increase MAX_NW_SERVERS in config.h", anz_servers));
         return;
       }
       nw_servers[k] = (NW_SERVERS*)xcmalloc(sizeof(NW_SERVERS));
@@ -164,9 +190,12 @@ void insert_delete_server(uint8  *name,
     nr->hops  = 0xffff;
   } else if (do_delete) {
     nr=nw_servers[k];
-    if (nr->typ == 4) ins_del_bind_net_addr(nr->name, NULL);
-    xfree(nr->name);
-    memset(nr, 0, sizeof(NW_SERVERS));
+    if (!IPXCMPNODE(nr->addr.node, my_server_adr.node) ||
+        !IPXCMPNET (nr->addr.net,  my_server_adr.net) )  {
+      if (nr->typ == 4) ins_del_bind_net_addr(nr->name, NULL);
+      xfree(nr->name);
+      memset(nr, 0, sizeof(NW_SERVERS));
+    }
     return;
   } else nr=nw_servers[k];
   /* here now i perhaps must change the entry */
@@ -284,7 +313,7 @@ static void send_rip_buff(ipxAddr_t *from_addr)
   }
 }
 
-void send_rip_broadcast(int mode)
+static void send_rip_broadcast(int mode)
 /* mode=0, standard broadcast */
 /* mode=1, first trie         */
 /* mode=2, shutdown	      */
@@ -355,7 +384,7 @@ void handle_rip(int fd,       int ipx_pack_typ,
 }
 
 /* <========================= SAP ============================> */
-void send_sap_broadcast(int mode)
+static void send_sap_broadcast(int mode)
 /* mode=0, standard broadcast */
 /* mode=1, first trie         */
 /* mode=2, shutdown	      */
@@ -363,7 +392,8 @@ void send_sap_broadcast(int mode)
   int k=-1;
   while (++k < anz_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
-    if (nd->ticks < 7 || mode) { /* isdn devices should not get SAP broadcasts everytime */
+    if (nd->ticks < 7 || mode) {
+    /* isdn devices should not get SAP broadcasts everytime */
       IPX_DATA      ipx_data;
       ipxAddr_t     wild;
       int           j=-1;
@@ -373,7 +403,8 @@ void send_sap_broadcast(int mode)
       U16_TO_BE16(SOCK_SAP,   wild.sock);
       while (++j < anz_servers) {
         NW_SERVERS *nw=nw_servers[j];
-        if (!nw->typ || (nw->net == nd->net && nw->hops)) continue; /* no SAP to this NET */
+        if (!nw->typ || (nw->net == nd->net && nw->hops)
+                     || (mode == 2 && nw->hops) ) continue; /* no SAP to this NET */
         memset(&ipx_data, 0, sizeof(ipx_data.sip));
         strcpy(ipx_data.sip.server_name, nw->name);
         memcpy(&ipx_data.sip.server_adr, &(nw->addr), sizeof(ipxAddr_t));
@@ -383,16 +414,70 @@ void send_sap_broadcast(int mode)
           U16_TO_BE16(16,         ipx_data.sip.intermediate_networks);
         } else {
           U16_TO_BE16(nw->hops+1, ipx_data.sip.intermediate_networks);
+         /* I hope hops are ok here */
           XDPRINTF((3, 0, "SEND SIP %s,0x%04x, hops=%d",
                    nw->name, nw->typ, nw->hops+1));
-         /* I hope 1 is ok here */
         }
         send_ipx_data(sockfd[SAP_SLOT],
-                       0,
+                       4,  /* this is the official packet typ for SAP's */
 	               sizeof(ipx_data.sip),
 	               (char *)&(ipx_data.sip),
 	               &wild, "SIP Broadcast");
       }
+    }
+  }
+}
+
+static FILE *open_route_info_fn(void)
+{
+  static int tacs=0;
+  FILE   *f=NULL;
+  if (print_route_tac > 0) {
+    if (!tacs) {
+      if (NULL != (f=fopen(pr_route_info_fn,
+                           (print_route_mode) ? "w" : "a"))) {
+        tacs = print_route_tac-1;
+      } else print_route_tac=0;
+    } else tacs--;
+  }
+  return(f);
+}
+
+void send_sap_rip_broadcast(int mode)
+/* mode=0, standard broadcast */
+/* mode=1, first trie         */
+/* mode=2, shutdown	      */
+{
+  send_sap_broadcast(mode);
+  send_rip_broadcast(mode);
+  if (!mode) {
+    FILE *f= open_route_info_fn();
+    if (f) {
+      int k=-1;
+      fprintf(f, "<--------- Routing Table ---------->\n");
+      fprintf(f, "%8s Hops Tics %9s Router Node\n", "Network", "RouterNet");
+      while (++k < anz_routes) {
+        NW_ROUTES *nr = nw_routes[k];
+        if (nr->net) {
+          fprintf(f, "%08lX %4d %4d  %08lX %02x:%02x:%02x:%02x:%02x:%02x\n",
+                   nr->net, nr->hops, nr->ticks, nr->rnet,
+                   (int)nr->rnode[0], (int)nr->rnode[1], (int)nr->rnode[2],
+                   (int)nr->rnode[3], (int)nr->rnode[4], (int)nr->rnode[5]);
+        }
+      }
+      k=-1;
+      fprintf(f, "<--------- Server Table ---------->\n");
+      fprintf(f, "%-20s %4s %9s Hops Server-Address\n","Name", "Typ", "RouterNet");
+      while (++k < anz_servers) {
+        NW_SERVERS *ns = nw_servers[k];
+        if (ns->typ) {
+          char sname[50];
+          strmaxcpy(sname, ns->name, 20);
+          fprintf(f, "%-20s %4d  %08lX %4d %s\n", sname, ns->typ,
+               ns->net, ns->hops, xvisable_ipx_adr(&(ns->addr), 1));
+        }
+      } /* while */
+      fclose(f);
     }
   }
 }
@@ -409,7 +494,7 @@ static void query_sap_on_net(uint32 net)
   U16_TO_BE16(3,        sqp.query_type);
   U16_TO_BE16(4,        sqp.server_type);
   send_ipx_data(sockfd[SAP_SLOT], 17, sizeof(SQP),
-       (char*)&sqp, &wild, "SERVER Query");
+               (char*)&sqp, &wild, "SERVER Query");
 }
 
 void get_servers(void)
@@ -417,10 +502,20 @@ void get_servers(void)
   int k=-1;
   while (++k < anz_net_devices) {
     NW_NET_DEVICE *nd=net_devices[k];
-    if (nd->ticks < 7)  query_sap_on_net(nd->net); /* only fast routes */
+    if (nd->ticks < 7) query_sap_on_net(nd->net); /* only fast routes */
   }
-  if (!anz_net_devices)
-      query_sap_on_net(internal_net);
+  if (!anz_net_devices) query_sap_on_net(internal_net);
 }
 
+
+int dont_send_wdog(ipxAddr_t *addr)
+/* returns != 0 if tics are to high for wdogs */
+{
+  NW_NET_DEVICE *nd;
+  if (!wdogs_till_tics) return(0);         /*  ever send wdogs */
+  else if (wdogs_till_tics < 0) return(1); /* never send wdogs */
+  if (NULL != (nd=find_netdevice(GET_BE32(addr->net))))
+    return((nd->ticks < wdogs_till_tics) ? 0 : 1);
+  return(0);
+}
 

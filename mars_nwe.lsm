@@ -1,7 +1,7 @@
 Begin3
 Title:          mars_nwe
-Version:        0.96pl4
-Entered-date:   09-Jan-96
+Version:        0.96pl6
+Entered-date:   14-Jan-96
 Description:    full novell-server-emulator (src),beta
                 file-services, bindery-services, printing-services
                 needs no kernelchanges, usefull for testing ipx

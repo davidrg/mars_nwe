@@ -1,4 +1,4 @@
-# makefile.unx 09-Jan-96
+# makefile.unx 12-Jan-96
 VPATH=..
 O=.o
 C=.c
@@ -6,7 +6,7 @@ C=.c
 DEBUG=-DDB
 V_H=0
 V_L=96
-P_L=5
+P_L=6
 #define D_P_L 1
 DISTRIB=mars_nwe
 #if D_P_L

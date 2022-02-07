@@ -61,13 +61,17 @@
 	       *(  (uint8*) (b) )    = *( ((uint8*) (&a)) +1); \
 	       *( ((uint8*) (b)) +1) = *(  (uint8*) (&a)); }
 
+
 #define U32_TO_BE32(u, ar) { uint32 a= (u); uint8 *b= ((uint8*)(ar))+3; \
 	       *b-- = (uint8)a; a >>= 8;  \
 	       *b-- = (uint8)a; a >>= 8;  \
 	       *b-- = (uint8)a; a >>= 8;  \
 	       *b   = (uint8)a; }
 
-#define GET_BE16(b)  (   (int) *(((uint8*)(b))+1)  \
+#define U16_TO_16(u, b) { uint16 a=(u); memcpy(b, &a, 2); }
+#define U32_TO_32(u, b) { uint32 a=(u); memcpy(b, &a, 4); }
+
+#define GET_BE16(b)  (     (int) *(((uint8*)(b))+1)  \
 	             | ( ( (int) *( (uint8*)(b) ) << 8)   ) )
 
 #define GET_BE32(b)  (   (uint32)   *(((uint8*)(b))+3)  \
@@ -110,6 +114,10 @@
 
 #ifndef MAX_NW_ROUTES
 # define MAX_NW_ROUTES 50
+#endif
+
+#ifndef MAX_NW_SERVERS
+# define MAX_NW_SERVERS MAX_NW_ROUTES
 #endif
 
 #if IPX_DATA_GR_546

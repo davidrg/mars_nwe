@@ -52,4 +52,10 @@ Erste 'oeffentliche' Version
   geschrieben.
 - SAP Responses gehen nun immer ueber den SAP Socket.
 - Routing Bereich (SAP's) erweitert.
-
+- SAP Broadcasts haben nun Packettyp '4'.
+- Volume Info's (Volume Size usw.) korrigiert.
+- Nun auch neue Konstante MAX_NW_SERVERS in config.h
+- Routing and Server Tabelle (Info) kann nun in Datei ausgegeben werden.
+- Es kann nun gesteuert werden (nw.ini:310), dass wdogs zu einer
+  connection nur gesendet werden, falls der client ueber eine device
+  net < angebbarer anzahl tics ist. (z.B. fuer IPX ueber ISDN)

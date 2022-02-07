@@ -1,4 +1,4 @@
-/* nwdbm.c  08-Jan-96  data base for mars_nwe */
+/* nwdbm.c  13-Jan-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -951,39 +951,46 @@ int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
 
 int nw_set_enpasswd(uint32 obj_id, uint8 *passwd)
 {
-  nw_new_create_prop(obj_id, NULL, 0, 0, 0,
-	          "PASSWORD", P_FL_STAT|P_FL_ITEM,  0x44,
-	           passwd, 16);
+  uint8 *prop_name="PASSWORD";
+  if (passwd && *passwd) {
+    nw_new_create_prop(obj_id, NULL, 0, 0, 0,
+  	                prop_name, P_FL_STAT|P_FL_ITEM,  0x44,
+	                passwd, 16);
+  } else
+    (void)loc_delete_property(obj_id, prop_name, 0);
   return(0);
 }
 
 int nw_set_passwd(uint32 obj_id, char *password)
 {
-  uint8 passwd[200];
-  uint8 s_uid[4];
-  U32_TO_BE32(obj_id, s_uid);
-  shuffle(s_uid, password, strlen(password), passwd);
+  if (password && *password) {
+    uint8 passwd[200];
+    uint8 s_uid[4];
+    U32_TO_BE32(obj_id, s_uid);
+    shuffle(s_uid, password, strlen(password), passwd);
 #if 0
-  XDPRINTF((2,0, "password %s->0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x",
-     password,
-     (int)passwd[0],
-     (int)passwd[1],
-     (int)passwd[2],
-     (int)passwd[3],
-     (int)passwd[4],
-     (int)passwd[5],
-     (int)passwd[6],
-     (int)passwd[7],
-     (int)passwd[8],
-     (int)passwd[9],
-     (int)passwd[10],
-     (int)passwd[11],
-     (int)passwd[12],
-     (int)passwd[13],
-     (int)passwd[14],
-     (int)passwd[15]));
+    XDPRINTF((2,0, "password %s->0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x",
+       password,
+       (int)passwd[0],
+       (int)passwd[1],
+       (int)passwd[2],
+       (int)passwd[3],
+       (int)passwd[4],
+       (int)passwd[5],
+       (int)passwd[6],
+       (int)passwd[7],
+       (int)passwd[8],
+       (int)passwd[9],
+       (int)passwd[10],
+       (int)passwd[11],
+       (int)passwd[12],
+       (int)passwd[13],
+       (int)passwd[14],
+       (int)passwd[15]));
 #endif
-  return(nw_set_enpasswd(obj_id, passwd));
+    return(nw_set_enpasswd(obj_id, passwd));
+  } else
+    return(nw_set_enpasswd(obj_id, NULL));
 }
 
 int prop_add_new_member(uint32 obj_id, int prop_id, uint32 member_id)
@@ -1085,7 +1092,10 @@ static void add_user(uint32 u_id,   uint32 g_id,
       	             "UNIX_USER",             P_FL_ITEM,    0x33,
 	             (char*)unname,  strlen(unname));
 
-  if (password && *password) nw_set_passwd(u_id, password);
+  if (password && *password) {
+    if (*password == '-') *password='\0';
+    nw_set_passwd(u_id, password);
+  }
 }
 
 void nw_fill_standard(char *servername, ipxAddr_t *adr)
@@ -1214,7 +1224,7 @@ void nw_init_dbm(char *servername, ipxAddr_t *adr)
     }
   }
   dbmclose();
-  while (anz--) loc_delete_property(objs[anz], (char*)NULL, props[anz]);  /* Nun l”schen */
+  while (anz--) loc_delete_property(objs[anz], (char*)NULL, props[anz]);  /* now delete */
   nw_fill_standard(servername, adr);
 }
 

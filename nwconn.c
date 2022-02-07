@@ -1,4 +1,4 @@
-/* nwconn.c 09-Jan-96       */
+/* nwconn.c 13-Jan-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
@@ -159,9 +159,9 @@ static void handle_ncp_serv()
 	               if ((result = nw_get_volume_name(volume, xdata->name))>-1){
 	                 struct fs_usage fsp;
 	                 if (!nw_get_fs_usage(xdata->name, &fsp)) {
-	                   U16_TO_BE16(38, xdata->sec_per_block); /* hard coded */
-	                   U16_TO_BE16(fsp.fsu_blocks, xdata->total_blocks);
-	                   U16_TO_BE16(fsp.fsu_bavail, xdata->avail_blocks);
+	                   U16_TO_BE16(1000, xdata->sec_per_block); /* hard coded */
+	                   U16_TO_BE16(fsp.fsu_blocks/1000, xdata->total_blocks);
+	                   U16_TO_BE16(fsp.fsu_bavail/1000, xdata->avail_blocks);
 	                   U16_TO_BE16(fsp.fsu_files,  xdata->total_dirs);
 	                   U16_TO_BE16(fsp.fsu_ffree,  xdata->avail_dirs);
 	                   U16_TO_BE16(0,  xdata->removable);
@@ -371,8 +371,7 @@ static void handle_ncp_serv()
 	               } else if (*p == 0x15){ /* liefert Volume Information */
 	           /******** Get Volume Info with Handle ****/
 	                 struct XDATA {
-	                   uint8  reserve1;
-	                   uint8  len;
+                           uint8  sectors[2];
 	                   uint8  total_blocks[2];
 	                   uint8  avail_blocks[2];
 	                   uint8  total_dirs[2];  /* anz dirs  */
@@ -387,9 +386,9 @@ static void handle_ncp_serv()
 	                   if (result > -1) {
                              struct fs_usage fsp;
                              if (!nw_get_fs_usage(xdata->name, &fsp)) {
-	                       xdata->len   = 8; /* blocks entries */
-                               U16_TO_BE16(fsp.fsu_blocks, xdata->total_blocks);
-                               U16_TO_BE16(fsp.fsu_bavail, xdata->avail_blocks);
+                               U16_TO_BE16(1000, xdata->sectors);
+                               U16_TO_BE16(fsp.fsu_blocks/1000, xdata->total_blocks);
+                               U16_TO_BE16(fsp.fsu_bavail/1000, xdata->avail_blocks);
                                U16_TO_BE16(fsp.fsu_files,  xdata->total_dirs);
                                U16_TO_BE16(fsp.fsu_ffree,  xdata->avail_dirs);
                                U16_TO_BE16(0,  xdata->removable);
@@ -459,7 +458,8 @@ static void handle_ncp_serv()
                                       input->dir_handle);
                          if (result > -1) data_len = result;
                          else completition = (uint8) (-result);
-	               } else  if (*p == 0x20){ /* scan volume user disk restrictions */
+	               } else  if (*p == 0x20){
+	               /* scan volume user disk restrictions */
 	                 uint8  volnr    = *(p+1);
 	                 uint32 sequenz  = GET_BE32(p+2);
 	                 struct XDATA {
@@ -468,8 +468,11 @@ static void handle_ncp_serv()
                            uint8  id[4];
                            uint8  restriction[4];
 	                 } *xdata = (struct XDATA*) responsedata;
-	                 xdata->entries = 0x0;
-	                 data_len = (8 * xdata->entries) + 1;
+                         int result = nw_get_volume_name(volnr, NULL);
+                         if (result > -1) {
+	                   xdata->entries = 0x0;
+	                   data_len = (8 * xdata->entries) + 1;
+                         } else completition = (uint8) (-result);
 	               } else  if (*p == 0x21) {
 	                 /* change Vol restrictions for Obj */
 	                 uint8  volnr = *(p+1);
@@ -554,7 +557,7 @@ static void handle_ncp_serv()
                          /* ncpfs need this call */
                          int volume   = (int) *(p+1);
 	                 struct XDATA {
-	                   uint8 total_blocks[4];
+	                   uint8 total_blocks[4];        /* LOW-HI !! */
 	                   uint8 avail_blocks[4];
 	                   uint8 purgeable_blocks[4];
 	                   uint8 not_purgeable_blocks[4];
@@ -571,11 +574,11 @@ static void handle_ncp_serv()
                            struct fs_usage fsp;
                            memset(xdata, 0, sizeof(struct XDATA));
                            if (!nw_get_fs_usage(name, &fsp)) {
-	                     xdata->sec_per_block = 38; /* hard coded */
-	                     U32_TO_BE32(fsp.fsu_blocks, xdata->total_blocks);
-	                     U32_TO_BE32(fsp.fsu_bavail, xdata->avail_blocks);
-	                     U32_TO_BE32(fsp.fsu_files,  xdata->total_dirs);
-	                     U32_TO_BE32(fsp.fsu_ffree,  xdata->avail_dirs);
+	                     xdata->sec_per_block = 1; /* hard coded */
+	                     U32_TO_32(fsp.fsu_blocks, xdata->total_blocks);
+	                     U32_TO_32(fsp.fsu_bavail, xdata->avail_blocks);
+	                     U32_TO_32(fsp.fsu_files,  xdata->total_dirs);
+	                     U32_TO_32(fsp.fsu_ffree,  xdata->avail_dirs);
                            }
                            xdata->namlen   = strlen(name);
                            strmaxcpy(xdata->name, name, xdata->namlen);
@@ -602,11 +605,11 @@ static void handle_ncp_serv()
                            struct fs_usage fsp;
                            memset(xdata, 0, sizeof(struct XDATA));
                            if (!nw_get_fs_usage(name, &fsp)) {
-	                     xdata->sec_per_block = 38; /* hard coded */
-	                     U32_TO_BE32(fsp.fsu_blocks, xdata->total_blocks);
-	                     U32_TO_BE32(fsp.fsu_bavail, xdata->avail_blocks);
-	                     U32_TO_BE32(fsp.fsu_files,  xdata->total_dirs);
-	                     U32_TO_BE32(fsp.fsu_ffree,  xdata->avail_dirs);
+	                     xdata->sec_per_block = 1; /* hard coded */
+	                     U32_TO_32(fsp.fsu_blocks, xdata->total_blocks);
+	                     U32_TO_32(fsp.fsu_bavail, xdata->avail_blocks);
+	                     U32_TO_32(fsp.fsu_files,  xdata->total_dirs);
+	                     U32_TO_32(fsp.fsu_ffree,  xdata->avail_dirs);
                            }
                            xdata->namlen = strlen(name);
                            strmaxcpy(xdata->name, name, xdata->namlen);
