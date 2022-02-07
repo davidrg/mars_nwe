@@ -17,6 +17,9 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#ifndef _EMUTLI_H_
+#define _EMUTLI_H_
+
 #include <linux/ipx.h>
 
 typedef unsigned char       uint8;
@@ -130,5 +133,5 @@ extern void set_emu_tli(void);
 #define  IPX_FRAME_ETHERII  IPX_RT_BLUEBOOK
 #endif
 
-
+#endif
 

@@ -1,5 +1,5 @@
 /* ncpserv.c */
-#define REVISION_DATE "08-Feb-96"
+#define REVISION_DATE "13-Feb-96"
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -112,7 +112,7 @@ typedef struct {
    ipxAddr_t  client_adr;   /* address client        */
    uint32     object_id;    /* logged object         */
    	      		    /* 0 = not logged in     */
-   uint8      crypt_key[8]; /* password generierung  */
+   uint8      crypt_key[8]; /* password generation  */
    uint8      message[60];  /* saved BCastmessage    */
    int        sequence;     /* previous sequence     */
    int        retry;	    /* one reply being serviced is sent */
@@ -159,7 +159,7 @@ static int new_conn_nr(void)
   return(0); /* nothing free */
 }
 
-int free_conn_nr(int nr)
+static int free_conn_nr(int nr)
 {
   if (nr && --nr < anz_connect) {
     connections[nr].fd = -1;
@@ -168,7 +168,7 @@ int free_conn_nr(int nr)
   return(-1);
 }
 
-int find_conn_nr(ipxAddr_t *addr)
+static int find_conn_nr(ipxAddr_t *addr)
 {
   int j = -1;
   while (++j < anz_connect) {
@@ -179,7 +179,7 @@ int find_conn_nr(ipxAddr_t *addr)
   return(0);
 }
 
-void clear_connection(int conn)
+static void clear_connection(int conn)
 {
   nwserv_close_wdog(conn);
   if (conn > 0 && --conn < anz_connect) {
@@ -188,7 +188,7 @@ void clear_connection(int conn)
       close(c->fd);
       c->fd = -1;
       if (c->pid > -1) {
-        kill(c->pid, SIGTERM); /* hier nochmal's killen */
+        kill(c->pid, SIGTERM); /* kill it */
         c->pid = -1;
       }
     }
@@ -202,9 +202,15 @@ void clear_connection(int conn)
   }
 }
 
-int find_get_conn_nr(ipxAddr_t *addr)
+static int find_get_conn_nr(ipxAddr_t *addr)
 {
   int connection=find_conn_nr(addr);
+#if 0
+  if (connection) {
+    clear_connection(connection);
+    connection=0;
+  }
+#endif
   if (!connection){
     if ((connection = new_conn_nr()) > 0){
       CONNECTION *c=&(connections[connection-1]);
@@ -464,16 +470,24 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            NETOBJ obj;
                     char   password[80];
 	            obj.type     =  GET_BE16(p);
-	            strmaxcpy((char*)obj.name, (char*)(p+3), (int) *(p+2));
+	            xstrmaxcpy(obj.name, p+3, (int) *(p+2));
                     upstr(obj.name);
-	            strmaxcpy(password, (char*)(p1+1),
-	                max(sizeof(password)-1, (int) *p1));
-                    XDPRINTF((1, 0, "TODO:LOGIN unencrypted PW NAME='%s', PASSW='%s'",
+	            xstrmaxcpy(password, p1+1, (int) *p1);
+                    XDPRINTF((10, 0, "LOGIN unencrypted PW NAME='%s', PASSW='%s'",
                              obj.name, password));
 	            if (0 == (result = find_obj_id(&obj, 0))) {
-                       /* TODO: check password  !!!!!!! */
-                      ;;
-                      result = 0xff;
+                      if (password_scheme & PW_SCHEME_LOGIN) {
+#if 0
+                        if (obj.id == 1) {
+                          result=-0xff; /* SUPERVISOR ever encryted !! */
+                          XDPRINTF((1, 0, "Supervisor tried unencrypted LOGIN"));
+                        } else
+#endif
+                          result=nw_test_unenpasswd(obj.id, password);
+                      } else {
+                        XDPRINTF((1, 0, "unencryted logins are not enabled"));
+                        result=-0xff;
+                      }
                     }
 	            if (!result) {
 	              c->object_id = obj.id;     /* actuell Object ID  */
@@ -547,13 +561,15 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                     uint8 *pp  = responsedata;
                     data_len   = k;
                     while (k--) *pp++ = *p++ =
-#if 0
+#ifndef _MAR_TESTS_
                       (uint8) rand();
 #else
                       (uint8) k;
 #endif
                     /* if all here are same (1 or 2) then the resulting key is */
                     /* 00000000  */
+                    if (password_scheme & PW_SCHEME_GET_KEY_FAIL)
+                       completition=0xfb;
                   }
                   break;
 
@@ -562,7 +578,8 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            NETOBJ obj;
                     int    result;
 	            obj.type     =  GET_BE16(p);
-	            strmaxcpy((char*)obj.name, (char*)(p+3), *(p+2));
+                    obj.id       =  0;
+	            xstrmaxcpy(obj.name, (char*)(p+3), *(p+2));
                     upstr(obj.name);
                     XDPRINTF((2, 0, "LOGIN CRYPTED PW NAME='%s'",obj.name));
 	            if (0 == (result = find_obj_id(&obj, 0)))
@@ -573,7 +590,13 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                       get_guid((int*)(rdata+2), (int*)(rdata+2+sizeof(int)), obj.id);
                       in_len=12 + 2*sizeof(int);
                       return(-1); /* nwconn must do the rest */
-	            } else completition = (uint8) -result;
+	            } else {
+                      if ((password_scheme & PW_SCHEME_LOGIN) &&
+                         result == -0xff && obj.id != 1) /* not supervisor */
+                        completition = 0xfb; /* We lie here, to force LOGIN */
+                      else                   /* to use the old call         */
+                        completition = (uint8) -result;
+                    }
      	       	  }
                   break;
 
@@ -720,7 +743,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	              uint8  *p           =  rdata;
 	              NETOBJ obj;
 	              obj.type            =  GET_BE16(p+1);
-	              strmaxcpy((char*)obj.name,  (char*)(p+4), (int) *(p+3));
+	              xstrmaxcpy(obj.name,  (char*)(p+4), (int) *(p+3));
 	              result = nw_change_obj_security(&obj, (int)*p);
                     }
                     if (result < 0) completition = (uint8) -result;
@@ -755,8 +778,6 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	                         prop_name, prop_namlen);
 	            if (result < 0) completition = (uint8) -result;
 	          } break;
-
-
 
      case 0x3b :  {  /* Change Prop Security */
 	            uint8  *p         =  rdata;
@@ -847,21 +868,34 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            if (result) completition = (uint8) -result;
 	          } break;
 
-     case 0x40:  {  /* change object password  */
-                    uint8    *p  =  rdata;
-	            NETOBJ   obj;
-                    int      result;
-	            obj.type     =  GET_BE16(p);
-	            strmaxcpy((char*)obj.name, (char*)(p+3), *(p+2));
-                    upstr(obj.name);
-	            if (0 == (result = find_obj_id(&obj, 0))) {
-                      ;;
+     case 0x40:   {  /* change object password  */
+                    if (password_scheme & PW_SCHEME_CHANGE_PW) {
+                      uint8    *p    =  rdata;
+                      uint8    oldpassword[50];
+                      uint8    newpassword[50];
+	              NETOBJ   obj;
+                      int      result;
+	              obj.type        =  GET_BE16(p);
+                      p+=2;
+	              xstrmaxcpy(obj.name,     p+1, (int) *p);
+                      upstr(obj.name);
+                      p +=   ((*p)+1);
+	              xstrmaxcpy(oldpassword,  p+1, (int) *p);
+                      p +=   ((*p)+1);
+	              xstrmaxcpy(newpassword,  p+1, (int) *p);
+	              if (0 == (result = find_obj_id(&obj, 0))) {
+                        XDPRINTF((6, 0, "CHPW: OLD=`%s`, NEW=`%s`", oldpassword,
+                                         newpassword));
+	                if (c->object_id == 1 ||
+	                   0 == (result=nw_test_unenpasswd(obj.id, oldpassword)))
+	                  result=nw_set_passwd(obj.id, newpassword);
+                      }
+	              if (result < 0) completition = (uint8) -result;
+                    } else {
+                      XDPRINTF((1, 0, "Change object password unencryted not enabled"));
+                      completition=0xff;
                     }
-	            if (result < 0) completition = (uint8) -result;
-                    XDPRINTF((1, 0, "TODO: Change Obj PW from OBJECT='%s', result=%d",
-                       obj.name, result));
-                    completition=0xff;
-	         } break;
+	          } break;
 
      case 0x41 :  {  /* add Bindery Object to Set */
 	            uint8  *p         =  rdata;
@@ -1039,7 +1073,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	           /*  !!!!!! TO DO */
 	           NETOBJ    obj;
 	           obj.id =  GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO:READ QUEUE STATUS von Q=0x%lx", obj.id));
+                   XDPRINTF((1, 0, "TODO:READ QUEUE STATUS of Q=0x%lx", obj.id));
                    completition=0xd5; /* no Queue Job */
 	          }break;
 
@@ -1450,7 +1484,7 @@ int main(int argc, char *argv[])
 	                    int anz=write(c->fd, (char*)ncprequest, in_len);
 	                    XDPRINTF((10,0, "write to %d, anz = %d", c->fd, anz));
                             if (func == 0x19) {  /* logout */
-                              c->object_id  = 0; /* not LOGGED  */
+                              c->object_id  = 0; /* not LOGIN  */
                             }
 	                  }
                           c->sequence    = ncprequest->sequence; /* save last sequence */
@@ -1492,7 +1526,7 @@ int main(int argc, char *argv[])
 	            CONNECTION *c = &(connections[connection-1]);
 	            int anz;
                     c->message[0] = '\0';
-	            c->object_id  = 0; /* firsttime set 0 for NOT LOGGED */
+	            c->object_id  = 0; /* firsttime set 0 for NOT LOGIN */
                     c->sequence   = 0;
 	            anz=write(c->fd, (char*)ncprequest, in_len);
 	            XDPRINTF((10, 0, "write to oldconn %d, anz = %d", c->fd, anz));

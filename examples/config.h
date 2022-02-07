@@ -1,5 +1,6 @@
 /* config.h: 08-Feb-96 */
 /* some of this config is needed by make, others by cc */
+#define DO_DEBUG      1               /* Debugging einschalten */
 #define FILENAME_NW_INI  "/etc/nwserv.conf" /* full name of ini (conf) file */
 #define PATHNAME_PROGS   "/sbin"     /* path location of progs       */
 #define PATHNAME_BINDERY "/etc"      /* path location of bindery     */

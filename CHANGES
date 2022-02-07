@@ -1,5 +1,5 @@
 Sorry, this is in German only.  :-(
-Aenderungen in mars_nwe bis zum : 08-Feb-96
+Aenderungen in mars_nwe bis zum : 10-Feb-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -78,6 +78,11 @@ Erste 'oeffentliche' Version
 - Schalter 'm' fuer removable volumes ( z.B. CDROMS )
   eingebaut. (Lauri Tischler)
 - func 0x17, ufunc 0x15 eingebaut.
+- Makefile und mk.li abgeaendert. Laeuft nun auf der USL auch
+  mit Standardmake.
+- Passwort Strategy erweitert. Nun ist es auch moeglich ueber
+  entry '7' in der ini Datei System-Passwoerter zu verwenden.
+  Es werden dann unencryted Passwoerter verwendet.
 
 
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 30-Jan-96 ###
+# mk.li 10-Feb-96 ###
 # please edit this file !
 
 mk()
@@ -7,10 +7,14 @@ mk()
     MYBASE=`pwd`;
     ERRFILE=$TMP/`basename $MYBASE`.err;
     rm -f $ERRFILE;
-    if [ ! -d obj ] ; then mkdir obj; fi
-    cd    obj;
-    $MAKE -f ../makefile.unx $@ 2>&1 | tee $ERRFILE;
-    cd ..;
+    if [ $V_VPATH = '..' ] ; then
+      if [ ! -d $OBJDIR ] ; then mkdir $OBJDIR; fi
+      cd    $OBJDIR;
+    fi
+    $MAKE -f $V_VPATH/makefile.unx $@ 2>&1 | tee $ERRFILE;
+    if [ $V_VPATH = '..' ] ; then
+      cd ..;
+    fi
     chmod 666 $ERRFILE
 }
 
@@ -19,13 +23,16 @@ UNX=`uname -s | $TOLOWER`
 
 case $UNX in
    linux)
-     CC=cc;
-     CCP="cc -E";
+     V_VPATH=".."
+     OBJDIR="obj"
+     CC=cc
+     CPP="cc -E"
 #    CFLAGS="-pipe -O2 -fomit-frame-pointer"
 #    problems gcc2.5.8 ^^^^^^^^^^^^^^^^^^^^^
-     CFLAGS="-pipe"
+     CFLAGS="-pipe -Wall"
      HOSTCFLAGS="-DLINUX"
      NDBMLIB="-ldbm"
+     CRYPTLIB=""
      NSLLIB=""
      MAKE=make
      TMP=/tmp
@@ -33,13 +40,16 @@ case $UNX in
      ;;
 ########### USL UNIX ##############
    unix_sv)
+     V_VPATH="."
+     OBJDIR="."
      CC=cc
-     CCP="gcc -E"
-     CFLAGS="-pipe"
+     CPP="cc -E"
+     CFLAGS=
      HOSTCFLAGS=""
      NDBMLIB="/usr/ucblib/libucb.a"
+     CRYPTLIB="-lgen"
      NSLLIB="-lnsl"
-     MAKE=gmake
+     MAKE=make
      TMP=/tmp
      INSTALL=/usr/ucb/install
    ;;
@@ -48,12 +58,15 @@ case $UNX in
 esac
 
 export CC
-export CCP
+export CPP
 export CFLAGS
 export HOSTCFLAGS
 export NDBMLIB
+export CRYPTLIB
 export NSLLIB
 export TMP
 export INSTALL
+export V_VPATH
+export OBJDIR
 
 mk $@

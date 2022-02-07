@@ -1,4 +1,4 @@
-/* net.h 08-Feb-96 */
+/* net.h 11-Feb-96 */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -94,6 +94,10 @@
 
 /* ===================>  config.h  <======================= */
 #include "config.h"
+
+#ifndef DO_DEBUG
+# define DO_DEBUG  1
+#endif
 
 #ifndef MAX_CONNECTIONS
 # define MAX_CONNECTIONS  5 /* maximum Number of Connections */

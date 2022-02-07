@@ -1,4 +1,4 @@
-/* nwdbm.h 08-Jan-96 */
+/* nwdbm.h 12-Feb-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -15,6 +15,8 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+#ifndef _NWDBM_H_
+#define _NWDBM_H_
 
 #define NETOBJ_KEY_SIZE  4
 
@@ -59,6 +61,12 @@ typedef struct {
 #define  P_FL_SET     0x2
 
 extern int tells_server_version;
+extern int password_scheme;
+
+#define PW_SCHEME_CHANGE_PW     1
+#define PW_SCHEME_LOGIN		2
+#define PW_SCHEME_GET_KEY_FAIL  4
+
 
 extern int nw_get_prop(int object_type,
 	        uint8 *object_name, int object_namlen,
@@ -171,9 +179,12 @@ extern uint32 nw_new_create_prop(uint32 wanted_id,
 extern int get_guid(int *gid, int *uid, uint32 obj_id);
 
 extern int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key);
+extern int nw_test_unenpasswd(uint32 obj_id, uint8 *password);
+extern int nw_set_passwd(uint32 obj_id, char *password);
+
 extern int nw_get_q_dirname(uint32 q_id, uint8 *buff);
 extern int nw_get_q_prcommand(uint32 q_id, uint8 *buff);
 
 extern void nw_fill_standard(char *servername, ipxAddr_t *adr);
 extern void nw_init_dbm(char *servername, ipxAddr_t *adr);
-
+#endif

@@ -1,14 +1,15 @@
 #if 0
-#makefile.unx 07-Feb-96
+#makefile.unx 10-Feb-96
 #endif
-VPATH=..
+
+VPATH=$(V_VPATH)
+
 O=.o
 C=.c
 
-DEBUG=-DDB
 V_H=0
 V_L=96
-P_L=8
+P_L=9
 #define D_P_L 1
 DISTRIB=mars_nwe
 #if D_P_L
@@ -47,9 +48,9 @@ distrib:  $(DESTMAKEFILE)
 distrib_bin:  $(DESTMAKEFILE)
 	$(MAKE) -f $(DESTMAKEFILE) n_$@
 
-$(DESTMAKEFILE): makefile.unx config.h
+$(DESTMAKEFILE): $(VPATH)/makefile.unx $(VPATH)/config.h
 	rm -f $@
-	cp ../makefile.unx makefile.c
+	cp $(VPATH)/makefile.unx makefile.c
 	$(CPP) $(HOSTCFLAGS) -I$(VPATH) makefile.c > $@
 	rm -f makefile.c
 #endif
@@ -103,40 +104,42 @@ OBJS= net1$(O) tools$(O) connect$(O) nwdbm$(O) $(NWROUTE_O) \
 
 HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O)
 
-$(PROG1):  $(PROG1)$(O) $(OBJ1)
-	   $(CC) -o ../$(PROG1) $(PROG1)$(O) $(OBJ1) $(NSLLIB)
+#if 0
+#$(PROG1):  $(PROG1)$(O) $(OBJ1)
+#	   $(CC) -o $(VPATH)/$(PROG1) $(PROG1)$(O) $(OBJ1) $(NSLLIB)
+#endif
 
 $(PROG2):  $(PROG2)$(O) $(OBJ2)
-	   $(CC) -o ../$(PROG2) $(PROG2)$(O) $(OBJ2) $(NSLLIB)
+	   $(CC) -o $(VPATH)/$(PROG2) $(PROG2)$(O) $(OBJ2) $(NSLLIB)
 #if 0
-#$(CC) -o ../$(PROG2) $(PROG2)$(O) $(OBJ2) $(NDBMLIB) $(NSLLIB)
+#$(CC) -o $(VPATH)/$(PROG2) $(PROG2)$(O) $(OBJ2) $(NDBMLIB) $(NSLLIB)
 #endif
 
 $(PROG3):  $(PROG3)$(O) $(OBJ3)
-	   $(CC) -o ../$(PROG3) $(PROG3)$(O) $(OBJ3)  $(NSLLIB)
+	   $(CC) -o $(VPATH)/$(PROG3) $(PROG3)$(O) $(OBJ3)  $(NSLLIB)
 
 $(PROG4):  $(PROG4)$(O) $(OBJ4)
-	   $(CC) -o ../$(PROG4) $(PROG4)$(O) $(OBJ4) $(NDBMLIB) $(NSLLIB)
+	   $(CC) -o $(VPATH)/$(PROG4) $(PROG4)$(O) $(OBJ4) $(NDBMLIB) $(CRYPTLIB) $(NSLLIB)
 
 $(PROG5):  $(PROG5)$(O) $(OBJ5)
-	   $(CC) -o ../$(PROG5) $(PROG5)$(O) $(OBJ5) $(NSLLIB)
+	   $(CC) -o $(VPATH)/$(PROG5) $(PROG5)$(O) $(OBJ5) $(NSLLIB)
 
 $(HOBJ3):  namspace.h connect.h nwvolume.h nwfile.h
 $(OBJS):   net.h config.h
 
 $(C)$(O):
-	$(CC) -c $(CFLAGS) $(HOSTCFLAGS) $(DEBUG)\
+	$(CC) -c $(CFLAGS) $(HOSTCFLAGS) \
  -D_VERS_H_=$(V_H) -D_VERS_L_=$(V_L) -D_VERS_P_=$(P_L) $<
 
 n_all:   $(PROGS)
 
 n_install_ini:
-	 cd .. && $(INSTALL) -m 664 nw.ini $(M_FILENAME_NW_INI) && cd obj
+	 cd $(VPATH) && $(INSTALL) -m 664 nw.ini $(M_FILENAME_NW_INI) && cd $(OBJDIR)
 
 n_install:
-	cd ..  && $(INSTALL) -d $(M_PATHNAME_PROGS) && cd obj
-	cd ..  && $(INSTALL) $(PROGS) $(M_PATHNAME_PROGS) && cd obj
-	@cd .. && (if [ -r $(M_FILENAME_NW_INI) ] ; then \
+	cd $(VPATH)  && $(INSTALL) -d $(M_PATHNAME_PROGS) && cd $(OBJDIR)
+	cd $(VPATH)  && $(INSTALL) $(PROGS) $(M_PATHNAME_PROGS) && cd $(OBJDIR)
+	@cd $(VPATH) && (if [ -r $(M_FILENAME_NW_INI) ] ; then \
 echo ""; \
 echo "********************************************************"; \
 echo ""; \
@@ -154,20 +157,20 @@ echo "$(M_FILENAME_NW_INI) created from nw.ini"; \
 echo ""; \
 echo "********************************************************"; \
 echo ""; \
-fi; cd obj )
+fi; cd $(OBJDIR) )
 
 n_clean1:
-	cd .. && (rm -f ~* examples/~* examples/.e.pck; cd obj)
+	cd $(VPATH) && (rm -f ~* examples/~* examples/.e.pck; cd $(OBJDIR))
 
 n_clean: n_clean1
 	rm -f *.o
-	cd .. && (rm -f $(PROGS); cd obj )
+	cd $(VPATH) && (rm -f $(PROGS); cd $(OBJDIR) )
 
 n_distclean: n_clean
-	cd .. && (rm -f *.dir *.pag; cd obj)
+	cd $(VPATH) && (rm -f *.dir *.pag; cd $(OBJDIR))
 
 n_make_dir: n_clean1
-	cd .. && (rm -rf obj/../$(DISTRIB) \
+	cd $(VPATH) && (rm -rf $(OBJDIR)/$(VPATH)/$(DISTRIB) \
 ; mkdir $(DISTRIB) \
 ; mkdir $(DISTRIB)/examples \
 ; ln -f  \
@@ -175,6 +178,7 @@ n_make_dir: n_clean1
  makefile.unx \
  Makefile \
  COPYING  \
+ NEWS  \
  CHANGES  \
  README  \
  README.ger \
@@ -186,17 +190,17 @@ n_make_dir: n_clean1
 ; ln -f  \
  examples/$(STERN) \
  $(DISTRIB)/examples/. \
-; cd obj )
+; cd $(OBJDIR) )
 
 n_diff: n_make_dir
-	cd .. && ( \
+	cd $(VPATH) && ( \
  makepatch $(DISTRIB).org $(DISTRIB) > $(PATCHF) \
 ; gzip -9 -f $(PATCHF) \
-; cd obj )
+; cd $(OBJDIR) )
 
 n_distrib: n_diff
 	-mkdir /tmp/x
-	cd .. && (tar cvzf $(DISTRIBF).tgz $(DISTRIB) \
+	cd $(VPATH) && (tar cvzf $(DISTRIBF).tgz $(DISTRIB) \
 ; uue $(DISTRIBF).tgz; mv -f $(DISTRIB)-$(V_H).uue $(DISTRIBF).uue \
 ; cp -a $(DISTRIB)/$(DISTRIB).lsm /tmp/yy \
 ; echo "" >> /tmp/yy \
@@ -206,19 +210,20 @@ n_distrib: n_diff
 ; rm  $(DISTRIBF).uue \
 ; mv  $(DISTRIBF).tgz /tmp/x/. \
 ; cp -a $(DISTRIB)/$(DISTRIB).lsm /tmp/x/. \
-; cd obj )
+; cd $(OBJDIR) )
 
 n_distrib_bin:
-	cd .. && (tar cvzf /tmp/$(DISTRIB).bin.tgz \
+	cd $(VPATH) && (tar cvzf /tmp/$(DISTRIB).bin.tgz \
  $(PROGS) \
  COPYING  \
  INSTALL  \
  INSTALL.ger  \
+ NEWS  \
  CHANGES  \
  README   \
  README.ger   \
  $(DISTRIB).lsm \
  examples \
-; cd obj)
+; cd $(OBJDIR))
 
 

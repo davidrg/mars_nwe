@@ -219,7 +219,7 @@ int touch_handle_entry(int dbase)
 char *debug_nwpath_name(N_NW_PATH *p)
 /* for debugging */
 {
-#ifdef DB
+#if DO_DEBUG
   static char nwpathname[512];
   char volname[300];
   if (nw_get_volume_name(p->volume, volname) < 0)

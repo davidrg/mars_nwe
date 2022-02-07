@@ -1,0 +1,38 @@
+------13-Feb-96---------
+New alternative password strategy in mars_nwe:
+There is an new entry '7' in ini/conf file.
+
+The user has now 4 ways to choose.
+1. entry '7' = '0'.
+   maximal security by forbid unencryted password calls,
+   but till now no chance to modify passwords with client requests.
+
+2. entry '7' = '1'.
+   good security by only allow unencryted change password call.
+   Here the user can use an old SETPAS or SYSCON program which
+   make the changing of passwords with unencryted calls.
+
+3. entry '7' = '8'.
+   less security by allow all unencryted password calls.
+   Like 2. but the user can also use old LOGIN program
+   with unencryted passwords. Mars_nwe will allow password
+   from the bindery and system-user-password.
+
+4. entry '7' = '9'.
+   Like 3. but in additional the routine 0x17 ufunc=0x17
+   (get crypt key) will allways fail.
+   So the LOGIN.EXE and SYSCON.EXE means that this is an old server
+   with only unencrypted passwords and will switch to the old unencryted
+   calls.
+
+With the unencryted calls the clear passwords will go through the
+wire, so mars_nwe can compare the passwords as well with the
+stored bindery passwords as with the system passwords (crypt).
+But there is a little hint. Passwords will ever be uppercase sent
+from LOGIN.EXE or SYSCON.EXE
+Mars_nwe makes three tries.
+First try is with bindery-password, second try is with system
+user-password and third try is making the password downcase and
+compare with systen-user-password again.
+When a user changes his password, only the bindery password will
+be changed.

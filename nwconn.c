@@ -1,4 +1,4 @@
-/* nwconn.c 07-Feb-96       */
+/* nwconn.c 10-Feb-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -204,7 +204,7 @@ static void handle_ncp_serv()
 
 
 	 case 0x16 : {
-	               uint8 len = *(requestdata+1);
+	               /* uint8 len = *(requestdata+1); */
 	               uint8 *p  =  requestdata +2;
 	               if (0 == *p){
 	           /****** * SetDirektoryHandle *************/
@@ -472,7 +472,7 @@ static void handle_ncp_serv()
 	               } else  if (*p == 0x20){
 	               /* scan volume user disk restrictions */
 	                 uint8  volnr    = *(p+1);
-	                 uint32 sequenz  = GET_BE32(p+2);
+	                 /* uint32 sequenz  = GET_BE32(p+2); */
 	                 struct XDATA {
 	                   uint8  entries;  /* 0x0   */
                            /*--- per entry (max.entries = 12) ----*/
@@ -636,7 +636,7 @@ static void handle_ncp_serv()
 
 #if 1
 	 case 0x17 : {  /* FILE SERVER ENVIRONMENT */
-	   uint8 len   = *(requestdata+1);
+	   /* uint8 len   = *(requestdata+1); */
 	   uint8 ufunc = *(requestdata+2);
            switch (ufunc) {
              case 0x14:
@@ -698,9 +698,9 @@ static void handle_ncp_serv()
              }
              break;
 
-             case 0x68:   /* creat queue job and file old */
-             case 0x79: { /* creat queue job and file */
-                          /* somme of this call is handled in ncpserv !! */
+             case 0x68:   /* create queue job and file old */
+             case 0x79: { /* create queue job and file     */
+                          /* some of this call is handled in ncpserv !! */
                struct INPUT {
                  uint8   header[7];          /* Requestheader   */
                  uint8   packetlen[2];       /* low high        */
@@ -746,7 +746,7 @@ static void handle_ncp_serv()
              break;
 
              case 0xf3: {  /* Map Direktory Number TO PATH */
-               XDPRINTF((2,0, "TODO: Map Direktory Number TO PATH"));
+               XDPRINTF((2,0, "TODO: Map Directory Number TO PATH"));
                completition = 0xff;
              }
              break;
@@ -1027,12 +1027,12 @@ static void handle_ncp_serv()
 	             }
 	             break;
 
-	 case 0x46 : /* chmod Datei ??? */
+	 case 0x46 : /* chmod file ??? */
 	             {
 	               struct INPUT {
 	                 uint8   header[7];     /* Requestheader */
 	                 uint8   attrib;        /*  0x80, od 0x0 */
-	                 /* 0x80 z.B. fÅr Sharable */
+	                 /* 0x80 for example for sharable */
 	                 uint8   dir_handle;    /*  ??? z.B.0x1 */
 	                 uint8   modus;         /* z.B.0x6  */
 	                 uint8   len;

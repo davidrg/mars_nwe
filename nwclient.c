@@ -1,4 +1,4 @@
-/* nwclient.c: 24-Dec-95 */
+/* nwclient.c: 10-Feb-96 */
 /*
  * Einfacher Testclient, wird von nwserv (im Client Modus) gestartet
  * Dieses Modul hilft dabei, NCP Responses eines
@@ -31,7 +31,7 @@ static ipxAddr_t  my_addr;
 static int fd_ipx;
 static int fd_wdog;
 
-static int open_socket()
+static int open_socket(int *sock_nr)
 {
   int ipx_fd=t_open("/dev/ipx", O_RDWR, NULL);
   struct t_bind  bind;
@@ -39,7 +39,11 @@ static int open_socket()
      t_error("t_open !Ok");
      return(-1);
   }
-  U16_TO_BE16(0,     my_addr.sock);
+  if (sock_nr)  {
+    U16_TO_BE16(*sock_nr,  my_addr.sock);
+  } else {
+    U16_TO_BE16(0,     my_addr.sock);
+  }
   bind.addr.len    = sizeof(ipxAddr_t);
   bind.addr.maxlen = sizeof(ipxAddr_t);
   bind.addr.buf    = (char*)&my_addr;
@@ -49,14 +53,17 @@ static int open_socket()
     t_close(ipx_fd);
     return(-1);
   }
+  if (sock_nr) *sock_nr=GET_BE16(my_addr.sock);
   XDPRINTF((1,0, "socket bound TO %s", visable_ipx_adr(&my_addr) ));
   return(ipx_fd);
 }
 
 static int init_client()
 {
-  return( (fd_ipx = open_socket()) > -1
-       && (fd_wdog = open_socket()) > -1   ? 0 : 1);
+  int sock_nr=0;
+  return( (fd_ipx = open_socket(&sock_nr)) > -1
+       && sock_nr++
+       && (fd_wdog = open_socket(&sock_nr)) > -1   ? 0 : 1);
 }
 
 /*   DATA OUT */
@@ -196,6 +203,7 @@ static int get_conn_nr(void)
 {
   ncp_request(0x1111, sequence, 0xff, 0, 0xff, 0,
                       0, "Get Connection Nr.");
+
   if (!handle_event()) {
     connection = ncpresponse->connection;
     XDPRINTF((1, 0, "NWCLIENT GOT CONNECTION NR:%d", connection));
@@ -715,6 +723,7 @@ int main(int argc, char **argv)
   get_connect();
   get_server_time();
   do_5f();
+
 
   file_search_init(NULL, 1, NULL);
   get_bindery_access();

@@ -1,4 +1,4 @@
-/* nwdbm.c  13-Jan-96  data base for mars_nwe */
+/* nwdbm.c  12-Feb-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,12 +26,18 @@
 #include "nwcrypt.h"
 #ifdef LINUX
 #  include <ndbm.h>
+#  define SHADOW_PWD  0
 #else
 #  include </usr/ucbinclude/ndbm.h>
+#  define SHADOW_PWD  1
 #endif
 
+#if SHADOW_PWD
+#  include <shadow.h>
+#endif
 
 int        tells_server_version=0;
+int        password_scheme=0;
 
 static char *fnprop   = "nwprop";
 static char *fnval    = "nwval";
@@ -903,20 +909,33 @@ uint32 nw_new_create_prop(uint32 wanted_id,
   return(obj.id);
 }
 
-struct passwd *nw_getpwnam(uint32 obj_id)
+typedef struct {
+  int  pw_uid;
+  int  pw_gid;
+  char pw_passwd[80];
+} MYPASSWD;
+
+static MYPASSWD *nw_getpwnam(uint32 obj_id)
 {
-  static struct passwd pwstat;
+  static MYPASSWD pwstat;
   char buff[200];
   if (nw_get_prop_val_str(obj_id, "UNIX_USER", buff) > 0){
     struct passwd *pw = getpwnam(buff);
     if (NULL != pw) {
       memcpy(&pwstat, pw, sizeof(struct passwd));
+      pwstat.pw_uid = pw->pw_uid;
+      pwstat.pw_gid = pw->pw_gid;
+      xstrcpy(pwstat.pw_passwd, pw->pw_passwd);
+#if SHADOW_PWD
+      if (pwstat.pw_passwd[0] == 'x' && pwstat.pw_passwd[1]=='\0') {
+        struct spwd *spw=getspnam(buff);
+        if (spw) xstrcpy(pwstat.pw_passwd, spw->sp_pwdp);
+      }
+#endif
       XDPRINTF((2,0, "FOUND obj_id=0x%x, pwnam=%s, gid=%d, uid=%d",
                  obj_id, buff, pw->pw_gid, pw->pw_uid));
-      endpwent ();
       return(&pwstat);
     }
-    endpwent ();
   }
   XDPRINTF((2,0, "NOT FOUND PWNAM of obj_id=0x%x",  obj_id));
   return(NULL);
@@ -925,7 +944,7 @@ struct passwd *nw_getpwnam(uint32 obj_id)
 int get_guid(int *gid, int *uid, uint32 obj_id)
 /* searched for gid und uid of actual obj */
 {
-  struct passwd *pw = nw_getpwnam(obj_id);
+  MYPASSWD *pw = nw_getpwnam(obj_id);
   if (NULL != pw) {
     *gid    = pw->pw_gid;
     *uid    = pw->pw_uid;
@@ -937,6 +956,15 @@ int get_guid(int *gid, int *uid, uint32 obj_id)
   }
 }
 
+static int crypt_pw_ok(uint8 *password, char *passwd)
+/* returns 0 if not ok */
+{
+  char pnul[2] = {'\0', '\0'};
+  char *pp    = (password) ? (char*)password : pnul;
+  char *p     =  crypt(pp, passwd);
+  return( (strcmp(p, passwd)) ? 0 : 1 );
+}
+
 int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
 /* returns 0, if password ok and -0xff if not ok */
 {
@@ -946,7 +974,42 @@ int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
     memcpy(keybuff, vgl_key, sizeof(keybuff));
     nw_encrypt(keybuff, buf, keybuff);
     return (memcmp(akt_key, keybuff, sizeof(keybuff)) ? -0xff : 0);
-  } else return(0); /* no password */
+  } else {
+    if (password_scheme & PW_SCHEME_LOGIN) {
+      MYPASSWD *pw = nw_getpwnam(obj_id);
+      if (pw && *(pw->pw_passwd) && !crypt_pw_ok(NULL, pw->pw_passwd))
+        return(-0xff);
+      if (obj_id == 1) return(-0xff);
+    }
+    return(0); /* no password */
+  }
+}
+
+int nw_test_unenpasswd(uint32 obj_id, uint8 *password)
+{
+  uint8 passwordu[100];
+  uint8 passwd[200];
+  uint8 stored_passwd[200];
+  MYPASSWD *pw;
+  if (password && *password
+     && nw_get_prop_val_str(obj_id, "PASSWORD", stored_passwd) > 0 ) {
+    uint8 s_uid[4];
+    U32_TO_BE32(obj_id, s_uid);
+    xstrcpy(passwordu, password);
+    upstr(passwordu);
+    shuffle(s_uid, passwordu, strlen(passwordu), passwd);
+    if (!memcmp(passwd, stored_passwd, 16)) return(0);
+  }
+  if (NULL != (pw = nw_getpwnam(obj_id))) {
+    int pwok = crypt_pw_ok(password, pw->pw_passwd);
+    if (!pwok) {
+      uint8 passwordu[100];
+      xstrcpy(passwordu, password);
+      downstr(passwordu);
+      pwok = crypt_pw_ok(passwordu, pw->pw_passwd);
+    }
+    return((pwok) ? 0 : -0xff);
+  } else return(-0xff);
 }
 
 int nw_set_enpasswd(uint32 obj_id, uint8 *passwd)
@@ -992,6 +1055,7 @@ int nw_set_passwd(uint32 obj_id, char *password)
   } else
     return(nw_set_enpasswd(obj_id, NULL));
 }
+
 
 int prop_add_new_member(uint32 obj_id, int prop_id, uint32 member_id)
 /* addiert member to set, if member not in set */
@@ -1123,6 +1187,17 @@ void nw_fill_standard(char *servername, ipxAddr_t *adr)
     while (0 != (what =get_ini_entry(f, 0, (char*)buff, sizeof(buff)))) {
       if (6 == what) {  /* Server Version */
         tells_server_version = atoi(buff);
+      } else if (7 == what) {  /* password_scheme */
+        int pwscheme     = atoi(buff);
+        password_scheme  = 0;
+        switch (pwscheme) {
+          case  9 : password_scheme |= PW_SCHEME_GET_KEY_FAIL;
+          case  8 : password_scheme |= PW_SCHEME_LOGIN;
+          case  1 : password_scheme |= PW_SCHEME_CHANGE_PW;
+                    break;
+          default : password_scheme = 0;
+                    break;
+        } /* switch */
       } else if (21 == what) {  /* QUEUES */
         char name[100];
         char directory[200];

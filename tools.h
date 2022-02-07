@@ -1,4 +1,4 @@
-/*  tools.h : 28-Jan-96    */
+/*  tools.h : 10-Feb-96    */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -16,8 +16,10 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+#ifndef _TOOLS_H_
+#define _TOOLS_H_
 
-/* Prozesse die tools verwenden */
+/* processes which need tools */
 #define NWSERV   1
 #define NCPSERV  2
 #define NWCONN   3
@@ -33,6 +35,9 @@ extern  int x_x_xnewstr(uint8 **p,  uint8 *s);
 extern char  *xmalloc(uint size);
 extern char  *xcmalloc(uint size);
 extern int   strmaxcpy(uint8 *dest, uint8 *source, int len);
+#define xstrcpy(d, s)    strmaxcpy((d), (s), sizeof(d)-1)
+#define xstrmaxcpy(d, s, len) strmaxcpy((d), (s), min(sizeof(d)-1, (len)) )
+
 extern void  dprintf(char *p, ...);
 extern void  xdprintf(int dlevel, int mode, char *p, ...);
 extern void  errorp(int mode, char *what, char *p, ...);
@@ -50,7 +55,7 @@ extern uint8 *upstr(uint8 *s);
 
 
 extern int nw_debug;
-#ifdef DB
+#if DO_DEBUG
 #  define DPRINTF(x)  dprintf x
 #  define XDPRINTF(x) xdprintf x
 #  define D() XDPRINTF((3, 0, "Z: %d" , __LINE__));
@@ -59,4 +64,6 @@ extern int nw_debug;
 #  define XDPRINTF(x) /* */
 #  define D()         /* */
 #endif
+
+#endif /* _TOOLS_H_ */
 

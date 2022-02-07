@@ -1,6 +1,11 @@
-# Makefile mars_nwe: 31-Jan-96
+# Makefile mars_nwe: 10-Feb-96
 
 VPATH=
+
+.EXPORT_ALL_VARIABLES:
+# defaults, can be overwritten in mk.li
+V_VPATH=..
+OBJDIR=obj
 
 all:    rmeflag mk.li config.h nw.ini
 	@if [ -r .eflag ] ; then \
@@ -33,6 +38,9 @@ clean:  mk.li nw.ini
 distrib: mk.li nw.ini
 	./mk.li $@
 
+diff:
+	./mk.li $@
+
 mk.li:  examples/mk.li
 	@if [ -r $@ ] ; then \
 	cp -f $@ $@.org && ( \
@@ -44,7 +52,7 @@ mk.li:  examples/mk.li
 	  echo "" ) ; fi
 	@ echo ""
 	@ echo ""
-	@ - cp -i examples/$@  .
+	@- cp -i examples/$@  .
 	@ touch -c $@
 	@ echo ""
 	@ echo "********************************************************"

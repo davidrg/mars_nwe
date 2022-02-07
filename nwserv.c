@@ -1,4 +1,4 @@
-/* nwserv.c 08-Feb-96 */
+/* nwserv.c 10-Feb-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -67,8 +67,9 @@ static uint16        sock_nummern [NEEDED_SOCKETS];
 
 int                  sockfd       [NEEDED_SOCKETS];
 static struct        pollfd  polls[NEEDED_POLLS];
-
+#if 0
 static uint16        spx_diag_socket;    /* SPX DIAGNOSE SOCKET       */
+#endif
 static ipxAddr_t     nw386_adr;          /* Address of NW-TEST Server */
 static int           nw386_found    = 0;
 static int           client_mode    = 0;
