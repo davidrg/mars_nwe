@@ -1,5 +1,5 @@
 Sorry, this is in German only.  :-(
-Aenderungen in mars_nwe bis zum : 20-Dec-95
+Aenderungen in mars_nwe bis zum : 02-Jan-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -39,4 +39,10 @@ Erste 'oeffentliche' Version
 - Server kann sich als 2.15 Server melden oder als 3.11 .
 - Drucken mit OLD Job's (pre 3.11) Struktur eingebaut.
 ^^^^^^^^^^ VERSION 0.96 ^^^^^^^^
+- Direktory Search Wildcard Fehler '????????.???' korrigiert.
+- delete mit wildcards eingebaut.
+- Noch einen Wildcard Fehler korrigiert. (James MacLean)
+- Debug Routine und Levels veraendert.
+- Packet Groesse > 546 Byte erlaubt.
+
 

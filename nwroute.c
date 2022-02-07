@@ -1,4 +1,4 @@
-/* nwroute.c 20-Dec-95 */
+/* nwroute.c 24-Dec-95 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -44,7 +44,7 @@ static void insert_delete_net(uint32 destnet,
   int  freeslot=-1;
   NW_ROUTES *nr=NULL;
 
-  XDPRINTF((3,"%s net:0x%X, over 0x%X, 0x%02x:%02x:%02x:%02x:%02x:%02x\n",
+  XDPRINTF((3,0,"%s net:0x%X, over 0x%X, 0x%02x:%02x:%02x:%02x:%02x:%02x",
     (do_delete) ? "DEL" : "INS", destnet, rnet,
     (int)rnode[0], (int)rnode[1], (int)rnode[2],
     (int)rnode[3], (int)rnode[4], (int)rnode[5]));
@@ -58,7 +58,7 @@ static void insert_delete_net(uint32 destnet,
 
   k=-1;
   while (++k < anz_routes && nw_routes[k]->net != destnet) {
-    XDPRINTF((3,"NET 0x%X is routed\n", nw_routes[k]->net));
+    XDPRINTF((3,0, "NET 0x%X is routed", nw_routes[k]->net));
     if (freeslot < 0 && !nw_routes[k]->net) freeslot=k;
   }
 
@@ -79,12 +79,12 @@ static void insert_delete_net(uint32 destnet,
     if (nr->rnet == rnet &&
         IPXCMPNODE(nr->rnode, rnode) ) {
       /* only delete the routes, which we have inserted */
-      XDPRINTF((2,"ROUTE DEL NET=0x%X over Router NET 0x%X\n",
+      XDPRINTF((2,0,"ROUTE DEL NET=0x%X over Router NET 0x%X",
                 nr->net, rnet));
       ipx_route_del(nr->net);
       nr->net = 0L;
     } else {
-      XDPRINTF((3,"ROUTE NOT deleted NET=0x%X, RNET=0X%X\n",
+      XDPRINTF((3,0,"ROUTE NOT deleted NET=0x%X, RNET=0X%X",
                 nr->net, rnet));
     }
     return;
@@ -96,7 +96,7 @@ static void insert_delete_net(uint32 destnet,
     nr->ticks = ticks;
     nr->rnet  = rnet;
     memcpy(nr->rnode, rnode, IPX_NODE_SIZE);
-    XDPRINTF((2,"ADD ROUTE NET=0x%X, over 0x%X, 0x%02x:%02x:%02x:%02x:%02x:%02x\n",
+    XDPRINTF((2,0,"ADD ROUTE NET=0x%X, over 0x%X, 0x%02x:%02x:%02x:%02x:%02x:%02x",
          nr->net, nr->rnet,
          (int)nr->rnode[0], (int)nr->rnode[1], (int)nr->rnode[2],
          (int)nr->rnode[3], (int)nr->rnode[4], (int)nr->rnode[5]));
@@ -174,14 +174,14 @@ static void send_rip_buff(ipxAddr_t *from_addr)
     if (nw_debug) {
       uint8    *p   = rip_buff;
       int operation = GET_BE16(p);
-      XDPRINTF((2,"Send Rip %s entries=%d\n",
+      XDPRINTF((2,0, "Send Rip %s entries=%d",
           (operation==1) ? "Request" : "Response", rentries));
       p+=2;
       while (rentries--) {
         uint32   net     = GET_BE32(p);
         uint16   hops    = GET_BE16(p+4);
         uint16   ticks   = GET_BE16(p+6);
-        XDPRINTF((2,"hops=%3d, ticks %3d, network:%02x.%02x.%02x.%02x\n",
+        XDPRINTF((2,0, "hops=%3d, ticks %3d, network:%02x.%02x.%02x.%02x",
            (int)hops, (int)ticks, (int)*(p), (int)*(p+1), (int)*(p+2), (int)*(p+3)));
         p+=8;
       }
@@ -233,13 +233,13 @@ void handle_rip(int fd,       int ipx_pack_typ,
   uint8    *p      = ((uint8*)ipxdata)+2;
   int  is_response = operation==2;
 
-  XDPRINTF((2,"Got Rip %s entries=%d from: %s\n",
+  XDPRINTF((2,0, "Got Rip %s entries=%d from: %s",
        (!is_response) ? "Request" : "Response", entries,
            visable_ipx_adr(from_addr)));
 
   if (!is_response) {
     if (operation != 1) {
-      XDPRINTF((1,"UNKNOWN RIP operation %d\n", operation));
+      XDPRINTF((1,0, "UNKNOWN RIP operation %d", operation));
       return;
     }
     init_rip_buff(GET_BE32(from_addr->net), 0);
@@ -249,7 +249,7 @@ void handle_rip(int fd,       int ipx_pack_typ,
     uint32   net     = GET_BE32(p);
     uint16   hops    = GET_BE16(p+4);
     uint16   ticks   = GET_BE16(p+6);
-    XDPRINTF((2,"hops=%3d, ticks %3d, network:%02x.%02x.%02x.%02x\n",
+    XDPRINTF((2,0,"hops=%3d, ticks %3d, network:%02x.%02x.%02x.%02x",
        (int)hops, (int)ticks, (int)*(p), (int)*(p+1), (int)*(p+2), (int)*(p+3)));
 
     if (is_response) {

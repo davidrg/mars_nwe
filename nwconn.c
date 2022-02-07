@@ -1,4 +1,4 @@
-/* nwconn.c 04-Dec-95       */
+/* nwconn.c 02-Jan-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
@@ -57,10 +57,13 @@ static int open_ipx_socket()
     close(ipx_fd);
     return(-1);
   }
-  XDPRINTF((2, "NWCONN OpenSocket: %s\n",
+  XDPRINTF((5, 0, "NWCONN OpenSocket: %s",
              visable_ipx_adr((ipxAddr_t *) bind.addr.buf)));
   return(0);
 }
+
+
+static int req_printed=0;
 
 static int ncp_response(int sequence,
 	        int completition, int data_len)
@@ -69,9 +72,11 @@ static int ncp_response(int sequence,
   ncpresponse->sequence       = (uint8) sequence;
   ncpresponse->completition   = (uint8) completition;
   last_sequence = sequence;
-  XDPRINTF((2,"NWCONN NCP_RESP seq:%d, conn:%d,  compl=0x%x TO %s\n",
+  if (req_printed) {
+    XDPRINTF((0,0, "NWCONN NCP_RESP seq:%d, conn:%d,  compl=0x%x TO %s",
         (int)ncpresponse->sequence,  (int) ncpresponse->connection, (int)completition,
              visable_ipx_adr((ipxAddr_t *) ud.addr.buf)));
+  }
 
   ud.udata.len = ud.udata.maxlen = sizeof(NCPRESPONSE) + data_len;
   if (t_sndudata(ipx_fd, &ud) < 0){
@@ -81,64 +86,57 @@ static int ncp_response(int sequence,
   return(0);
 }
 
+static void pr_debug_request()
+{
+  if (req_printed++) return;
+  XDPRINTF((0, 0, "NCP REQUEST:type:0x%x, seq:%d, task:%d, reserved:0x%x, func:0x%x",
+                      ncp_type,
+                      (int)ncprequest->sequence,
+                      (int)ncprequest->task,
+                      (int)ncprequest->reserved,
+                      (int)ncprequest->function));
+  if (requestlen > 0){
+    int    j = requestlen;
+    uint8  *p=requestdata;
+    XDPRINTF((0, 2, "len %d, DATA:", j));
+    while (j--) {
+      int c = *p++;
+      if (c > 32 && c < 127)  XDPRINTF((0, 3,",\'%c\'", (char) c));
+      else XDPRINTF((0,3, ",0x%x", c));
+    }
+    XDPRINTF((0,1,NULL));
+  }
+}
 
 static int test_handle = -1;
 static void handle_ncp_serv()
 {
-  int    data_len       = 0;
-  int    sequence       = (int)ncprequest->sequence;
-  int    task           = (int)ncprequest->task;
-  int    reserved       = (int)ncprequest->reserved;
   int    function       = (int)ncprequest->function;
   int    completition   = 0;  /* first set      */
   int    org_nw_debug   = nw_debug;
   int    do_druck       = 0;
+  int    data_len       = 0;
 
-  if (last_sequence == sequence && ncp_type != 0x1111){ /* send the same again */
+  if (last_sequence == (int)ncprequest->sequence
+       && ncp_type != 0x1111){ /* send the same again */
     if (t_sndudata(ipx_fd, &ud) < 0){
       if (nw_debug) t_error("t_sndudata !OK");
     }
-    XDPRINTF((2,"Sequence %d is written twice\n", sequence));
+    XDPRINTF((2,0, "Sequence %d is written twice", (int)ncprequest->sequence));
     return;
   }
+  req_printed=0;
 
-#if 0
-  if (!nw_debug && (
-    /*
-    function == 0x43 ||
-    function == 0x4c ||
-    function == 0x4d ||
-    function == 0x4a ||
-    */
-    function == 0x11
-    ) ) nw_debug=1;
-#endif
-
-  if (nw_debug){
-    int j = requestlen;
+  if (nw_debug > 1){
     if (nw_debug < 10
        && (function==0x48 || function == 0x49))  /* read or write */
-          nw_debug=0;
+          nw_debug=1;
     if (nw_debug < 15
        && (function==0x48)) /* read */
-          nw_debug=0;
-
-    if (nw_debug > 1){
-      do_druck=2;
-      XDPRINTF((2,"NCP REQUEST:type:0x%x, seq:%d, task:%d, reserved:0x%x, func:0x%x\n",
-	 ncp_type, sequence, task, reserved, function));
-       if (j > 0){
-	uint8  *p=requestdata;
-	XDPRINTF((2,"len %d, DATA:", j));
-	while (j--) {
-	  int c = *p++;
-	  if (c > 32 && c < 127)  XDPRINTF((2,",\'%c\'", (char) c));
-	  else XDPRINTF((2,",0x%x", c));
-	}
-	XDPRINTF((2,"\n"));
-      }
-    }
+          nw_debug=1;
   }
+
+  if (nw_debug > 5) pr_debug_request();
 
   if (ncp_type == 0x2222) {
     switch (function) {
@@ -213,7 +211,8 @@ static void handle_ncp_serv()
 	                   (uint8)-nw_set_dir_handle((int)input->target_dir_handle,
 	                                             (int)input->source_dir_handle,
 	                                                  input->path,
-	                                             (int)input->pathlen, task);
+	                                             (int)input->pathlen,
+	                                             (int)(ncprequest->task));
 
 	               } else  if (1 == *p){  /* liefert Verzeichnis Namen */
 	                                      /* Dir_handles  */
@@ -232,7 +231,7 @@ static void handle_ncp_serv()
 	                    xdata->len = (uint8) result;
 	                    data_len   = result + 1;
                             xdata->name[result] = '\0';
-	                    XDPRINTF((2,"GetDirektoryPATH=%s\n", xdata->name));
+	                    XDPRINTF((5,0, "GetDirektoryPATH=%s", xdata->name));
 	                 } else completition = (uint8)-result;
 	               } else  if (2 == *p){ /* Scan Direktory Information */
 	           /******** Scan Dir Info   ****************/
@@ -261,7 +260,7 @@ static void handle_ncp_serv()
 	                 if (result > -1){
 	                    xdata->max_right_mask = (uint8)result;
 	                    data_len              = sizeof(struct XDATA);
-	                    XDPRINTF((2,"Scan Dir Info max_right_mask=%d\n", (int)result));
+	                    XDPRINTF((5,0,"Scan Dir Info max_right_mask=%d", (int)result));
 	                 } else completition = (uint8)-result;
 	               } else  if (*p == 0x3){ /* Get Direktory Rights */
 	           /******** Get Eff Dir Rights ****************/
@@ -275,7 +274,7 @@ static void handle_ncp_serv()
 	                 if (result > -1) {
 	                   xdata->eff_right_mask = (uint8) result;
 	                   data_len = 1;
-	                   XDPRINTF((2,"Got eff Dir Rights=%d\n", (int)result));
+	                   XDPRINTF((5,0,"Got eff Dir Rights=%d", (int)result));
 	                 } else completition = (uint8) -result;
 	               } else  if (*p == 0x4){ /* Modify Max Right MAsk */
 	           /******** MODIFY MAX RIGHT MASK ****************/
@@ -350,7 +349,8 @@ static void handle_ncp_serv()
 	                                    (int)*(p+3),
 	                                    (int)*(p+2),
 	                                    (*p==0x12) ? 0
-	                                 : ((*p==0x13) ? 1 : 2), task);
+	                                 : ((*p==0x13) ? 1 : 2),
+	                                 (int)(ncprequest->task));
 	                 if (dirhandle > -1){
 	                   xdata->dirhandle  = (uint8) dirhandle;
 	                   xdata->right_mask = 0xff;
@@ -388,7 +388,7 @@ static void handle_ncp_serv()
                                U16_TO_BE16(0,  xdata->removable);
                              }
 	                     data_len = sizeof(struct XDATA);
-	                     XDPRINTF((2,"GIVE VOLUME INFO von :%s:\n", xdata->name));
+	                     XDPRINTF((5,0,"GIVE VOLUME INFO von :%s:", xdata->name));
 	                     result = 0;
 	                   }
 	                 }
@@ -468,18 +468,19 @@ static void handle_ncp_serv()
 	                 uint8  volnr = *(p+1);
 	                 uint32 id     = GET_BE32(p+2);
                          uint32 blocks = GET_BE32(p+6);
-                         XDPRINTF((2,"TODO:Change vol restriction vol=%d, id=0x%lx, Blocks=0x%lx",
+                         XDPRINTF((2,0,"TODO:Change vol restriction vol=%d, id=0x%lx, Blocks=0x%lx",
                                    (int)volnr, id, blocks));
 	               } else  if (*p == 0x22) {
 	                 /* remove Vol restrictions for Obj */
                           uint8  volnr = *(p+1);
                           uint32 id    = GET_BE32(p+2);
-                          XDPRINTF((2,"Renmove vol restriction vol=%d, id=0x%lx",
+                          XDPRINTF((2,0, "TODO:Remove vol restriction vol=%d, id=0x%lx",
                                    (int)volnr, id));
 
 	               } else  if (*p == 0x25){ /* setting FILE INFO ??*/
 	                  /* TODO !!!!!!!!!!!!!!!!!!!!  */
 	                 do_druck++;
+
 	               } else  if (*p == 0x26) { /* Scan file or Dir for ext trustees */
                          int sequenz = (int)*(p+2); /* trustee sequenz  */
 	                 struct XDATA {
@@ -521,7 +522,7 @@ static void handle_ncp_serv()
 	                  struct XDATA {
 	                    uint8 weisnicht[8];  /* ?????? */
 	                  } *xdata = (struct XDATA*) responsedata;
-                          XDPRINTF((2,"Get vol restriction vol=%d, id=0x%lx",
+                          XDPRINTF((5,0, "Get vol restriction vol=%d, id=0x%lx",
                                    (int)volnr, id));
                           memset(xdata, 0, sizeof(struct XDATA));
                           data_len=sizeof(struct XDATA);
@@ -724,13 +725,13 @@ static void handle_ncp_serv()
              break;
 
              case 0xf3: {  /* Map Direktory Number TO PATH */
-               XDPRINTF((1,"TODO: Map Direktory Number TO PATH\n"));
+               XDPRINTF((2,0, "TODO: Map Direktory Number TO PATH"));
                completition = 0xff;
              }
              break;
 
              case 0xf4: {  /* Map PATH TO Dir Entry */
-               XDPRINTF((1,"TODO: Map PATH TO Dir Entry\n"));
+               XDPRINTF((2,0, "TODO: Map PATH TO Dir Entry"));
                completition = 0xff;
              }
              break;
@@ -743,7 +744,8 @@ static void handle_ncp_serv()
 #endif
 
 	 case 0x18 : /* End of Job */
-                     nw_free_handles((task > 0) ? task : 1);
+                     nw_free_handles((ncprequest->task > 0) ?
+                                      (int) (ncprequest->task) : 1);
                      break;
 
 	 case 0x19 : /* logout, some of this call is handled in ncpserv. */
@@ -775,8 +777,16 @@ static void handle_ncp_serv()
 	 case 0x21 : { /* Negotiate Buffer Size,  Packetsize  */
 	               int   wantsize = GET_BE16((uint8*)ncprequest);
 	               uint8 *getsize=responsedata;
-	               U16_TO_BE16(min(0x200, wantsize), getsize);
+
+#if IPX_DATA_GR_546
+	               wantsize = min(0x400, wantsize);
+#else
+	               wantsize = min(0x200, wantsize);
+#endif
+	               U16_TO_BE16(wantsize, getsize);
 	               data_len = 2;
+                       XDPRINTF((5,0, "Negotiate Buffer size = 0x%04x,(%d)",
+                                        (int) wantsize, (int) wantsize));
 	             }
 	             break;
 
@@ -819,7 +829,7 @@ static void handle_ncp_serv()
 	                 uint8   ext_fhandle[2]; /* all zero   */
 	               } *input = (struct INPUT *)ncprequest;
 	               uint32 fhandle = GET_BE32(input->fhandle);
-                       XDPRINTF((1,"TODO: COMMIT FILE:fhandle=%ld\n", fhandle));
+                       XDPRINTF((2,0, "TODO: COMMIT FILE:fhandle=%ld", fhandle));
                         /* TODO */
                         ;
                      } break;
@@ -1196,7 +1206,8 @@ static void handle_ncp_serv()
 
 #if 0
 	 case 0x61 : { /* Negotiate Buffer Size, Packetsize new ??? */
-                       /* same request as 0x21 */
+                       /* > 3.11 */
+                       /* similar request as 0x21 */
                      }
 #endif
 
@@ -1213,41 +1224,23 @@ static void handle_ncp_serv()
   }
 
   if (nw_debug && (completition == 0xfb || (do_druck == 1))) { /* UNKWON FUNCTION od. TYPE */
-    int x_nw_debug = nw_debug;
-    if (nw_debug == 1 || do_druck == 1) {
-      int j = requestlen;
-      nw_debug = 2;
-      XDPRINTF((2,"NCP REQUEST: seq:%d, task:%d, reserved:0x%x, func:0x%x\n",
-	 sequence, task, reserved, function));
-       if (j > 0){
-	uint8  *p=requestdata;
-	XDPRINTF((2,"len %d, DATA:", j));
-	while (j--) {
-	  int c = *p++;
-	  if (c > 32 && c < 127)  XDPRINTF((2,",\'%c\'", (char) c));
-	  else XDPRINTF((2,",0x%x", c));
-	}
-	XDPRINTF((2,"\n"));
-      }
-    }
+    pr_debug_request();
     if (completition == 0xfb)
-      XDPRINTF((1,"UNKNOWN FUNCTION od. TYPE: 0x%x\n", function));
+      XDPRINTF((0,0, "UNKNOWN FUNCTION od. TYPE: 0x%x", function));
     else if (data_len){
       int j     = data_len;
       uint8  *p = responsedata;
-      XDPRINTF((2,"RSPONSE: len %d, DATA:",  data_len));
+      XDPRINTF((0,2, "RSPONSE: len %d, DATA:",  data_len));
       while (j--) {
 	int c = *p++;
-	if (c > 32 && c < 127)  XDPRINTF((2,",\'%c\'", (char) c));
-	else XDPRINTF((2,",0x%x", c));
+	if (c > 32 && c < 127)  XDPRINTF((0,3,",\'%c\'", (char) c));
+	else XDPRINTF((0,3,",0x%x", c));
       }
-      XDPRINTF((2,"\n"));
+      XDPRINTF((0,1, NULL));
     }
-    nw_debug = x_nw_debug;
   }
-  ncp_response(sequence, completition, data_len);
-  if (nw_debug != 99 && nw_debug != -99) nw_debug = org_nw_debug;
-  else if (nw_debug == -99) nw_debug = 0;
+  ncp_response(ncprequest->sequence, completition, data_len);
+  nw_debug = org_nw_debug;
 }
 
 extern int t_errno;
@@ -1305,7 +1298,7 @@ int main(int argc, char **argv)
 
   init_tools(NWCONN);
 
-  DPRINTF(("FATHER PID=%d, ADDR=%s CON:%s\n", father_pid, *(argv+2), *(argv+3)));
+  XDPRINTF((1, 0, "FATHER PID=%d, ADDR=%s CON:%s", father_pid, *(argv+2), *(argv+3)));
             adr_to_ipx_addr(&from_addr, *(argv+2));
 
   if (nw_init_connect()) exit(1);
@@ -1339,12 +1332,12 @@ int main(int argc, char **argv)
     ncpresponse->connect_status = (uint8) 0;
     if (data_len > 0) {
       if (fl_get_debug) get_new_debug();
-      XDPRINTF((99, "NWCONN GOT DATA len = %d\n",data_len));
+      XDPRINTF((99, 0,  "NWCONN GOT DATA len = %d",data_len));
 
       if ((ncp_type = (int)GET_BE16(ncprequest->type)) == 0x3333) {
         /* OK for direct sending */
         data_len -= sizeof(NCPRESPONSE);
-        XDPRINTF((99, "NWCONN:direct sending:type 0x3333, completition=0x%x, len=%d\n",
+        XDPRINTF((99,0, "NWCONN:direct sending:type 0x3333, completition=0x%x, len=%d",
 	         (int)(ncprequest->function), data_len));
         if (data_len) memcpy(responsedata, readbuff+sizeof(NCPRESPONSE), data_len);
         ncpresponse->connect_status = ((NCPRESPONSE*)readbuff)->connect_status;

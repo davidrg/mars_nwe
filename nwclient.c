@@ -1,4 +1,4 @@
-/* nwclient.c: 12-Nov-95 */
+/* nwclient.c: 24-Dec-95 */
 /*
  * Einfacher Testclient, wird von nwserv (im Client Modus) gestartet
  * Dieses Modul hilft dabei, NCP Responses eines
@@ -49,7 +49,7 @@ static int open_socket()
     t_close(ipx_fd);
     return(-1);
   }
-  XDPRINTF((0,"socket bound TO %s\n", visable_ipx_adr(&my_addr) ));
+  XDPRINTF((1,0, "socket bound TO %s", visable_ipx_adr(&my_addr) ));
   return(ipx_fd);
 }
 
@@ -78,17 +78,17 @@ static void ncp_request(int type, int  sequence,
   ncprequest->function       = (uint8) function;
   {
     int j = data_len;
-    DPRINTF(("NCP REQUEST: type:0x%x, seq:%d, conn:%d, task:%d, reserved:0x%x, func:0x%x\n",
+    XDPRINTF((1, 0, "NCP REQUEST: type:0x%x, seq:%d, conn:%d, task:%d, reserved:0x%x, func:0x%x",
        type, sequence, connection, task, reserved, function));
      if (j > 0){
       uint8  *p=requestdata;
-      DPRINTF(("len %d, DATA:", j));
+      XDPRINTF((1, 2, "len %d, DATA:", j));
       while (j--) {
 	int c = *p++;
-	if (c > 32 && c < 127)  DPRINTF((",\'%c\'", (char) c));
-	else DPRINTF((",0x%x", c));
+	if (c > 32 && c < 127)  XDPRINTF((1, 3,",\'%c\'", (char) c));
+	else XDPRINTF((1, 3, ",0x%x", c));
       }
-      DPRINTF(("\n"));
+      XDPRINTF((1, 1, NULL));
     }
   }
   send_ipx_data(fd_ipx, 17, sizeof(NCPREQUEST) + data_len,
@@ -137,8 +137,8 @@ static int handle_event(void)
     uderr.opt.buf       = (char*)&err_pack_typ; /* bekommt aktuellen Typ */
     ud.addr.buf         = (char*)&source_adr;
     t_rcvuderr(fd_ipx, &uderr);
-    DPRINTF(("Error from %s, Code = 0x%lx\n", visable_ipx_adr(&erradr), uderr.error));
-    t_error("t_rcvudata !OK");
+    XDPRINTF((1, 0, "Error from %s, Code = 0x%lx", visable_ipx_adr(&erradr), uderr.error));
+    if (nw_debug) t_error("t_rcvudata !OK");
     return(-1);
   } else {
     int responselen  = ud.udata.len - sizeof(NCPRESPONSE);
@@ -152,19 +152,19 @@ static int handle_event(void)
     int    connect_status    = (int)ncpresponse->connect_status;
     int    type 	     = GET_BE16(ncpresponse->type);
 
-    DPRINTF(("Ptyp:%d von: %s, len=%d\n", (int)ipx_pack_typ, visable_ipx_adr(&source_adr), responselen));
-    DPRINTF(("RESPONSE:t:0x%x, seq:%d, conn:%d, task:%d, res:0x%x, complet.:0x%x, connect:0x%x\n",
+    XDPRINTF((1,0, "Ptyp:%d von: %s, len=%d", (int)ipx_pack_typ, visable_ipx_adr(&source_adr), responselen));
+    XDPRINTF((1,0, "RESPONSE:t:0x%x, seq:%d, conn:%d, task:%d, res:0x%x, complet.:0x%x, connect:0x%x",
        type, sequence, connection, task, reserved, completition, connect_status));
 
      if (j > 0){
       uint8  *p=responsedata;
-      DPRINTF(("len %d, DATA:", j));
+      XDPRINTF((1, 2, "len %d, DATA:", j));
       while (j--) {
         int c = *p++;
-        if (c > 32 && c < 127)  DPRINTF((",\'%c\'", (char) c));
-        else DPRINTF((",0x%x", c));
+        if (c > 32 && c < 127)  XDPRINTF((1, 3, ",\'%c\'", (char) c));
+        else XDPRINTF((1, 3, ",0x%x", c));
       }
-      DPRINTF(("\n"));
+      XDPRINTF((1, 1, NULL));
     }
   }
 
@@ -198,7 +198,7 @@ static int get_conn_nr(void)
                       0, "Get Connection Nr.");
   if (!handle_event()) {
     connection = ncpresponse->connection;
-    DPRINTF(("NWCLIENT GOT CONNECTION NR:%d\n", connection));
+    XDPRINTF((1, 0, "NWCLIENT GOT CONNECTION NR:%d", connection));
     return(0);
   }
   return(-1);
@@ -209,7 +209,7 @@ static int get_pkt_size(void)
   uint8 data[] = {0x4, 0};  /* wanted ?? SIZE */
   RDATA(data, 0x21, "Get Pktsize");
   if (!handle_event()) {
-    DPRINTF(("NWCLIENT GOT PACKET SIZE =:%d\n", (int)GET_BE16(responsedata)));
+    XDPRINTF((1,0, "NWCLIENT GOT PACKET SIZE =:%d", (int)GET_BE16(responsedata)));
     return(0);
   }
   return(-1);
@@ -220,7 +220,7 @@ static int get_server_info(void)
   uint8  data[] = {0, 1, 0x11};
   RDATA(data, 0x17, "Get FileServer Info");
   if (!handle_event()) {
-    DPRINTF(("NWCLIENT GOT SERVER INFO von=:%s\n", responsedata ));
+    XDPRINTF((1,0, "NWCLIENT GOT SERVER INFO von=:%s", responsedata ));
     return(0);
   }
   return(-1);
@@ -278,7 +278,7 @@ static int file_search_init(DIR_IDS *di, int dirhandle, char *path)
   VDATA(0x3e, pathlen+2, "FILE SEARCH INIT");
   if (!handle_event()) {
     if (di) memcpy(di, responsedata, 3);
-    DPRINTF(("NWCLIENT GOT FILES SEARCH INIT HANDLE=:%d\n",
+    XDPRINTF((1,0, "NWCLIENT GOT FILES SEARCH INIT HANDLE=:%d",
          (int)GET_BE16(responsedata+1) ));
     return( (int) *(responsedata+3) );     /* access */
   }
@@ -301,7 +301,7 @@ static int file_search_cont(DIR_IDS *di, int seq,
   if (!handle_event()) {
     int dir_id = GET_BE16(responsedata+2);
     seq        = GET_BE16(responsedata);
-    DPRINTF(("GOT SEARCH CONT dir_id=%d, seq=%d\n", dir_id, seq));
+    XDPRINTF((1, 0, "GOT SEARCH CONT dir_id=%d, seq=%d", dir_id, seq));
     return(seq);
   }
   return(-1);
@@ -472,7 +472,7 @@ static int get_bindery_object_id(int type, char *name)
    memcpy(p, name, namlen);
    VDATA(0x17, namlen+6, "GET BINDERY OBJECT ID");
    if (!handle_event()) {
-     DPRINTF(("GOT BIND OBJ ID=0x%lx\n", GET_BE32(responsedata)));
+     XDPRINTF((1, 0, "GOT BIND OBJ ID=0x%lx", GET_BE32(responsedata)));
    }
    return(0);
 }
@@ -624,7 +624,7 @@ static void teste_reads(void)
       size = read_datei(fh, offs, 0x200);
     }
   }
-  DPRINTF(("%d Bytes readed\n", gelesen));
+  XDPRINTF((1,0, "%d Bytes readed", gelesen));
 }
 
 static void test_wdog(void)
@@ -660,11 +660,11 @@ static void test_wdog(void)
       uderr.opt.buf       = (char*)&err_pack_typ; /* bekommt aktuellen Typ */
       ud.addr.buf         = (char*)&source_adr;
       t_rcvuderr(fd_ipx, &uderr);
-      DPRINTF(("Error from %s, Code = 0x%lx\n", visable_ipx_adr(&erradr), uderr.error));
-      t_error("t_rcvudata !OK");
+      XDPRINTF((1,0, "Error from %s, Code = 0x%lx", visable_ipx_adr(&erradr), uderr.error));
+      if (nw_debug) t_error("t_rcvudata !OK");
       return;
     } else {
-      DPRINTF(("WDOG Packet von:%s, len=%d connid=%d, status=%d\n",
+      XDPRINTF((1,0, "WDOG Packet von:%s, len=%d connid=%d, status=%d",
                  visable_ipx_adr(&source_adr),
                (int)ud.udata.len, (int) ipx_data_buff.wdog.connid,
                (int)ipx_data_buff.wdog.status));
@@ -688,7 +688,7 @@ int main(int argc, char **argv)
     exit(1);
   }
 
-  DPRINTF(("NWCLIENT MYADDR=%s, SERVER=%s \n", *(argv+1), *(argv+2) ));
+  XDPRINTF((1, 0, "NWCLIENT MYADDR=%s, SERVER=%s", *(argv+1), *(argv+2) ));
 
   adr_to_ipx_addr(&my_addr,   *(argv+1));
   adr_to_ipx_addr(&serv_addr, *(argv+2));

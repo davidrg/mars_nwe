@@ -1,4 +1,4 @@
-/* nwdbm.c  05-Dec-95  data base for mars_nwe */
+/* nwdbm.c  24-Dec-95  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -89,7 +89,7 @@ static int name_match(uint8 *s, uint8 *p)
 int find_obj_id(NETOBJ *o, uint32 last_obj_id)
 {
   int result = -0xfc; /* no Object */
-  XDPRINTF((2, "findobj_id OBJ=%s, type=0x%x, lastid=0x%lx \n",
+  XDPRINTF((2, 0,"findobj_id OBJ=%s, type=0x%x, lastid=0x%lx",
 	      o->name, (int)o->type, last_obj_id));
 
   if (!dbminit(fnobj)){
@@ -109,11 +109,11 @@ int find_obj_id(NETOBJ *o, uint32 last_obj_id)
 	NETOBJ *obj = (NETOBJ*)data.dptr;
 	if ( ( ((int)obj->type == (int)o->type) || o->type == MAX_U16) &&
 	   name_match(obj->name, o->name))  {
-	  XDPRINTF((2, "found OBJ=%s, id=0x%lx\n", obj->name, obj->id));
+	  XDPRINTF((2, 0, "found OBJ=%s, id=0x%lx", obj->name, obj->id));
 	  result = 0;
 	  memcpy((char *)o, (char*)obj, sizeof(NETOBJ));
 	} else {
-	  XDPRINTF((3,"not found,but NAME=%s, type=0x%x, id=0x%lx \n",
+	  XDPRINTF((3,0,"not found,but NAME=%s, type=0x%x, id=0x%lx",
 	                 obj->name, (int)obj->type, obj->id));
 	}
       }
@@ -133,7 +133,7 @@ static int loc_delete_property(uint32 obj_id, uint8 *prop_name, uint8 prop_id)
   int result = -0xfb; /* no property */
   memset(xset, 0, sizeof(xset));
   if (!prop_id) {
-    XDPRINTF((2, "loc_delete_property obj_id=%d, prop=%s\n", obj_id, prop_name));
+    XDPRINTF((2,0, "loc_delete_property obj_id=%d, prop=%s", obj_id, prop_name));
     if (!dbminit(fnprop)){
       for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
 	NETPROP *p=(NETPROP*)key.dptr;
@@ -141,7 +141,7 @@ static int loc_delete_property(uint32 obj_id, uint8 *prop_name, uint8 prop_id)
 	  data = fetch(key);
 	  p = (NETPROP*)data.dptr;
 	  if (p != NULL && name_match(p->name, prop_name)){
-	    XDPRINTF((2, "found prop: %s, id=%d for deleting\n", p->name, (int)p->id));
+	    XDPRINTF((2,0, "found prop: %s, id=%d for deleting", p->name, (int)p->id));
 	    if ((int)(p->id) > result) result = (int)(p->id);
 	    xset[p->id]++;
 	  }
@@ -150,7 +150,7 @@ static int loc_delete_property(uint32 obj_id, uint8 *prop_name, uint8 prop_id)
     } else result = -0xff;
     dbmclose();
   } else {
-    XDPRINTF((2, "loc_delete_property obj_id=%d, prop_id=%d\n", obj_id, (int)prop_id));
+    XDPRINTF((2,0, "loc_delete_property obj_id=%d, prop_id=%d", obj_id, (int)prop_id));
     xset[prop_id]++;
     result = prop_id;
   }
@@ -213,7 +213,7 @@ static int loc_delete_obj(uint32 objid)
 int nw_delete_obj(NETOBJ *obj)
 {
   int result = find_obj_id(obj, 0);
-  XDPRINTF((2, "nw_delete_obj obj_id=%d, obj_name=%s\n", obj->id, obj->name));
+  XDPRINTF((2,0, "nw_delete_obj obj_id=%d, obj_name=%s", obj->id, obj->name));
   if (!result) result=loc_delete_obj(obj->id);
   return(result);
 }
@@ -230,7 +230,7 @@ int nw_rename_obj(NETOBJ *o, uint8 *newname)
       data      = fetch(key);
       if (data.dptr != NULL){
         NETOBJ *obj=(NETOBJ*)data.dptr;
-        XDPRINTF((2, "rename_obj:got OBJ name=%s, id = 0x%x,\n", obj->name, (int)obj->id));
+        XDPRINTF((2,0, "rename_obj:got OBJ name=%s, id = 0x%x", obj->name, (int)obj->id));
         strncpy(obj->name, newname, 48);
         if (!store(key, data)) result=0;
       }
@@ -252,7 +252,7 @@ int nw_change_obj_security(NETOBJ *o, int newsecurity)
       data      = fetch(key);
       if (data.dptr != NULL){
         NETOBJ *obj=(NETOBJ*)data.dptr;
-        XDPRINTF((2, "change_obj_security:got OBJ name=%s, id = 0x%x,\n", obj->name, (int)obj->id));
+        XDPRINTF((2,0, "change_obj_security:got OBJ name=%s, id = 0x%x", obj->name, (int)obj->id));
         obj->security = (uint8) newsecurity;
         if (!store(key, data)) result=0;
       }
@@ -265,14 +265,14 @@ int nw_change_obj_security(NETOBJ *o, int newsecurity)
 int nw_get_obj(NETOBJ *o)
 {
   int result = -0xfc; /* no Object */
-  XDPRINTF((2, "nw_get_obj von OBJ id = 0x%x,\n", (int)o->id));
+  XDPRINTF((2,0, "nw_get_obj von OBJ id = 0x%x", (int)o->id));
   if (!dbminit(fnobj)){
     key.dsize = NETOBJ_KEY_SIZE;
     key.dptr  = (char*)o;
     data      = fetch(key);
     if (data.dptr != NULL){
       NETOBJ *obj=(NETOBJ*)data.dptr;
-      XDPRINTF((2, "got OBJ name=%s, id = 0x%x,\n", obj->name, (int)obj->id));
+      XDPRINTF((2,0, "got OBJ name=%s, id = 0x%x", obj->name, (int)obj->id));
       memcpy(o, data.dptr, sizeof(NETOBJ));
       result = 0;
     }
@@ -284,7 +284,7 @@ int nw_get_obj(NETOBJ *o)
 static int find_prop_id(NETPROP *p, uint32 obj_id, int last_prop_id)
 {
   int result = -0xfb; /* no Property */
-  XDPRINTF((2, "find Prop id von name=0x%x:%s, lastid=%d\n",
+  XDPRINTF((2,0, "find Prop id von name=0x%x:%s, lastid=%d",
            obj_id, p->name, last_prop_id));
   if (!dbminit(fnprop)){
     int  flag = (last_prop_id) ? 0 : 1;
@@ -296,7 +296,7 @@ static int find_prop_id(NETPROP *p, uint32 obj_id, int last_prop_id)
 	  data = fetch(key);
 	  prop = (NETPROP*)data.dptr;
 	  if (data.dptr != NULL  && name_match(prop->name, p->name) )  {
-	    XDPRINTF((2, "found PROP %s, id=0x%x\n", prop->name, (int) prop->id));
+	    XDPRINTF((2,0, "found PROP %s, id=0x%x", prop->name, (int) prop->id));
 	    result = 0;
 	    memcpy(p, prop, sizeof(NETPROP));
 	    break;
@@ -316,7 +316,7 @@ static int find_prop_id(NETPROP *p, uint32 obj_id, int last_prop_id)
 static int loc_change_prop_security(NETPROP *p, uint32 obj_id)
 {
   int result = -0xfb; /* no Property */
-  XDPRINTF((2, "loc_change_prop_security Prop id von name=0x%x:%s\n", obj_id, p->name));
+  XDPRINTF((2,0, "loc_change_prop_security Prop id von name=0x%x:%s", obj_id, p->name));
   if (!dbminit(fnprop)){
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       NETPROP *prop=(NETPROP*)key.dptr;
@@ -325,7 +325,7 @@ static int loc_change_prop_security(NETPROP *p, uint32 obj_id)
 	prop = (NETPROP*)data.dptr;
 	if (data.dptr != NULL  && name_match(prop->name, p->name) )  {
 	  uint8 security = p->security;
-	  XDPRINTF((2, "found PROP %s, id=0x%x\n", prop->name, (int) prop->id));
+	  XDPRINTF((2,0, "found PROP %s, id=0x%x", prop->name, (int) prop->id));
 	  result = 0;
 	  memcpy(p, prop, sizeof(NETPROP));
 	  p->security = security;
@@ -359,7 +359,7 @@ static int loc_get_prop_val(uint32 obj_id, int prop_id, int segment,
     if (data.dptr != NULL){
       NETVAL  *v = (NETVAL*)data.dptr;
       if (NULL != property_value) memcpy(property_value, v->value, 128);
-      XDPRINTF((2, "found VAL 0x%x, %d, %d\n", obj_id, prop_id, segment));
+      XDPRINTF((2,0, "found VAL 0x%x, %d, %d", obj_id, prop_id, segment));
       result = 0;
       val.segment++;
       data  = fetch(key);
@@ -387,7 +387,7 @@ int prop_find_member(uint32 obj_id, int prop_id, uint32 member_id)
       NETVAL  *v = (NETVAL*)data.dptr;
       uint8   *p=v->value;
       int     k=0;
-      XDPRINTF((2, "found VAL 0x%x, %d\n", obj_id, prop_id));
+      XDPRINTF((2,0, "found VAL 0x%x, %d", obj_id, prop_id));
       while (k++ < 32){
 	uint32 id = GET_BE32(p);
 	if (id == member_id) {
@@ -524,7 +524,7 @@ int nw_get_prop_val_by_obj_id(uint32 obj_id,
   NETPROP prop;
   int result=-0xff;
   strmaxcpy((char*)prop.name, (char*)prop_name, prop_namlen);
-  XDPRINTF((2, "nw_get_prop_val_by_obj_id,id=0x%x, prop=%s, segment=%d\n",
+  XDPRINTF((2,0, "nw_get_prop_val_by_obj_id,id=0x%x, prop=%s, segment=%d",
             obj_id, prop.name, segment_nr));
 
   if ((result=find_first_prop_id(&prop, obj_id))==0){
@@ -568,7 +568,7 @@ int nw_delete_property(int object_type,
   int result=-0xff;
   strmaxcpy((char*)obj.name,  (char*)object_name, object_namlen);
   strmaxcpy((char*)prop_name_x, (char*)prop_name, prop_namlen);
-  XDPRINTF((2, "nw_delete_property obj=%s, prop=%s, type=0x%x\n",
+  XDPRINTF((2,0, "nw_delete_property obj=%s, prop=%s, type=0x%x",
       obj.name, prop_name_x, object_type));
   obj.type    = (uint16) object_type;
   if ((result = find_obj_id(&obj, 0)) == 0){
@@ -590,7 +590,7 @@ int nw_is_obj_in_set(int object_type,
   strmaxcpy((char*)obj.name,  (char*)object_name, object_namlen);
   strmaxcpy((char*)mobj.name,  (char*)member_name, member_namlen);
   strmaxcpy((char*)prop.name, (char*)prop_name,   prop_namlen);
-  XDPRINTF((2, "nw_is_obj_in_set obj=%s,0x%x, member=%s,0x%x, prop=%s\n",
+  XDPRINTF((2,0, "nw_is_obj_in_set obj=%s,0x%x, member=%s,0x%x, prop=%s",
       obj.name, object_type, mobj.name, member_type, prop.name));
   obj.type    = (uint16) object_type;
   mobj.type   = (uint16) member_type;
@@ -617,7 +617,7 @@ int nw_add_obj_to_set(int object_type,
   strmaxcpy((char*)obj.name,  (char*)object_name, object_namlen);
   strmaxcpy((char*)mobj.name,  (char*)member_name, member_namlen);
   strmaxcpy((char*)prop.name, (char*)prop_name,   prop_namlen);
-  XDPRINTF((2, "nw_add_obj_to_set obj=%s,0x%x, member=%s,0x%x, prop=%s\n",
+  XDPRINTF((2,0, "nw_add_obj_to_set obj=%s,0x%x, member=%s,0x%x, prop=%s",
       obj.name, object_type, mobj.name, member_type, prop.name));
   obj.type    = (uint16) object_type;
   mobj.type   = (uint16) member_type;
@@ -644,7 +644,7 @@ int nw_delete_obj_from_set(int object_type,
   strmaxcpy((char*)obj.name,  (char*)object_name, object_namlen);
   strmaxcpy((char*)mobj.name,  (char*)member_name, member_namlen);
   strmaxcpy((char*)prop.name, (char*)prop_name,   prop_namlen);
-  XDPRINTF((2, "nw_delete_obj_from_set obj=%s,0x%x, member=%s,0x%x, prop=%s\n",
+  XDPRINTF((2,0, "nw_delete_obj_from_set obj=%s,0x%x, member=%s,0x%x, prop=%s",
       obj.name, object_type, mobj.name, member_type, prop.name));
   obj.type    = (uint16) object_type;
   mobj.type   = (uint16) member_type;
@@ -670,7 +670,7 @@ int nw_write_prop_value(int object_type,
   int result=-0xff;
   strmaxcpy((char*)obj.name,  (char*)object_name, object_namlen);
   strmaxcpy((char*)prop.name, (char*)prop_name,   prop_namlen);
-  XDPRINTF((2, "nw_write_prop_value obj=%s, prop=%s, type=0x%x, segment=%d\n",
+  XDPRINTF((2,0, "nw_write_prop_value obj=%s, prop=%s, type=0x%x, segment=%d",
       obj.name, prop.name, object_type, segment_nr));
   obj.type    = (uint16) object_type;
 
@@ -696,7 +696,7 @@ int nw_change_prop_security(int object_type,
   strmaxcpy((char*)obj.name,  (char*)object_name, object_namlen);
   strmaxcpy((char*)prop.name, (char*)prop_name,   prop_namlen);
   prop.security = (uint8)prop_security;
-  XDPRINTF((2, "nw_change_prop_security obj=%s,0x%x, prop=%s\n",
+  XDPRINTF((2,0, "nw_change_prop_security obj=%s,0x%x, prop=%s",
       obj.name, object_type, prop.name));
   obj.type    = (uint16) object_type;
   if ((result = find_obj_id(&obj, 0)) == 0){
@@ -717,7 +717,7 @@ int nw_scan_property(NETPROP *prop,
   int     result;
   strmaxcpy((char*)obj.name,   (char*)object_name, object_namlen);
   strmaxcpy((char*)prop->name, (char*)prop_name,   prop_namlen);
-  XDPRINTF((2, "nw_scan_property obj=%s, prop=%s, type=0x%x, last_scan=0x%lx\n",
+  XDPRINTF((2,0, "nw_scan_property obj=%s, prop=%s, type=0x%x, last_scan=0x%lx",
       obj.name, prop->name, object_type, *last_scan));
   obj.type    = (uint16) object_type;
 
@@ -744,9 +744,9 @@ int nw_get_prop_val_str(uint32 q_id, char *propname, uint8 *buff)
                   buff, &more_segments, &property_flags);
   if (result > -1) {
     result=strlen(buff);
-    XDPRINTF((2, "nw_get_prop_val_str:%s strlen=%d\n", propname, result));
+    XDPRINTF((2,0, "nw_get_prop_val_str:%s strlen=%d", propname, result));
   } else
-    XDPRINTF((2, "nw_get_prop_val_str:%s, result=0x%x\n", propname, result));
+    XDPRINTF((2,0, "nw_get_prop_val_str:%s, result=0x%x", propname, result));
   return(result);
 }
 
@@ -759,7 +759,7 @@ int nw_create_obj(NETOBJ *obj, uint32 wanted_id)
 */
 {
   int result = 0; /* OK */
-  XDPRINTF((2, "creat OBJ=%s,type=0x%x\n", obj->name, (int)obj->type));
+  XDPRINTF((2,0, "creat OBJ=%s,type=0x%x", obj->name, (int)obj->type));
   if (!dbminit(fnobj)){
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);
@@ -857,7 +857,7 @@ int nw_create_prop(int object_type,
   int result=-0xff;
   strmaxcpy((char*)obj.name,  (char*)object_name, object_namlen);
   strmaxcpy((char*)prop.name, (char*)prop_name,   prop_namlen);
-  XDPRINTF((2, "nw_create_prop obj=%s, prop=%s, type=0x%x\n",
+  XDPRINTF((2,0, "nw_create_prop obj=%s, prop=%s, type=0x%x",
       obj.name, prop.name, object_type));
   obj.type    = (uint16) object_type;
   if ((result = find_obj_id(&obj, 0)) == 0){
@@ -909,14 +909,14 @@ struct passwd *nw_getpwnam(uint32 obj_id)
     struct passwd *pw = getpwnam(buff);
     if (NULL != pw) {
       memcpy(&pwstat, pw, sizeof(struct passwd));
-      XDPRINTF((2, "FOUND obj_id=0x%x, pwnam=%s, gid=%d, uid=%d\n",
+      XDPRINTF((2,0, "FOUND obj_id=0x%x, pwnam=%s, gid=%d, uid=%d",
                  obj_id, buff, pw->pw_gid, pw->pw_uid));
       endpwent ();
       return(&pwstat);
     }
     endpwent ();
   }
-  XDPRINTF((2, "NOT FOUND PWNAM of obj_id=0x%x\n",  obj_id));
+  XDPRINTF((2,0, "NOT FOUND PWNAM of obj_id=0x%x",  obj_id));
   return(NULL);
 }
 
@@ -962,7 +962,7 @@ int nw_set_passwd(uint32 obj_id, char *password)
   U32_TO_BE32(obj_id, s_uid);
   shuffle(s_uid, password, strlen(password), passwd);
 #if 0
-  XDPRINTF((2, "password %s->0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x\n",
+  XDPRINTF((2,0, "password %s->0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x",
      password,
      (int)passwd[0],
      (int)passwd[1],
@@ -1031,7 +1031,7 @@ static void add_pr_queue(uint32 q_id,
                          uint32 su_id, uint32 ge_id)
 {
   uint8  buff[12];
-  XDPRINTF((2, "ADD Q=%s, V=%s, C=%s\n", q_name, q_directory, q_command));
+  XDPRINTF((2,0, "ADD Q=%s, V=%s, C=%s", q_name, q_directory, q_command));
   U32_TO_BE32(su_id,    buff);
   q_id =
   nw_new_create_prop(q_id, q_name,               0x3,  O_FL_DYNA,  0x31,

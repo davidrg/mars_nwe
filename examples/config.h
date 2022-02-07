@@ -8,4 +8,5 @@
 #define MAX_NW_VOLS      10          /* max. Volumes                 */
 
 #define MAX_NET_DEVICES   1          /* max. Netdevices, frames      */
+#define IPX_DATA_GR_546   1          /* allow ipx packets > 546+30 Byte */
 

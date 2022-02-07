@@ -1,4 +1,4 @@
-/* tools.c  06-Dec-95 */
+/* tools.c  24-Dec-95 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -22,6 +22,18 @@
 
 int  nw_debug=0;
 FILE *logfile=stdout;
+
+static int   in_module=0;  /* in which process i am ? */
+static char *modnames[] =
+{ "???????",
+  "NWSERV ",
+  "NCPSERV",
+  "NWCONN " };
+
+static char *get_modstr(void)
+{
+  return(modnames[in_module]);
+}
 
 char *xmalloc(uint size)
 {
@@ -63,20 +75,26 @@ void dprintf(char *p, ...)
 {
   va_list ap;
   if (nw_debug){
+    fprintf(logfile, "%s:", get_modstr());
     va_start(ap, p);
     vfprintf(logfile, p, ap);
     va_end(ap);
+    fprintf(logfile, "\n");
     fflush(logfile);
   }
 }
 
-void xdprintf(int dlevel, char *p, ...)
+void xdprintf(int dlevel, int mode, char *p, ...)
 {
   va_list ap;
   if (nw_debug >= dlevel) {
-    va_start(ap, p);
-    vfprintf(logfile, p, ap);
-    va_end(ap);
+    if (!(mode & 1)) fprintf(logfile, "%s:", get_modstr());
+    if (p) {
+      va_start(ap, p);
+      vfprintf(logfile, p, ap);
+      va_end(ap);
+    }
+    if (!(mode & 2)) fprintf(logfile, "\n");
     fflush(logfile);
   }
 }
@@ -84,11 +102,11 @@ void xdprintf(int dlevel, char *p, ...)
 void errorp(int mode, char *what, char *p, ...)
 {
   va_list ap;
-  int errnum = errno;
+  int errnum   = errno;
   if (errnum >= 0 && errnum < _sys_nerr)
-    fprintf(logfile, "%s:%s\n",       what, _sys_errlist[errnum]);
+    fprintf(logfile, "%s:%s:%s\n",       get_modstr(),  what, _sys_errlist[errnum]);
   else
-    fprintf(logfile, "%s:errno=%d\n", what, errnum);
+    fprintf(logfile, "%s:%s:errno=%d\n", get_modstr(), what, errnum);
   if (p) {
     va_start(ap, p);
     vfprintf(logfile, p, ap);
@@ -184,6 +202,7 @@ void init_tools(int module)
   int  withlog=0;
   int  dodaemon=0;
   int  new_log=0;
+  in_module = module;
   if (f) {
     int  what;
     while (0 != (what=get_ini_entry(f, 0, buff, sizeof(buff)))) { /* daemonize */
@@ -213,6 +232,10 @@ void init_tools(int module)
       exit(1);
     }
     if (NWSERV == module) setsid();
+  }
+  if (NWSERV == module || NCPSERV == module) {
+    XDPRINTF((1, 0, "Starting Version: %d.%02dpl%d",
+         _VERS_H_, _VERS_L_, _VERS_P_ ));
   }
 }
 
@@ -277,7 +300,7 @@ int get_fs_usage(char *path, struct fs_usage *fsp)
 {
   struct statfs fsd;
   if (statfs (path, &fsd) < 0) return (-1);
-  XDPRINTF((2,
+  XDPRINTF((3, 0,
     "blocks=%d, bfree=%d, bavail=%d, files=%d, ffree=%d, bsize=%d\n",
     fsd.f_blocks, fsd.f_bfree, fsd.f_bavail,
     fsd.f_files, fsd.f_ffree,  fsd.f_bsize));

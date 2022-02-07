@@ -1,4 +1,4 @@
-/* net.h 20-Nov-95 */
+/* net.h 02-Jan-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -16,7 +16,6 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
-
 
 #ifndef _M_NET_H_
 #define _M_NET_H_
@@ -79,7 +78,41 @@
 #define MAX_U32    ((uint32)0xffffffffL)
 #define MAX_U16    ((uint16)0xffff)
 
-#define IPX_MAX_DATA   /*  1058  */ 546
+
+/* ===================>  config.h  <======================= */
+#include "config.h"
+
+#ifndef MAX_CONNECTIONS
+# define MAX_CONNECTIONS  5 /* maximum Number of Connections */
+#endif
+
+#ifndef MAX_NW_VOLS
+# define MAX_NW_VOLS     10
+#endif
+
+#ifndef MAX_NET_DEVICES
+# define MAX_NET_DEVICES  5
+#endif
+
+
+#ifndef FILENAME_NW_INI
+# define FILENAME_NW_INI "./nw.ini"  /* location of ini (conf) file */
+#endif
+
+#ifndef PATHNAME_BINDERY
+# define PATHNAME_BINDERY "."  /* location of bindery files */
+#endif
+
+#ifndef IPX_DATA_GR_546
+# define IPX_DATA_GR_546 1
+#endif
+
+#if IPX_DATA_GR_546
+#  define IPX_MAX_DATA      1058
+#else
+#  define IPX_MAX_DATA       546
+#endif
+
 #define MAX_SERVER_NAME   48
 
 typedef union {
@@ -220,29 +253,6 @@ typedef struct S_NCPREQUEST    NCPREQUEST;
 #define FD_NWSERV     3  /* one after stderr */
 
 
-/* ===================>  config.h  <======================= */
-#include "config.h"
-
-#ifndef MAX_CONNECTIONS
-# define MAX_CONNECTIONS  5 /* maximum Number of Connections */
-#endif
-
-#ifndef MAX_NW_VOLS
-# define MAX_NW_VOLS     10
-#endif
-
-#ifndef MAX_NET_DEVICES
-# define MAX_NET_DEVICES  5
-#endif
-
-
-#ifndef FILENAME_NW_INI
-# define FILENAME_NW_INI "./nw.ini"  /* location of ini (conf) file */
-#endif
-
-#ifndef PATHNAME_BINDERY
-# define PATHNAME_BINDERY "."  /* location of bindery files */
-#endif
 
 #include "net1.h"
 /* connect.c */

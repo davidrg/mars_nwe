@@ -2,15 +2,15 @@ Begin3
 Title:          mars_nwe
 Version:        0.96
 Entered-date:   20-Dec-95
-Description:    simple novell-server-emulator (src),beta
-                needs no kernelchanges, usefull for testing ipx
+Description:    full novell-server-emulator (src),beta
                 file-services, bindery-services, printing-services
-Keywords:       novell, netware, unixware, server, ipx, ncp, tli
+                needs no kernelchanges, usefull for testing ipx
+Keywords:       novell, netware, server, ipx, ncp, tli
 Author:         mstover@freeway.de  (Martin Stover)
 Maintained-by:  mstover@freeway.de  (Martin Stover)
 Primary-site:   linux01.gwdg.de /pub/ncpfs
-                80kB mars_nwe-0.96.tgz
+                90kB mars_nwe-0.96.tgz
 Alternate-site: ftp.uni-duisburg.de /pub/linux/ipxware
-Platforms:      Linux (1.2.xx, 1.3.32 testet, others should work)
+Platforms:      Linux (1.2.xx, 1.3.32 tested, others should work)
 Copying-policy: GNU
 End

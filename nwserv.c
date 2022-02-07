@@ -69,7 +69,7 @@ static void inform_ncpserv(void)
 {
   if (bytes_to_write_to_ncpserv && pid_ncpserv > -1) {
 #if 0
-    XDPRINTF((2, "inform_ncpserv bytes=%d\n", bytes_to_write_to_ncpserv));
+    XDPRINTF((2, 0,"inform_ncpserv bytes=%d", bytes_to_write_to_ncpserv));
     kill(pid_ncpserv, SIGHUP);    /* tell ncpserv to read input */
 #endif
     bytes_to_write_to_ncpserv=0;
@@ -79,7 +79,7 @@ static void inform_ncpserv(void)
 static void write_to_ncpserv(int what, int connection,
                            char *data, int data_size)
 {
-  XDPRINTF((2, "write_to_ncpserv what=0x%x, conn=%d, data_size=%d\n",
+  XDPRINTF((2, 0, "write_to_ncpserv what=0x%x, conn=%d, data_size=%d",
            what, connection, data_size));
 
   switch (what) {
@@ -392,7 +392,7 @@ void get_server_data(char *name,
        client_mode = 0;  /* only start once */
      }
    }
-   XDPRINTF((2,"NW386 %s found at:%s\n", name, visable_ipx_adr(adr)));
+   XDPRINTF((2,0,"NW386 %s found at:%s", name, visable_ipx_adr(adr)));
    ins_del_bind_net_addr(name, adr);
 }
 
@@ -405,14 +405,14 @@ static void handle_sap(int fd,
   int query_type   = GET_BE16(ipxdata->sqp.query_type);
   int server_type  = GET_BE16(ipxdata->sqp.server_type);
   if (query_type == 3) {
-    XDPRINTF((2,"SAP NEAREST SERVER request typ=%d von %s\n",
+    XDPRINTF((2,0,"SAP NEAREST SERVER request typ=%d von %s",
              server_type, visable_ipx_adr(from_addr)));
     if (server_type == 4) {
       /* Get Nearest File Server */
       send_server_respons(fd, ipx_pack_typ, 4, server_type, from_addr);
     }
   } else if (query_type == 1) {  /* general Request */
-    XDPRINTF((2,"SAP GENERAL request server_type =%d\n", server_type));
+    XDPRINTF((2,0, "SAP GENERAL request server_type =%d", server_type));
     if (server_type == 4) {
       /* Get General  File Server Request */
       send_server_respons(fd, ipx_pack_typ, 4, server_type, from_addr);
@@ -423,19 +423,19 @@ static void handle_sap(int fd,
     */
     int entries  = (data_len-2) / sizeof(SAPS);
     uint8    *p  = ((uint8*)ipxdata)+2;
-    XDPRINTF((2,"SAP PERIODIC (entries=%d) from %s\n", entries, visable_ipx_adr(from_addr)));
+    XDPRINTF((2,0,"SAP PERIODIC (entries=%d) from %s", entries, visable_ipx_adr(from_addr)));
     while (entries--) {
       int    type    = GET_BE16(p);
       uint8 *name    = p+2;
       ipxAddr_t *ad  = (ipxAddr_t*) (p+50);
       int   hops     = GET_BE16(p+ sizeof(SAPS) -2);
-      XDPRINTF((2,"TYP=%2d,hops=%2d, Addr=%s, Name=%s\n", type, hops,
+      XDPRINTF((2,0, "TYP=%2d,hops=%2d, Addr=%s, Name=%s", type, hops,
           visable_ipx_adr(ad), name));
 
       if (type == 4 && strcmp(name, my_nwname)) {  /* from Fileserver */
         if (16 == hops) {
           /* shutdown */
-          XDPRINTF((2,"SERVER %s IS GOING DOWN\n", name));
+          XDPRINTF((2,0, "SERVER %s IS GOING DOWN", name));
           ins_del_bind_net_addr(name, NULL);
         } else {
           get_server_data(name, ad, from_addr);
@@ -444,7 +444,7 @@ static void handle_sap(int fd,
       p+=sizeof(SAPS);
     } /* while */
   } else {
-    XDPRINTF((1,"UNKNOWN SAP query %x, server %x\n", query_type, server_type));
+    XDPRINTF((1,0, "UNKNOWN SAP query %x, server %x", query_type, server_type));
   }
 }
 
@@ -523,12 +523,12 @@ static void handle_diag(int fd, int ipx_pack_typ,
   uint8  *exnodes     = conf->ex_node;
   while (j--) {
     if IPXCMPNODE(exnodes, my_server_adr.node) {
-       DPRINTF(("NO RESPONSE TO DIAG\n"));
+       XDPRINTF((2, 0, "NO RESPONSE TO DIAG"));
        return;
     }
     exnodes += IPX_NODE_SIZE;
   }
-  XDPRINTF((2,"DIAG Request, ipx_pack_typ %d, data_len %d, count %d\n",
+  XDPRINTF((2,0,"DIAG Request, ipx_pack_typ %d, data_len %d, count %d",
 	 (int)ipx_pack_typ, data_len, count));
   response_ipx_diag(fd, ipx_pack_typ, from_addr);
 }
@@ -565,12 +565,12 @@ static void handle_event(int fd, uint16 socknr, int slot)
     uderr.opt.buf       = (char*)&err_pack_typ; /* get actual typ */
     ud.addr.buf         = (char*)&source_adr;
     t_rcvuderr(fd, &uderr);
-    DPRINTF(("Error from %s, Code = 0x%lx\n", visable_ipx_adr(&erradr), uderr.error));
+    XDPRINTF((2, 0, "Error from %s, Code = 0x%lx", visable_ipx_adr(&erradr), uderr.error));
     if (nw_debug) t_error("t_rcvudata !OK");
     return;
   }
 
-  XDPRINTF((3,"Ptyp:%d from: %s\n", (int)ipx_pack_typ, visable_ipx_adr(&source_adr) ));
+  XDPRINTF((3,0,"Ptyp:%d from: %s", (int)ipx_pack_typ, visable_ipx_adr(&source_adr) ));
 
   if (server_down_stamp) return; /* no more interests */
 
@@ -582,12 +582,12 @@ static void handle_event(int fd, uint16 socknr, int slot)
        || source_sock  == sock_nummern[WDOG_SLOT]
        || source_sock  == SOCK_SAP
        || source_sock  == SOCK_RIP) {
-      XDPRINTF((2,"OWN Packet from sock:0x%04x, ignored\n", source_sock));
+      XDPRINTF((2,0,"OWN Packet from sock:0x%04x, ignored", source_sock));
       return;
     }
 
     /* it also can be Packets from DOSEMU OR ncpfs on this machine */
-    XDPRINTF((2,"Packet from OWN maschine:sock=0x%x\n", source_sock));
+    XDPRINTF((2,0,"Packet from OWN maschine:sock=0x%x", source_sock));
   }
 
   switch (socknr) {
@@ -597,7 +597,7 @@ static void handle_event(int fd, uint16 socknr, int slot)
 
     default :
               if (WDOG_SLOT == slot) {  /* this is a watchdog packet */
-                XDPRINTF((2,"WDOG Packet len=%d connid=%d, status=%d\n",
+                XDPRINTF((2,0, "WDOG Packet len=%d connid=%d, status=%d",
                         (int)ud.udata.len, (int) ipx_data_buff.wdog.connid,
                         (int)ipx_data_buff.wdog.status));
                 if (2 == ud.udata.len) {
@@ -607,11 +607,11 @@ static void handle_event(int fd, uint16 socknr, int slot)
               } else {
                 uint8 *p = (uint8*)&ipx_data_buff;
                 int    k = 0;
-                DPRINTF(("UNKNOWN"));
+                XDPRINTF((1, 2, "UNKNOWN"));
                 while (k++ < ud.udata.len){
-                  DPRINTF((" %x", (int)   *p++));
+                  XDPRINTF((1, 3, " %x", (int) *p++));
                 }
-                DPRINTF(("\n"));
+                XDPRINTF((1, 1, NULL));
                 /*
                 print_ud_data(&ud);
                 */
@@ -727,7 +727,7 @@ static void get_ini(int full)
         case IPX_FRAME_ETHERII : frname = "ETHERNET_II";break;
         default : break;
       } /* switch */
-      DPRINTF(("DEVICE=%s, FRAME=%s, NETWORK=0x%lx\n",
+      XDPRINTF((1, 0, "DEVICE=%s, FRAME=%s, NETWORK=0x%lx",
                nd->devname, frname, nd->net));
       init_dev(nd->devname, nd->frame, nd->net);
     }
@@ -735,7 +735,7 @@ static void get_ini(int full)
     if (!get_ipx_addr(&my_server_adr)) {
       internal_net = GET_BE32(my_server_adr.net);
     } else exit(1);
-    DPRINTF(("Servername='%s', INTERNAL NET=0x%lx, NODE=0x%02x:%02x:%02x:%02x:%02x:%02x\n",
+    XDPRINTF((1, 0, "Servername='%s', INTERNAL NET=0x%lx, NODE=0x%02x:%02x:%02x:%02x:%02x:%02x",
         my_nwname, internal_net,
         (int)my_server_adr.node[0],
         (int)my_server_adr.node[1],
@@ -780,7 +780,7 @@ static void close_all(void)
   if (!save_ipx_routes) {
     for (j=0; j<anz_net_devices;j++) {
       NW_NET_DEVICE *nd=net_devices[j];
-      DPRINTF(("Close Device=%s, frame=%d\n",
+      XDPRINTF((1, 0, "Close Device=%s, frame=%d",
                 nd->devname, nd->frame));
       exit_dev(nd->devname, nd->frame);
     }
@@ -820,7 +820,7 @@ static void sig_quit(int rsig)
 static void handle_hup_reqest(void)
 {
   get_ini_debug(NWSERV);
-  XDPRINTF((2, "NWSERV:Got HUP, reading ini.\n"));
+  XDPRINTF((2,0, "Got HUP, reading ini."));
   get_ini(0);
   write_to_ncpserv(0xeeee, 0, NULL, 0); /* inform ncpserv */
   fl_get_int=0;
@@ -891,12 +891,12 @@ int main(int argc, char **argv)
 	while (++j < NEEDED_POLLS) {
 	  if (p->revents){
             if (j < NEEDED_SOCKETS) {  /* socket */
-	      XDPRINTF((99,"POLL %d, SOCKET %x, ", p->revents, sock_nummern[j]));
+	      XDPRINTF((99, 0,"POLL %d, SOCKET %x", p->revents, sock_nummern[j]));
 	      if (p->revents & ~POLLIN)
 	        errorp(0, "STREAM error", "revents=0x%x", p->revents );
 	      else handle_event(p->fd, sock_nummern[j], j);
             }  else {  /* fd_ncpserv_in */
-	      XDPRINTF((2,"POLL %d, fh=%d\n", p->revents, p->fd));
+	      XDPRINTF((2, 0, "POLL %d, fh=%d", p->revents, p->fd));
 	      if (p->revents & ~POLLIN)
 	         errorp(0, "STREAM error", "revents=0x%x", p->revents );
               else {
@@ -907,7 +907,7 @@ int main(int argc, char **argv)
                   ipxAddr_t adr;
                   if (sizeof(int) == read(fd_ncpserv_in,
                             (char*)&what, sizeof(int))) {
-	            XDPRINTF((2,"GOT ncpserv_in what=0x%x\n", what));
+	            XDPRINTF((2, 0, "GOT ncpserv_in what=0x%x", what));
                     switch (what) {
                       case  0x2222 :  /* insert wdog connection */
                             if (sizeof(int) == read(fd_ncpserv_in,
@@ -955,7 +955,7 @@ int main(int argc, char **argv)
 	  p++;
 	} /* while */
       } else {
-        XDPRINTF((99,"POLLING ...\n"));
+        XDPRINTF((99,0,"POLLING ..."));
       }
       if (server_down_stamp) {
         if (akttime_stamp - server_down_stamp > server_goes_down_secs) break;

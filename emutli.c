@@ -1,4 +1,4 @@
-/* emutli.c 18-Dec-95 */
+/* emutli.c 24-Dec-95 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -104,14 +104,43 @@ static void del_special_net(int special, char *devname, int frame)
     struct sockaddr_ipx *sipx = (struct sockaddr_ipx *)&id.ifr_addr;
     memset(&id, 0, sizeof(struct ifreq));
 
-    if (special != IPX_INTERNAL) {
-      if (devname && *devname) strcpy(id.ifr_name, devname);
-      sipx->sipx_type    = frame;
-    }
-
     sipx->sipx_network = 0L;
     sipx->sipx_special = special;
     sipx->sipx_family  = AF_IPX;
+    if (special == IPX_PRIMARY) {
+      FILE *f=fopen("/proc/net/ipx_interface", "r");
+      if (f) {
+        char buff[200];
+        char buff1[200];
+        char buff2[200];
+        char buff3[200];
+        char buff4[200];
+        char buff5[200];
+        while (fgets((char*)buff, sizeof(buff), f) != NULL){
+          if (sscanf(buff, "%s %s %s %s %s",
+              buff1, buff2, buff3, buff4, buff5) == 5) {
+            int len = strlen(buff5);
+            if (!len) continue;
+            switch (*(buff5+len-1)) {
+              case  '2' : sipx->sipx_type = IPX_FRAME_8022; break;
+              case  '3' : sipx->sipx_type = IPX_FRAME_8023; break;
+              case  'P' : sipx->sipx_type = IPX_FRAME_SNAP; break;
+              case  'I' : sipx->sipx_type = IPX_FRAME_ETHERII; break;
+              default   : continue;
+            }
+            upstr(buff3);
+            if (!strcmp(buff3, "YES")) { /* primary */
+              strcpy(id.ifr_name, buff4);
+              break;
+            }
+          }
+        }
+        fclose(f);
+      }
+    } else if (special != IPX_INTERNAL) {
+      if (devname && *devname) strcpy(id.ifr_name, devname);
+      sipx->sipx_type    = frame;
+    }
     sipx->sipx_action  = IPX_DLTITF;
     x_ioctl(sock, SIOCSIFADDR, &id);
     close(sock);
@@ -122,6 +151,8 @@ static void del_special_net(int special, char *devname, int frame)
   del_special_net(IPX_INTERNAL, NULL, 0)
 #define del_interface(devname, frame) \
   del_special_net(IPX_SPECIAL_NONE, (devname), (frame))
+#define del_primary_net() \
+  del_special_net(IPX_PRIMARY, NULL, 0)
 
 static void add_special_net(int special,
   char *devname, int frame, uint32 netnum, uint32 node)
@@ -194,6 +225,7 @@ int init_dev(char *devname, int frame, uint32 network)
    del_interface(devname,  frame);
    if (!have_ipx_started) {
      have_ipx_started++;
+     del_primary_net();
      add_primary_net(devname, frame, network);
    } else
      add_device_net(devname, frame, network);
@@ -333,7 +365,7 @@ int t_bind(int sock, struct t_bind *a_in, struct t_bind *a_out)
        return(-1);
      }
      sock2ipxadr((ipxAddr_t*) (a_out->addr.buf), &ipxs);
-     XDPRINTF((2,"T_BIND ADR=%s\n", visable_ipx_adr((ipxAddr_t *) a_out->addr.buf ) ));
+     XDPRINTF((2,0,"T_BIND ADR=%s", visable_ipx_adr((ipxAddr_t *) a_out->addr.buf ) ));
    }
    return(0);
 }

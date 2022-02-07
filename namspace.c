@@ -19,6 +19,13 @@
 
 #include "net.h"
 
+typedef struct {
+   int x;
+
+} DIR_BASE_ENTRY;
+
+#define MAX_DIR_BASE   20
+
 int nw_generate_dir_path(uint8 *nwpathstruct,
                          uint8 *ns_dir_base, uint8 *dos_dir_base)
 /* returns Volume Number >=0  or  errcode < 0 if error */

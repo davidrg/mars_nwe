@@ -32,7 +32,7 @@ extern  int x_x_xnewstr(uint8 **p,  uint8 *s);
 extern char  *xmalloc(uint size);
 extern int   strmaxcpy(char *dest, char *source, int len);
 extern void  dprintf(char *p, ...);
-extern void  xdprintf(int dlevel, char *p, ...);
+extern void  xdprintf(int dlevel, int mode, char *p, ...);
 extern void  errorp(int mode, char *what, char *p, ...);
 extern FILE  *open_nw_ini(void);
 extern int   get_ini_entry(FILE *f, int entry, char *str, int strsize);

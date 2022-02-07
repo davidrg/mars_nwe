@@ -1,4 +1,4 @@
-# makefile.unx 20-Dec-95
+# makefile.unx 25-Dec-95
 VPATH=..
 O=.o
 C=.c
@@ -6,10 +6,17 @@ C=.c
 DEBUG=-DDB
 V_H=0
 V_L=96
-P_L=0
+P_L=2
+#define D_P_L 1
 DISTRIB=mars_nwe
+#if D_P_L
+DISTRIBF=$(DISTRIB)-$(V_H).$(V_L).pl$(P_L)
+PATCHF=$(DISTRIBF)
+#else
+P_L=0
 DISTRIBF=$(DISTRIB)-$(V_H).$(V_L)
 PATCHF=$(DISTRIBF).pl$(P_L)
+#endif
 STERN=*
 
 #if 0
@@ -108,7 +115,8 @@ $(PROG5):  $(PROG5)$(O) $(OBJ5)
 $(OBJS):   net.h config.h
 
 $(C)$(O):
-	$(CC) -c $(CFLAGS) $(HOSTCFLAGS) $(DEBUG) -D_VERSION_H_=$(V_H) -D_VERSION_L_=$(V_L) $<
+	$(CC) -c $(CFLAGS) $(HOSTCFLAGS) $(DEBUG)\
+ -D_VERS_H_=$(V_H) -D_VERS_L_=$(V_L) -D_VERS_P_=$(P_L) $<
 
 n_all:   $(PROGS)
 
@@ -148,7 +156,7 @@ n_clean: n_clean1
 n_distclean: n_clean
 	cd .. && (rm -f *.dir *.pag; cd obj)
 
-n_diff: n_clean1
+n_make_dir: n_clean1
 	cd .. && (rm -rf obj/../$(DISTRIB) \
 ; mkdir $(DISTRIB) \
 ; mkdir $(DISTRIB)/examples \
@@ -168,7 +176,11 @@ n_diff: n_clean1
 ; ln -f  \
  examples/$(STERN) \
  $(DISTRIB)/examples/. \
-; makepatch $(DISTRIB).org $(DISTRIB) > $(PATCHF) \
+; cd obj )
+
+n_diff: n_make_dir
+	cd .. && ( \
+ makepatch $(DISTRIB).org $(DISTRIB) > $(PATCHF) \
 ; gzip -9 -f $(PATCHF) \
 ; cd obj )
 

@@ -1,4 +1,4 @@
-/* ncpserv.c, 19-Dec-95 */
+/* ncpserv.c, 24-Dec-95 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -250,7 +250,7 @@ int find_get_conn_nr(ipxAddr_t *addr)
 	c->pid = pid;
 	c->fd  = fds[1];
 	close(fds[0]);   /* no need to read */
-        XDPRINTF((5, "AFTER FORK new PROCESS =%d, connection=%d\n", pid, connection));
+        XDPRINTF((5,0, "AFTER FORK new PROCESS =%d, connection=%d", pid, connection));
       }
     }
   }
@@ -304,16 +304,16 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
   if (nw_debug > 1){
     int j = gelen - sizeof(NCPREQUEST);
     if (nw_debug){
-      DPRINTF(("NCP 0x%x REQUEST:ufunc:0x%x\n", func, ufunc));
+      XDPRINTF((1, 0, "NCP 0x%x REQUEST:ufunc:0x%x", func, ufunc));
       if (j > 0){
 	uint8  *p=requestdata;
-	DPRINTF(("len %d, DATA:", j));
+	XDPRINTF((1, 2, "len %d, DATA:", j));
 	while (j--) {
 	  int c = *p++;
-	  if (c > 32 && c < 127)  DPRINTF((",\'%c\'", (char) c));
-	  else DPRINTF((",0x%x", c));
+	  if (c > 32 && c < 127)  XDPRINTF((1, 3, ",\'%c\'", (char) c));
+	  else XDPRINTF((1, 3, ",0x%x", c));
 	}
-	DPRINTF(("\n"));
+	XDPRINTF((1, 1, NULL));
       }
     }
   }
@@ -358,7 +358,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 
       case 0x03:  { /* Enable Broadcasts */
         ;;;
-        DPRINTF(("TODO: enable Broadcasts\n"));
+        XDPRINTF((2, 0, "TODO: enable Broadcasts"));
       }
       break;
 
@@ -414,6 +414,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                      int k, i;
 	             memset(xdata, 0, sizeof(struct XDATA));
 	             strcpy(xdata->servername, my_nwname);
+
                      if (!tells_server_version) {
 	               xdata->version    =  2;
 	               xdata->subversion = 15;
@@ -421,6 +422,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	               xdata->version    =  3;
 	               xdata->subversion = 11;
                      }
+
                      i=0;
                      for (k=0; k < anz_connect; k++) {
                        if (connections[k].fd > -1) i++;
@@ -466,7 +468,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                     upstr(obj.name);
 	            strmaxcpy(password, (char*)(p1+1),
 	                max(sizeof(password)-1, (int) *p1));
-                    DPRINTF(("TODO:LOGIN unencrypted PW NAME='%s', PASSW='%s'\n",
+                    XDPRINTF((1, 0, "TODO:LOGIN unencrypted PW NAME='%s', PASSW='%s'",
                              obj.name, password));
 	            if (0 == (result = find_obj_id(&obj, 0))) {
                        /* TODO: check password  !!!!!!! */
@@ -532,7 +534,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            obj.type     =  GET_BE16(p);
 	            strmaxcpy((char*)obj.name, (char*)(p+3), *(p+2));
                     upstr(obj.name);
-                    XDPRINTF((2, "LOGIN CRYPTED PW NAME='%s'\n",obj.name));
+                    XDPRINTF((2, 0, "LOGIN CRYPTED PW NAME='%s'",obj.name));
 	            if (0 == (result = find_obj_id(&obj, 0)))
                       result=nw_test_passwd(obj.id, c->crypt_key, rdata);
 	            if (result > -1) {
@@ -824,7 +826,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                       ;;
                     }
 	            if (result < 0) completition = (uint8) -result;
-                    DPRINTF(("TODO: Change Obj PW from OBJECT='%s', result=%d\n",
+                    XDPRINTF((1, 0, "TODO: Change Obj PW from OBJECT='%s', result=%d",
                        obj.name, result));
                     completition=0xff;
 	         } break;
@@ -910,7 +912,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	              if (!result) {
 	                *xdata  = obj.security;
 	                U32_TO_BE32(obj.id, (xdata+1));
-                        XDPRINTF((2, "ACCESS LEVEL:=0x%x, obj=0x%lx\n",
+                        XDPRINTF((2,0, "ACCESS LEVEL:=0x%x, obj=0x%lx",
                                   (int) obj.security, obj.id));
 	                data_len = 5;
 	              } else completition = (uint8)-result;
@@ -964,7 +966,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	            if (0 == (result = find_obj_id(&obj, 0)))
                       result=nw_test_passwd(obj.id, c->crypt_key, rdata);
 	            if (result < 0) completition = (uint8) -result;
-                    XDPRINTF((2, "Keyed Verify PW from OBJECT='%s', result=%d\n",
+                    XDPRINTF((2,0, "Keyed Verify PW from OBJECT='%s', result=%d",
                        obj.name, result));
                   }
                   break;
@@ -987,26 +989,26 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	              result=nw_set_enpasswd(obj.id, p+1);
 
 	            if (result< 0) completition = (uint8) -result;
-                    DPRINTF(("Keyed Change PW from OBJECT='%s', result=0x%x\n",
+                    XDPRINTF((1, 0, "Keyed Change PW from OBJECT='%s', result=0x%x",
                       obj.name, result));
                   }
                   break;
 #endif
 
      case 0x4c :  { /* List Relations of an Object  */
-                   DPRINTF(("TODO:List Relations of an Object\n"));
+                   XDPRINTF((1, 0, "TODO:List Relations of an Object"));
                    completition=0xfb;
                   } break;
 
      case 0x64 :  {   /* Create Queue */
-                   DPRINTF(("TODO:Create QUEUE ??\n"));
+                   XDPRINTF((1, 0, "TODO:Create QUEUE ??"));
 	          } break;
 
      case 0x66 :  {   /* Read Queue Current Status */
 	           /*  !!!!!! TO DO */
 	           NETOBJ    obj;
 	           obj.id =  GET_BE32(rdata);
-                   DPRINTF(("TODO:READ QUEUE STATUS von Q=0x%lx\n", obj.id));
+                   XDPRINTF((1, 0, "TODO:READ QUEUE STATUS von Q=0x%lx", obj.id));
                    completition=0xd5; /* no Queue Job */
 	          }break;
 
@@ -1014,7 +1016,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	           /*  !!!!!! TO DO */
 	           NETOBJ    obj;
 	           obj.id =  GET_BE32(rdata);
-                   DPRINTF(("TODO:GET QUEUE JOB LIST von Q=0x%lx\n", obj.id));
+                   XDPRINTF((1, 0, "TODO:GET QUEUE JOB LIST von Q=0x%lx", obj.id));
                    completition=0xd5; /* no Queue Job */
 	          }break;
 
@@ -1022,7 +1024,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	           /*  !!!!!! TODO */
 	           NETOBJ    obj;
 	           obj.id =  GET_BE32(rdata);
-                   DPRINTF(("TODO: GET QUEUE JOB ENTRY von Q=0x%lx\n", obj.id));
+                   XDPRINTF((1, 0, "TODO: GET QUEUE JOB ENTRY von Q=0x%lx", obj.id));
                    completition=0xd5; /* no Queue Job */
 	          }break;
 
@@ -1054,21 +1056,21 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                   break;
 
      case 0xc8 :  { /* CHECK CONSOLE PRIVILEGES */
-                   DPRINTF(("TODO: CHECK CONSOLE PRIV \n"));
+                   XDPRINTF((1, 0, "TODO: CHECK CONSOLE PRIV"));
 	           /*  !!!!!! TODO completition=0xc6 (no rights) */
 	          } break;
 
      case 0xc9 :  { /* GET FILE SERVER DESCRIPTION STRINGs */
 	           char *company      = "Mars :-)";
 	           char *revision     = "Version %d.%d";
-	           char *revision_date= "20-Dec-95";
+	           char *revision_date= "24-Dec-95";
 	           char *copyright    = "(C)opyright Martin Stover";
 	           int  k=strlen(company)+1;
 
 	           memset(responsedata, 0, 512);
 	           strcpy(responsedata,   company);
                    k += (1+sprintf(responsedata+k, revision,
-                             _VERSION_H_, _VERSION_L_ ));
+                             _VERS_H_, _VERS_L_ ));
 	           strcpy(responsedata+k, revision_date);
 	           k += (strlen(revision_date)+1);
 	           strcpy(responsedata+k, copyright);
@@ -1139,7 +1141,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
   ncpresponse->connect_status = connect_status;
   data_len=write(c->fd, (char*)ncpresponse,
                          sizeof(NCPRESPONSE) + data_len);
-  XDPRINTF((2, "0x%x 0x%x compl:0x%x, write to %d, anz = %d\n",
+  XDPRINTF((2, 0, "0x%x 0x%x compl:0x%x, write to %d, anz = %d",
       func, (int)ufunc, (int) completition, c->fd, data_len));
   return(0);  /* ok */
 }
@@ -1194,7 +1196,7 @@ static void close_all(void)
   if (ncp_fd > -1) {
     t_unbind(ncp_fd);
     t_close(ncp_fd);
-    XDPRINTF((2, "LEAVE ncpserv\n"));
+    XDPRINTF((2,0, "LEAVE ncpserv"));
     ncp_fd = -1;
   }
 }
@@ -1256,7 +1258,7 @@ static int handle_ctrl(void)
   int   result   = 0;
   int   data_len = read(0, (char*)&what, sizeof(what));
   if (data_len  == sizeof(what)) {
-    XDPRINTF((2, "NCPSERV:GOT CTRL what=0x%x\n", what));
+    XDPRINTF((2, 0, "GOT CTRL what=0x%x", what));
     switch (what) {
       case 0x5555 : /* clear_connection */
         data_len = read(0, (char*)&conn, sizeof(conn));
@@ -1266,11 +1268,11 @@ static int handle_ctrl(void)
       case 0x3333 : /* 'bindery' calls */
         if (sizeof(conn) == read(0, (char*)&conn, sizeof(conn))) {
           uint8 *buff = xmalloc(conn+10);
-          XDPRINTF((2, "0x3333 len=%d\n", conn));
+          XDPRINTF((2,0, "0x3333 len=%d", conn));
           if (conn == read(0, (char*)buff, conn))
              handle_bind_calls(buff);
           else
-            DPRINTF(("0x3333 protokoll error:len=%d\n", conn));
+            XDPRINTF((1, 1, "0x3333 protokoll error:len=%d", conn));
           xfree(buff);
         }
         break;
@@ -1289,7 +1291,7 @@ static int handle_ctrl(void)
       default : break;
     } /* switch */
     result++;
-  } else XDPRINTF((2, "NCPSERV:GOT CTRL size=%d\n", data_len));
+  } else XDPRINTF((2, 0, "GOT CTRL size=%d", data_len));
   return(result);
 }
 
@@ -1337,16 +1339,16 @@ int main(int argc, char *argv[])
 
         if (p->revents){
           if (!j) {  /* ncp-socket */
-            XDPRINTF((99,"POLL %d\n", p->revents));
+            XDPRINTF((99,0, "POLL revents=%d", p->revents));
             if (p->revents & ~POLLIN)
               errorp(0, "STREAM error", "revents=0x%x", p->revents );
             else {
               if ((result = t_rcvudata(ncp_fd, &ud, &rcv_flags)) > -1){
                 in_len = ud.udata.len;
-                XDPRINTF((10, "NCPSERV-LOOP von %s\n", visable_ipx_adr(&from_addr)));
+                XDPRINTF((10, 0, "NCPSERV-LOOP von %s", visable_ipx_adr(&from_addr)));
                 if ((type = GET_BE16(ncprequest->type)) == 0x2222 || type == 0x5555) {
                   int connection = (int)ncprequest->connection;
-                  XDPRINTF((10, "GOT 0x%x in NCPSERV connection=%d\n", type, connection));
+                  XDPRINTF((10,0, "GOT 0x%x in NCPSERV connection=%d", type, connection));
                   if ( connection > 0 && connection <= anz_connect) {
 	            CONNECTION *c = &(connections[connection-1]);
                     if (!memcmp(&from_addr, &(c->client_adr), sizeof(ipxAddr_t))) {
@@ -1365,7 +1367,7 @@ int main(int argc, char *argv[])
                             /* perhaps nwconn is busy  */
                             ncp_response(0x9999, ncprequest->sequence,
 			                         connection, 0, 0x0, 0, 0);
-                            XDPRINTF((2, "Send Request being serviced to connection:%d\n", connection));
+                            XDPRINTF((2, 0, "Send Request being serviced to connection:%d", connection));
                             continue;
                           }
 
@@ -1379,7 +1381,7 @@ int main(int argc, char *argv[])
 
   	                  if (sent_here) {
 	                    int anz=write(c->fd, (char*)ncprequest, in_len);
-	                    XDPRINTF((10, "write to %d, anz = %d\n", c->fd, anz));
+	                    XDPRINTF((10,0, "write to %d, anz = %d", c->fd, anz));
                             if (func == 0x19) {  /* logout */
                               c->object_id  = 0; /* not LOGGED  */
                             }
@@ -1398,19 +1400,21 @@ int main(int argc, char *argv[])
                           }
                         }
                       }
-                      XDPRINTF((10, "c->fd = %d\n", c->fd));
+                      XDPRINTF((10,0, "c->fd = %d", c->fd));
                     }
 	          }
                   /* here someting is wrong */
-                  XDPRINTF((1, "GOT 0x%x connection=%d of %d conns not OK in NCPSERV\n",
+                  XDPRINTF((1,0, "GOT 0x%x connection=%d of %d conns not OK",
                       type, ncprequest->connection, anz_connect));
+
 	          ncp_response(0x3333, ncprequest->sequence,
 			               ncprequest->connection,
-			               0, 0xf9, 0, 0);
+			               0, 0xff, 0x08, 0);
+
                 } else if (type == 0x1111) {
 	          /* GIVE CONNECTION Nr connection */
 	          int connection = (server_goes_down) ? 0 : find_get_conn_nr(&from_addr);
-                  XDPRINTF((2, "GIVE CONNECTION NR=%d in NCPSERV\n", connection));
+                  XDPRINTF((2, 0, "GIVE CONNECTION NR=%d", connection));
 	          if (connection) {
 	            CONNECTION *c = &(connections[connection-1]);
 	            int anz;
@@ -1418,20 +1422,20 @@ int main(int argc, char *argv[])
 	            c->object_id  = 0; /* firsttime set 0 for NOT LOGGED */
                     c->sequence   = 0;
 	            anz=write(c->fd, (char*)ncprequest, in_len);
-	            XDPRINTF((10, "write to oldconn %d, anz = %d\n", c->fd, anz));
+	            XDPRINTF((10, 0, "write to oldconn %d, anz = %d", c->fd, anz));
 	          } else  /* no free connection */
 	            ncp_response(0x3333, 0, 0, 0, 0xf9, 0, 0);
                 } else {
 	          int connection     = (int)ncprequest->connection;
 	          int sequence       = (int)ncprequest->sequence;
-	          XDPRINTF((1, "NCPSERV:Got UNKNOWN TYPE: 0x%x\n", type));
+	          XDPRINTF((1,0, "Got UNKNOWN TYPE: 0x%x", type));
 	          ncp_response(0x3333, sequence, connection,
 	                       1, 0xfb, 0, 0);
                 }
               }
             }
           } else if (p->fd==0)  {  /* fd_ncpserv_in */
-            XDPRINTF((2,"POLL %d, fh=%d\n", p->revents, p->fd));
+            XDPRINTF((2,0,"POLL %d, fh=%d", p->revents, p->fd));
             if (p->revents & ~POLLIN)
               errorp(0, "STREAM error", "revents=0x%x", p->revents );
             else handle_ctrl();
@@ -1441,7 +1445,7 @@ int main(int argc, char *argv[])
         p++;
       } /* while */
     } else {
-      XDPRINTF((3,"NCPSERV:POLLING ...\n"));
+      XDPRINTF((3,0,"POLLING ..."));
     }
   }
   close_all();

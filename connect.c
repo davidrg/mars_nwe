@@ -1,4 +1,4 @@
-/* connect.h  18-Dec-95 */
+/* connect.c  02-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,7 +25,8 @@
 #include <sys/errno.h>
 extern int errno;
 
-#define TEST_FNAME   "PRINT.000"
+/* #define TEST_FNAME   "PRINT.000"
+*/
 static int test_handle=-1;
 
 static int  default_uid=-1;
@@ -256,7 +257,7 @@ void set_guid(int gid, int uid)
      || seteuid(uid) == -1 ) {
     DPRINTF(("SET GID=%d, UID=%d failed\n", gid, uid));
     set_default_guid();
-  } else XDPRINTF((2,"SET GID=%d, UID=%d OK\n", gid, uid));
+  } else XDPRINTF((5,0,"SET GID=%d, UID=%d OK", gid, uid));
 }
 
 static char *get_nwpath_name(NW_PATH *p)
@@ -289,10 +290,20 @@ static int x_str_match(uint8 *s, uint8 *p)
 	            if (*p++ != *s++) return(0);
 	            break;
 
-	case '?' :  if (! *s++) return(0); /* one character */
+	case '?' :  if ((sc = *s++) == '.') {
+	              uint8 *pp=p;
+	              while (*pp) {
+	                if (*pp++ == '.') p=pp;
+	              }
+	            } else if (!sc) return(1); /* one character */
 	            break;
 
-	case  '.' : if (!*s && !*p) return(1);  /* point at end */
+	case  '.' :
+#if 0
+	            if (!*s && !*p) return(1);  /* point at end */
+#else
+	            if (!*s && (!*p || *p == '*' || *p == '?')) return(1);
+#endif
 	            if (pc != *s++) return(0);
 	            if (*p == '*') return(1);
 	            break;
@@ -377,6 +388,71 @@ static int str_match(uint8 *s, uint8 *p, uint8 options)
   return(x_str_match(s, p));
 }
 
+typedef struct {
+  int        attrib;
+  struct stat statb;
+} FUNC_SEARCH;
+
+static int func_search_entry(NW_PATH *nwpath, int attrib,
+        int (*fs_func)(NW_PATH *nwpath, FUNC_SEARCH *fs), FUNC_SEARCH *fs)
+
+/* returns  > 0  if OK  < 1 if not ok or not found */
+{
+  struct dirent* dirbuff;
+  DIR            *f;
+  int            result=0;
+  int            okflag=0;
+  char           xkpath[256];
+  uint8          entry[256];
+  int            volume = nwpath->volume;
+  uint8          soptions;
+  FUNC_SEARCH    fs_local;
+  if (!fs) fs = &fs_local;
+  fs->attrib  = attrib;
+  if (volume < 0 || volume >= used_vols) return(-1); /* something wrong */
+  else  soptions = vols[volume].options;
+  strcpy(entry,  nwpath->fn);
+  if (soptions & 1) downstr(entry);   /* now downshift chars */
+  nwpath->fn[0] = '\0';
+  strcpy(xkpath, build_unix_name(nwpath, 1|2));
+
+  XDPRINTF((5,0,"func_search_entry attrib=0x%x path:%s:, xkpath:%s:, entry:%s:",
+        attrib, nwpath->path, xkpath, entry));
+  if ((f=opendir(xkpath)) != (DIR*)NULL) {
+    char *kpath=xkpath+strlen(xkpath);
+    *kpath++ = '/';
+    while ((dirbuff = readdir(f)) != (struct dirent*)NULL){
+      okflag = 0;
+      if (dirbuff->d_ino) {
+	uint8 *name=(uint8*)(dirbuff->d_name);
+	okflag = (name[0] != '.' &&
+	         (  (entry[0] == '*' && entry[1] == '\0')
+	         || (!strcmp(name, entry))
+	         || str_match(name, entry, soptions)));
+	if (okflag) {
+	  *kpath = '\0';
+	  strcpy(kpath, name);
+	  if (!stat(xkpath, &(fs->statb))) {
+	    okflag = (  ( ( (fs->statb.st_mode & S_IFMT) == S_IFDIR) &&  (attrib & 0x10))
+	          ||    ( ( (fs->statb.st_mode & S_IFMT) != S_IFDIR) && !(attrib & 0x10)));
+	    if (okflag){
+	      strcpy(nwpath->fn, name);
+	      if (soptions & 1) upstr(nwpath->fn);
+	      XDPRINTF((5,0,"FOUND=:%s: attrib=0x%x", nwpath->fn, fs->statb.st_mode));
+              result = (*fs_func)(nwpath, fs);
+              if (result < 0) break;
+              else result=1;
+	    }
+	  } else okflag = 0;
+	}
+	XDPRINTF((6,0, "NAME=:%s: OKFLAG %d", name, okflag));
+      }  /* if */
+    } /* while */
+    closedir(f);
+  } /* if */
+  return(result);
+}
+
 static int get_dir_entry(NW_PATH *nwpath,
 	                  int    *sequence,
 	                  int    attrib,
@@ -398,7 +474,7 @@ static int get_dir_entry(NW_PATH *nwpath,
 
   nwpath->fn[0] = '\0';
   strcpy(xkpath, build_unix_name(nwpath, 1|2));
-  XDPRINTF((2,"get_dir_entry attrib=0x%x path:%s:, xkpath:%s:, entry:%s:\n",
+  XDPRINTF((5,0,"get_dir_entry attrib=0x%x path:%s:, xkpath:%s:, entry:%s:",
                           attrib, nwpath->path, xkpath, entry));
 
   if ((f=opendir(xkpath)) != (DIR*)NULL) {
@@ -424,12 +500,12 @@ static int get_dir_entry(NW_PATH *nwpath,
 	    if (okflag){
 	      strcpy(nwpath->fn, name);
 	      if (soptions & 1) upstr(nwpath->fn);
-	      XDPRINTF((2,"FOUND=:%s: attrib=0x%x\n", nwpath->fn, statb->st_mode));
+	      XDPRINTF((5,0,"FOUND=:%s: attrib=0x%x", nwpath->fn, statb->st_mode));
 	      break; /* ready */
 	    }
 	  } else okflag = 0;
 	}
-	XDPRINTF((4, "NAME=:%s: OKFLAG %d\n", name, okflag));
+	XDPRINTF((6,0, "NAME=:%s: OKFLAG %d", name, okflag));
       }  /* if */
     } /* while */
     *sequence = (int) telldir(f);
@@ -457,7 +533,7 @@ static int get_dh_entry(DIR_HANDLE *dh,
     if ( (uint16)*sequence == MAX_U16)  *sequence = 0;
     seekdir(f, (long) *sequence);
 
-    XDPRINTF((2,"get_dh_entry attrib=0x%x path:%s:, entry:%s:\n",
+    XDPRINTF((5,0,"get_dh_entry attrib=0x%x path:%s:, entry:%s:",
 	        attrib, dh->unixname, entry));
 
     while ((dirbuff = readdir(f)) != (struct dirent*)NULL){
@@ -471,7 +547,7 @@ static int get_dh_entry(DIR_HANDLE *dh,
 
 	if (okflag) {
 	  strcpy(dh->kpath, name);
-	  XDPRINTF((2,"get_dh_entry Name=%s unixname=%s\n",
+	  XDPRINTF((5,0,"get_dh_entry Name=%s unixname=%s",
 	                          name, dh->unixname));
 
 	  if (!stat(dh->unixname, statb)) {
@@ -592,7 +668,7 @@ static int nw_path_ok(NW_PATH *nwpath)
   if (!stat(build_unix_name(nwpath, 1 | 2 ), &stbuff)
       && (stbuff.st_mode & S_IFMT) == S_IFDIR) result=stbuff.st_ino;
   else {
-    XDPRINTF((2, "NW_PATH_OK failed:`%s`\n", get_nwpath_name(nwpath)));
+    XDPRINTF((4,0, "NW_PATH_OK failed:`%s`", get_nwpath_name(nwpath)));
   }
   return(result);
 }
@@ -630,7 +706,7 @@ static int build_verz_name(NW_PATH *nwpath,    /* gets complete path     */
      int    state = 0;
      while ((!completition) && (w = *p++) > 0){
        if (!state){
-	 XDPRINTF((2,"in build_verz_name path=:%s:\n", nwpath->path));
+	 XDPRINTF((5,0,"in build_verz_name path=:%s:", nwpath->path));
 	 if (w == '.')      state = 20;
 	 else if (w == '/') state = 30;
 	 else state++;
@@ -743,7 +819,7 @@ static uint16 un_time_2_nw(time_t time, uint8 *d)
 static int get_file_attrib(NW_FILE_INFO *f, struct stat *stb,
 	                   NW_PATH *nwpath)
 {
-  XDPRINTF((2, "get_file_attrib of %s\n", get_nwpath_name(nwpath) ));
+  XDPRINTF((5,0, "get_file_attrib of %s", get_nwpath_name(nwpath) ));
   strncpy(f->name, nwpath->fn, sizeof(f->name));
   /* Attribute */
   /* 0x20   Archive Flag */
@@ -766,7 +842,7 @@ static int get_file_attrib(NW_FILE_INFO *f, struct stat *stb,
 static int get_dir_attrib(NW_DIR_INFO *d, struct stat *stb,
 	                 NW_PATH *nwpath)
 {
-  XDPRINTF((2, "get_dir_attrib of %s\n", get_nwpath_name(nwpath)));
+  XDPRINTF((5,0, "get_dir_attrib of %s", get_nwpath_name(nwpath)));
   strncpy(d->name, nwpath->fn, sizeof(d->name));
 
   d->attrib     = 0x10; /* Verzeichnis         */
@@ -816,16 +892,16 @@ int nw_creat_open_file(int dir_handle, uint8 *data, int len,
        if (creatmode) {  /* creat File  */
 	 if (creatmode & 0x2) { /* creatnew */
 	   if (!stat(fh->name, &stbuff)) {
-	     XDPRINTF((2,"CREAT File exist!! :%s:\n", fh->name));
+	     XDPRINTF((5,0,"CREAT File exist!! :%s:", fh->name));
 	     fh->fd   = -1;
              completition =   -0x85; /* No Priv */
 	   } else {
-	     XDPRINTF((2,"CREAT FILE:%s: Handle=%d\n", fh->name, fhandle));
+	     XDPRINTF((5,0,"CREAT FILE:%s: Handle=%d", fh->name, fhandle));
 	     fh->fd   = creat(fh->name, 0777);
              if (fh->fd < 0) completition = -0x84; /* no create Rights */
 	   }
 	 } else {
-	   XDPRINTF((2,"CREAT FILE, ever with attrib:0x%x, access:0x%x, fh->name:%s: handle:%d\n",
+	   XDPRINTF((5,0,"CREAT FILE, ever with attrib:0x%x, access:0x%x, fh->name:%s: handle:%d",
 	     attrib,  access, fh->name, fhandle));
 	   fh->fd = open(fh->name, O_CREAT|O_TRUNC|O_RDWR, 0777);
            if (fh->fd < 0) completition = -0x85; /* no delete /create Rights */
@@ -842,7 +918,7 @@ int nw_creat_open_file(int dir_handle, uint8 *data, int len,
 	 int acm  = (access & 2) ? (int) O_RDWR /*|O_CREAT*/ : (int)O_RDONLY;
 	 if ( (!statr && (stbuff.st_mode & S_IFMT) != S_IFDIR)
 	      || (statr && (acm & O_CREAT))){
-	    XDPRINTF((2,"OPEN FILE with attrib:0x%x, access:0x%x, fh->name:%s: fhandle=%d\n",attrib,access, fh->name, fhandle));
+	    XDPRINTF((5,0,"OPEN FILE with attrib:0x%x, access:0x%x, fh->name:%s: fhandle=%d",attrib,access, fh->name, fhandle));
 	    fh->fd = open(fh->name, acm, 0777);
 	    fh->offd = 0L;
 	    if (fh->fd > -1) {
@@ -861,7 +937,7 @@ int nw_creat_open_file(int dir_handle, uint8 *data, int len,
        }
      }
 
-     XDPRINTF((2,"OPEN FILE not OK ! fh->name:%s: fhandle=%d\n",fh->name, fhandle));
+     XDPRINTF((5,0,"OPEN FILE not OK ! fh->name:%s: fhandle=%d",fh->name, fhandle));
      free_file_handle(fhandle);
 #ifdef TEST_FNAME
      if (got_testfn) {
@@ -873,20 +949,23 @@ int nw_creat_open_file(int dir_handle, uint8 *data, int len,
    } else return(-0x81); /* no more File Handles */
 }
 
-int nw_delete_datei(int dir_handle,  uint8 *data, int len)
-/* TODO: handle wildcards !!! */
+static int do_delete_file(NW_PATH *nwpath, FUNC_SEARCH *fs)
+{
+  char           unname[256];
+  strcpy(unname, build_unix_name(nwpath, 0));
+  XDPRINTF((5,0,"DELETE FILE unname:%s:", unname));
+  if (!unlink(unname)) return(0);
+  return(-0x8a); /* NO Delete Privileges */
+}
+
+int nw_delete_datei(int dir_handle, uint8 *data, int len)
 {
   NW_PATH nwpath;
   int completition = get_kpl_path(&nwpath, dir_handle, data, len, 0);
   if (completition >  -1) {
-    char           unname[256];
-    struct stat    stbuff;
-    strcpy(unname, build_unix_name(&nwpath, 0));
-    XDPRINTF((2,"DELETE FILE unname:%s:\n", unname));
-    if (!stat(unname, &stbuff)){
-      if (!unlink(unname)) return(0);
-      return(-0x8a); /* NO Delete Privileges */
-    } else completition= -0xff;  /* No Files Found */
+    completition = func_search_entry(&nwpath, 0x6, do_delete_file, NULL);
+    if (completition < 0) return(completition);
+    else if (!completition) return(-0xff);
   }
   return(completition);
 }
@@ -903,7 +982,7 @@ int nw_chmod_datei(int dir_handle, uint8 *data, int len, int modus)
   }
   if (completition < 0) return(completition);
   strcpy(unname, build_unix_name(&nwpath, 2));
-  XDPRINTF((2,"CHMOD DATEI unname:%s:\n", unname));
+  XDPRINTF((5,0,"CHMOD DATEI unname:%s:", unname));
   if (!stat(unname, &stbuff)){
     return(0);
   }
@@ -992,7 +1071,7 @@ int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
 	flockd.l_len    = 0;
 #if HAVE_TLI
 	result = fcntl(fh->fd, F_FREESP, &flockd);
-	XDPRINTF((2,"File %s is stripped, result=%d\n", fh->name, result));
+	XDPRINTF((5,0,"File %s is stripped, result=%d", fh->name, result));
 #endif
 	return(result);
       }
@@ -1079,11 +1158,11 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
 #endif
 
     if (mode) {
-      XDPRINTF((2,"MKDIR dirname:%s:\n", unname));
+      XDPRINTF((5,0,"MKDIR dirname:%s:", unname));
       if (!mkdir(unname, 0777)) return(0);
       completition = -0x84; /* No Create Priv.*/  /* -0x9f Direktory Aktive */
     } else { /* rmdir */
-      XDPRINTF((2,"RMDIR dirname:%s:\n", unname));
+      XDPRINTF((5,0,"RMDIR dirname:%s:", unname));
       if (!rmdir(unname)) {
 	NW_DIR *d=&(dirs[0]);
 	int  j = 0;
@@ -1312,7 +1391,7 @@ int nw_search(uint8 *info,
 {
    NW_PATH nwpath;
    int     completition = get_kpl_path(&nwpath, dirhandle, data, len, 0);
-   XDPRINTF((2,"nw_search path:%s:, fn:%s:, completition:0x%x\n",
+   XDPRINTF((5,0,"nw_search path:%s:, fn:%s:, completition:0x%x",
      nwpath.path, nwpath.fn, completition));
    if (completition > -1) {
       struct stat stbuff;
@@ -1381,7 +1460,7 @@ int nw_alloc_dir_handle( int    dir_handle,  /* Suche ab Pfad dirhandle   */
    int inode=get_kpl_path(&nwpath, dir_handle, data, len, 1);
    if (inode > -1)
      inode = insert_new_dir(&nwpath, inode, driveletter, is_temphandle, task);
-   XDPRINTF((2,"Allocate %shandle:%s, Handle=%d, drive=%d, result=0x%x\n",
+   XDPRINTF((5,0,"Allocate %shandle:%s, Handle=%d, drive=%d, result=0x%x",
        (is_temphandle) ? "Temp" : "Perm", get_nwpath_name(&nwpath),
 	       dir_handle, driveletter, inode));
    return(inode);
@@ -1404,7 +1483,7 @@ int nw_open_dir_handle( int        dir_handle,
    NW_PATH nwpath;
    int completition = get_kpl_path(&nwpath, dir_handle, data, len, 1);
    if (completition > -1) {
-     XDPRINTF((2,"NW_OPEN_DIR: completition = 0x%x; nwpath= %s\n",
+     XDPRINTF((5,0,"NW_OPEN_DIR: completition = 0x%x; nwpath= %s",
 	   (int)completition, get_nwpath_name(&nwpath) ));
 
      completition = new_dir_handle((ino_t)completition, &nwpath);
@@ -1415,10 +1494,10 @@ int nw_open_dir_handle( int        dir_handle,
        *searchsequence = MAX_U16;
        completition    = 0xff; /* Alle Rechte */
      }
-     XDPRINTF((2,"NW_OPEN_DIR_2: completition = 0x%x\n",
+     XDPRINTF((5,0,"NW_OPEN_DIR_2: completition = 0x%x",
 	       (int)completition));
    } else {
-     XDPRINTF((2,"NW_OPEN_DIR failed: completition = 0x%x\n", (int)completition));
+     XDPRINTF((4,0,"NW_OPEN_DIR failed: completition = 0x%x", (int)completition));
    }
    return(completition);
 }
@@ -1445,7 +1524,7 @@ int nw_set_dir_handle(int targetdir, int dir_handle,
   if (inode > -1){
     if (targetdir > 0 && --targetdir < used_dirs
       && dirs[targetdir].is_temp != 2) { /* not a spez. temphandle */
-      XDPRINTF((2,"Change dhandle:%d -> `%s`\n", targetdir+1, get_nwpath_name(&nwpath)));
+      XDPRINTF((5,0,"Change dhandle:%d -> `%s`", targetdir+1, get_nwpath_name(&nwpath)));
       return(change_dir_entry(&dirs[targetdir], nwpath.volume, nwpath.path, inode, -1, -1, 0, task));
       /* here the existing handle is only modified */
     } else return(-0x9b); /* BAD DIR Handle */
@@ -1464,7 +1543,7 @@ int nw_get_directory_path(int dir_handle, uint8 *name)
       if (name[result-1] == '/') name[--result] = '\0';
     } else result = -0x98;
   }
-  XDPRINTF((2,"nw_get_directory_path:%s: Handle=%d, result=0x%x\n", name, dir_handle+1, result));
+  XDPRINTF((5,0,"nw_get_directory_path:%s: Handle=%d, result=0x%x", name, dir_handle+1, result));
   return(result);
 }
 
@@ -1476,7 +1555,7 @@ int nw_get_vol_number(int dir_handle)
     result = dirs[dir_handle].volume;
     if (result >= used_vols) result = -0x98; /* Falsches Volume */
   }
-  XDPRINTF((2,"nw_get_vol_number:0x%x: von Handle=%d\n", result, dir_handle+1));
+  XDPRINTF((5,0,"nw_get_vol_number:0x%x: von Handle=%d", result, dir_handle+1));
   return(result);
 }
 
@@ -1495,7 +1574,7 @@ int nw_get_volume_number(uint8 *volname, int namelen)
       break;
     }
   }
-  XDPRINTF((2,"GET_VOLUME_NUMBER of:%s: result = 0x%x\n", vname, result));
+  XDPRINTF((5,0,"GET_VOLUME_NUMBER of:%s: result = 0x%x", vname, result));
   return(result);
 }
 
@@ -1507,7 +1586,7 @@ int nw_get_volume_name(int volnr, uint8 *volname)
     strcpy(volname, vols[volnr].sysname);
     result = strlen(volname);
   } else volname[0] = '\0';
-  XDPRINTF((2,"GET_VOLUME_NAME von:%d = %s: ,result=0x%x\n", volnr, volname, result));
+  XDPRINTF((5,0,"GET_VOLUME_NAME von:%d = %s: ,result=0x%x", volnr, volname, result));
   return(result);
 }
 
@@ -1563,7 +1642,7 @@ static int s_nw_scan_dir_info(int dir_handle,
     if (!dirsequenz) dirsequenz++;
 
     strcpy(dirname, wild);
-    XDPRINTF((2,"SCAN_DIR: rights = 0x%x, subnr = %d\n",
+    XDPRINTF((5,0,"SCAN_DIR: rights = 0x%x, subnr = %d",
                 (int)rights, (int)GET_BE16(subnr)));
 
     if (*dirname) {
@@ -1573,7 +1652,7 @@ static int s_nw_scan_dir_info(int dir_handle,
                             0x10,
                             &stbuff) ) {
 
-        XDPRINTF((2,"SCAN_DIR: von %s, found %s:\n", dh->unixname, dirname));
+        XDPRINTF((5,0,"SCAN_DIR: von %s, found %s:", dh->unixname, dirname));
         if (++aktsequenz == dirsequenz) { /* actual found */
           U16_TO_BE16(aktsequenz, subnr);
           strncpy(subname, dirname, 16);
@@ -1736,7 +1815,7 @@ int nw_scan_a_directory(uint8   *rdata,
 {
   NW_PATH nwpath;
   int     completition = get_kpl_path(&nwpath, dirhandle, data, len, 0);
-  XDPRINTF((2,"nw_scan_a_directory path:%s:, fn:%s:, completition:0x%x\n",
+  XDPRINTF((5,0,"nw_scan_a_directory path:%s:, fn:%s:, completition:0x%x",
     nwpath.path, nwpath.fn, completition));
   if (completition > -1) {
      struct stat stbuff;
@@ -1768,7 +1847,7 @@ int nw_scan_a_root_dir(uint8   *rdata,
   NW_PATH nwpath;
   uint8   data[2];
   int     completition = get_kpl_path(&nwpath, dirhandle, data, 0, 1);
-  XDPRINTF((2,"nw_scan_a_directory_2 path:%s:, fn:%s:, completition:0x%x\n",
+  XDPRINTF((5,0,"nw_scan_a_directory_2 path:%s:, fn:%s:, completition:0x%x",
     nwpath.path, nwpath.fn, completition));
   if (completition > -1) {
     struct stat stbuff;
@@ -1874,7 +1953,7 @@ static int create_queue_file(char   *job_file_name,
                                        (int)  *job_file_name,
                                         &fnfo, 0x6, 0x6, 1);
 
-  XDPRINTF((2,"creat queue file bez=`%s` handle=%d\n",
+  XDPRINTF((5,0,"creat queue file bez=`%s` handle=%d",
                                          job_bez, result));
   return(result);
 }
@@ -1887,7 +1966,7 @@ int nw_creat_queue(int connection, uint8 *queue_id, uint8 *queue_job,
   INT_QUEUE_JOB *jo   = give_new_queue_job(old_call);
   uint32         q_id = GET_BE32(queue_id);
   int result = -0xff;
-  XDPRINTF((2,"NW_CREAT_Q:dlen=%d, dirname=%s\n", dir_nam_len, dirname));
+  XDPRINTF((5,0,"NW_CREAT_Q:dlen=%d, dirname=%s", dir_nam_len, dirname));
 
   if (NULL  != jo) {
     int jo_id = 0;
@@ -1968,11 +2047,11 @@ int nw_close_file_queue(uint8 *queue_id,
 {
   int result = -0xff;
   int jo_id  = (int) *job_id;  /* ever only the first byte */
-  XDPRINTF((2,"nw_close_file_queue JOB=%d\n", jo_id));
+  XDPRINTF((5,0,"nw_close_file_queue JOB=%d", jo_id));
   if (jo_id > 0 && jo_id <= anz_jobs){
     INT_QUEUE_JOB *jo=queue_jobs[jo_id-1];
     int fhandle = (int)jo->fhandle;
-    XDPRINTF((2,"nw_close_file_queue fhandle=%d\n", fhandle));
+    XDPRINTF((5,0,"nw_close_file_queue fhandle=%d", fhandle));
     if (fhandle > 0 && fhandle <= anz_fhandles) {
       FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
       char unixname[300];
@@ -1994,16 +2073,16 @@ int nw_close_file_queue(uint8 *queue_id,
           }
           pclose(fout);
         } else
-          XDPRINTF((1,"Cannot open pipe `%s`\n", "lpr"));
+          XDPRINTF((1,0,"Cannot open pipe `%s`", "lpr"));
 
         fclose(f);
         if (is_ok) {
           unlink(unixname);
           result=0;
         }
-      } else XDPRINTF((1,"Cannot open queue-file `%s`\n", unixname));
+      } else XDPRINTF((1,0,"Cannot open queue-file `%s`", unixname));
     } else
-      XDPRINTF((2,"nw_close_file_queue fhandle=%d\n", fhandle));
+      XDPRINTF((2,0,"nw_close_file_queue fhandle=%d", fhandle));
     free_queue_job(jo_id);
   }
   return(result);

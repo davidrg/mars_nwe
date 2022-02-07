@@ -1,4 +1,4 @@
-/* net1.c,  10-Dec-95 */
+/* net1.c,  24-Dec-95 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -22,9 +22,9 @@
 #if HAVE_TLI
 void print_t_info(struct t_info *t)
 {
-  XDPRINTF((2,"T_INFO:addr %ld, options %ld, tsdu %ld, etsdu %ld\n",
+  XDPRINTF((2,0, "T_INFO:addr %ld, options %ld, tsdu %ld, etsdu %ld",
 	 t->addr, t->options,t->tsdu, t->etsdu));
-  XDPRINTF((2,"connect %ld, discon %ld, servtype %ld\n",
+  XDPRINTF((2,0, "connect %ld, discon %ld, servtype %ld",
 	 t->connect, t->discon,t->servtype));
 #if 0
    struct t_info {
@@ -55,7 +55,7 @@ static char str[200];
 
 void print_ipx_addr(ipxAddr_t *p)
 {
-  XDPRINTF((2,"%s\n", visable_ipx_adr(p)));
+  XDPRINTF((2,0,"%s", visable_ipx_adr(p)));
 }
 
 void print_ud_data(struct t_unitdata *ud)
@@ -63,21 +63,20 @@ void print_ud_data(struct t_unitdata *ud)
   int packet_typ = *(int*)(ud->opt.buf);
   int data_len   = ud->udata.len;
   IPX_DATA *ipxdata = (IPX_DATA *)(ud->udata.buf);
-  XDPRINTF((2,"DATA-LEN %d, PACKET-TYPE %d von:",
-	data_len,  packet_typ));
+  XDPRINTF((2,0,"DATA-LEN %d, PACKET-TYPE %d von: %s",
+	data_len,  packet_typ, visable_ipx_adr((ipxAddr_t *)(ud->addr.buf))));
       /* hierin steht nun Addresse u. Node des Senders */
-  print_ipx_addr((ipxAddr_t *)(ud->addr.buf));
   if (packet_typ == PACKT_CORE) {
-    XDPRINTF((2,"Query Type 0x%x, Server Type 0x%xd\n",
+    XDPRINTF((2,0, "Query Type 0x%x, Server Type 0x%xd",
        GET_BE16(ipxdata->sqp.query_type),
        GET_BE16(ipxdata->sqp.server_type)));
   } else  if (data_len > sizeof(SIP)){
     SAP   *sap      = &(ipxdata->sap);
     SAPS  *saps     = &(ipxdata->sap.saps);
     int sap_operation = GET_BE16(sap->sap_operation);
-    XDPRINTF((2,"SAP-OPERATION %d\n", sap_operation));
+    XDPRINTF((2,0, "SAP-OPERATION %d", sap_operation));
     while (data_len >= sizeof(SAPS)){
-      XDPRINTF((2,"Name:%s:, typ:0x%x\n",saps->server_name,
+      XDPRINTF((2,0, "Name:%s:, typ:0x%x",saps->server_name,
 	   GET_BE16(saps->server_type)));
       print_ipx_addr(&(saps->server_adr));
       saps++;
@@ -93,7 +92,7 @@ void print_ipx_data(IPX_DATA *p)
 
 void print_sip_data(SIP *sip)
 {
-   XDPRINTF((2,"Name:%s:,response_type:0x%x,server_typ:0x%x\n",sip->server_name,
+   XDPRINTF((2,0,"Name:%s:,response_type:0x%x,server_typ:0x%x",sip->server_name,
       GET_BE16(sip->response_type), GET_BE16(sip->server_type)));
    print_ipx_addr(&(sip->server_adr));
 }
@@ -155,7 +154,7 @@ int send_ipx_data(int fd, int pack_typ,
   ud.udata.len     = data_len;
   ud.udata.maxlen  = data_len;
   ud.addr.buf      = (char*)to_addr;
-  if (comment != NULL) XDPRINTF((2,"%s TO: ", comment));
+  if (comment != NULL) XDPRINTF((2,0,"%s TO: ", comment));
   if (nw_debug > 1) print_ipx_addr(to_addr);
   if (t_sndudata(fd, &ud) < 0){
     if (nw_debug > 1) t_error("t_sndudata !OK");
