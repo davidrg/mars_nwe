@@ -126,6 +126,9 @@ Erste 'oeffentliche' Version
 - falls internal net = 0 wird nun die IP Nummer als internal net verwendet.
 - Zugriffsrechte Bindery erweitert und korrigiert.
 - Volume option -r fuer readonly eingebaut.
+<----- ^^^^^^^^^^ pl4 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
 
 
 

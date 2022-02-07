@@ -165,6 +165,7 @@ static int free_dir_handle(int dhandle)
 void set_default_guid(void)
 {
   seteuid(0);
+  setgroups(0, NULL);
   if (setegid(default_gid) < 0 || seteuid(default_uid) < 0) {
     errorp(1, "set_default_guid, !! Abort !!",
       "Cannot set default gid=%d and uid=%d" , default_gid, default_uid);
@@ -174,13 +175,25 @@ void set_default_guid(void)
 
 void set_guid(int gid, int uid)
 {
+  char aktname[100];
+  if (gid > -1 && uid > -1) {
+    seteuid(uid);
+    cuserid(aktname);
+  } else aktname[0] = '\0';
   if ( gid < 0 || uid < 0
      || seteuid(0)
      || setegid(gid) == -1
      || seteuid(uid) == -1 ) {
     DPRINTF(("SET GID=%d, UID=%d failed\n", gid, uid));
     set_default_guid();
-  } else XDPRINTF((5,0,"SET GID=%d, UID=%d OK", gid, uid));
+  } else {
+    if (aktname[0]) {
+      seteuid(0);
+      initgroups(aktname, gid);
+      if (seteuid(uid) == -1) set_default_guid();
+    }
+    XDPRINTF((5,0,"SET GID=%d, UID=%d OK", gid, uid));
+  }
 }
 
 static char *conn_get_nwpath_name(NW_PATH *p)

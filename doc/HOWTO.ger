@@ -3,16 +3,57 @@ Dieses HowTo ist noch unfertig.
 Aktuelle Version erhaeltlich bei:
 Hardy Buchholz <hardy@kool.f.eunet.de>
 
-
 ALLGEMEINES
 ^^^^^^^^^^^
 
-MARS_NWE ist ein frei erhaeltlicher Netware-Emulator fuer Linux.
-(auch fuer Unixware)
 
 
-IPX
-^^^
+MARS_NWE (Martin Stovers Netware-Emulator)  ist  ein  Netware-Emulator
+fuer  Linux  (und auch fuer  Unixware). Entstanden  ist  der  MARS_NWE
+zuerst 1993  auf einer  USL1.1  und  wurde  spaeter (1994)  nach Linux
+portiert. Die Anregung MARS_NWE  allgemein zugaenglich zu machen,  kam
+durch LINWARE  (von  A.Dryak). Problematisch  bei  der Entwicklung vom
+MARS_NWE ist der Umstand, dass  das NCP (Netware-Core-Protokoll) keine
+oeffentliche Spezifikation hat, sondern zu den Novell-Interna gehoert.
+Daher sind viele Funktionen eines "echten" Netware-Servers nur  schwer
+realisierbar, und vieles beruht auf Vermutungen und ausprobieren.
+
+Was kann MARS_NWE?
+Inzwischen  realisiert  der  MARS_NWE die  wichtigsten  Services eines
+echten Netware-Servers. Im Einzelnen heisst dies:
+
+File-Services:
+Natuerlich  steht  an  erster  Stelle  das  zur Verfuegung stellen von
+Massenspeicher  und Dateien fuer  verschiedene  Clients. Hier  hat der
+MARS_NWE gerade im heterogenen Netzwerk einiges zu bieten. Als Volumes
+koennen  saemtliche  unter  Linux  mountbare  Filesysteme  freigegeben
+werden. Interessant sind dabei  natuerlich  vor allem auch NFS-mounted
+directorys,  CDROMS,  selbst  mit  Volker  Lendeckes  NCPFS gemountete
+Netware-Volumes  eines   anderen  Servers  koennen  wieder  exportiert
+werden, sowie selbverstaendlich alle auf  dem  Host  lokal vorhandenen
+File-system-varianten.
+
+Print-Services:
+sind im MARS_NWE ebenfalls realisiert, allerdings in anderer Form, als
+bei  Netware,  d.h.  es  existieren  keine  Printqueues,  die  mit den
+Netware-Tools verwaltet werden koennen, sondern der  Druckauftrag wird
+mittels Uebergabe-Vezeichnissen an den Linux-Spooler weitergereicht.
+
+Routing:
+Als  Router  ist  der MARS_NWE  besonders geeignet, da er weitesgehend
+automatisch zwischen  den verschiedensten Welten als Router vermittelt
+(u.a. auch ueber ISDN).
+
+PIPE-Volumes:
+Eine Besonderheit des  MARS_NWE sind die sogenannten PIPE-Volumes, die
+im  Detail  weiter  unten erklaert  werden. Hiermit  kann man z.B. von
+einem  Dos-Client   auf   Unix-Shellscripte   lesend  und   schreibend
+zugreifen.
+
+
+Schwachstellen, Probleme und TODO's
+
+
 
 
 QUICKINST (fuer alle Ungeduldigen und Wiederholungstaeter ;-)
@@ -34,17 +75,19 @@ INSTALLATION
 Kernel
 ^^^^^^
 Voraussetzung  um  MARS_NWE  laufen  zu  lassen  ist  ein  Kernel  mit
-IPX-Option. Grundsaetzlich  sollte  der MARS_NWE  unter  allen neueren
-Kernelversionen  nutzbar sein. Die Kernelpatches aus dem  Verzeichniss
-"mars_mwe/examples"   sind   keine    Vorraussetzung,   steigern   die
-Performance des Servers aber ganz erheblich (ca. 30-40%). Weiter  wird
-dringend    empfohlen,   die   Option    FULL_INTERNAL_NET   in    der
-Kernel-Konfiguration  auf   NEIN  zu   setzen.   Sind   die  genannten
-Bedingungen  erfuellt, steht  der  Installation  vom  MARS_NWE von der
-Linux-Seite  nichts mehr im Weg, andernfalls  sollte zuerst ein  neuer
-Kernel erzeugt  (IPX = Y,  FULL_INTERNAL_NET =  N, Patch eingespielt?)
-und Linux neu gebootet werden.
-
+IPX-Option. Grundsaetzlich  sollte  der MARS_NWE unter  allen  neueren
+(<=1.3.60)  Kernelversionen  nutzbar  sein.  1.3.57  und   1.2.13  ist
+ebenfalls eine fuer MARS_NWE geeignete  Kernelversion, aeltere (1.3.x)
+sind   zum   Teil  problematisch,  wegen   Bug's   im   IPX-Code.  Die
+Kernelpatches  aus  dem  Verzeichniss "mars_mwe/examples"  sind  keine
+Vorraussetzung,  steigern  die  Performance  des  Servers   aber  ganz
+erheblich (ca. 30-40%).  Weiter wird  dringend empfohlen,  die  Option
+FULL_INTERNAL_NET in der Kernel-Konfiguration auf NEIN zu setzen. Sind
+die  genannten  Bedingungen  erfuellt,  steht   der  Installation  vom
+MARS_NWE  von der  Linux-Seite nichts mehr  im Weg, andernfalls sollte
+zuerst ein neuer Kernel erzeugt (IPX = Y, FULL_INTERNAL_NET = N, Patch
+eingespielt?)   und  Linux   neu  gebootet   werden  (mehr   dazu   im
+KERNEL-HOWTO).
 
 Novell
 ^^^^^^
@@ -329,11 +372,11 @@ Netware-Netzen ist meist 802.3, 802.2 ist bei einigen neueren (Netware
 3.12 ..)  zu finden.
 Neuerdings  kann   in  der  "nwserv.conf"   auch  ein  Autodetect  der
 Net-Devices   eingestellt    werden.   Dies   kann    natuerlich   nur
-funktionieren,  wenn  an   diesem  Device   mindestens   ein   anderer
-Netware-Server  haengt, der  korrekt eingerichtet ist,  damit vom
-MARS_NWE die  externe Netzwerknummer und der Frame-Typ  vom  laufenden
-Datenverkehr abgeleitet  werden  kann.
-Eintraege  7 -  13 legen  die  Securety-  und  Login-Details fest. Als
+funktionieren,   wenn   an   diesem  Device  mindestens   ein  anderer
+Netware-Server  haengt,  der   korrekt  eingerichtet  ist,  damit  vom
+MARS_NWE die externe  Netzwerknummer und der  Frame-Typ  vom laufenden
+Datenverkehr abgeleitet werden kann.
+Eintraege  7 -  13 legen  die  Security-  und  Login-Details fest. Als
 Besonderheit bei Eintrag 7 gilt: auch wenn die 8 (allow empty passwds)
 eingetragen  ist, muss der  Supervisor ein Passwort haben  (zumindest,
 wenn der  Root auf  dem  Linux-Rechner eines  hat).  Die Optionen fuer
@@ -365,6 +408,7 @@ FAQ's
 
 TIPS UND LESESTOFF
 ^^^^^^^^^^^^^^^^^^
+
 
 EMAIL-ADRESSEN
 ^^^^^^^^^^^^^^

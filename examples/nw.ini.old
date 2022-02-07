@@ -1,0 +1,357 @@
+#
+# This is the configuration-file for "mars_nwe", the free netware-emulator
+# for Linux.
+#
+# last change: 13-May-96
+#
+# Syntax of this config-file:
+#      - everything after the "#" is ignored, so it is used to
+#        make comment-lines
+#      - entries _must_ begin with a number, indicating the section
+#        they belong to
+#      - hexadecimal values are prepended with "0x"
+#
+# All examples are verbatim.
+
+
+# Section 1: volumes (required)
+#
+# In this section you list all directories accessible via "mars_nwe".
+# To be more specific: a mapping from Linux-directories to mars_nwe-volumes
+# is done. (Volumes are the beasts you can map to drive letters under DOS
+# using "map.exe").
+#
+# Linux-directory              mars_nwe-volume    map.exe      DOS-Drive
+# /var/local/nwe/SYS  ------->  SYS            ------------->  W:
+#
+# More than one entry is possible in this section.
+# The maximum number of volumes is a compile-time option that must be
+# specified in `config.h' before compiling mars_nwe.
+#
+# Please note that at least the volume "SYS" must be defined and it must
+# contain the following sub-directories: LOGIN, PUBLIC, SYSTEM, MAIL.
+# See the installation-instructions in the doc-directory for more infos.
+#
+# Syntax:
+#      1       VOLUMENAME      DIRECTORY               OPTIONS
+#
+# VOLUMENAME:  the name of the mars_nwe-volume (max. 8 characters)
+# DIRECTORY:   the directory on your Linux-system associated with that
+#              volume; use the special name "~" to refer to the users
+#              individual home-directory
+#
+# OPTIONS:     none or some of the following characters (without a seperator)
+#      k       allow lowercase-filenames (if you don't set this, all
+#              files _must_ be upper-case)
+#      m       removable volume (e.g. cd-roms)
+#      o       volume has only one filesystem/device/namespace
+#              this is for filesystems with high inode > 0xFFFFFFF.
+#              because for namespace services mars_nwe normally use the
+#              first 4 bit of 32 bit inode to distinguish
+#              between several devices/namespaces for one volume.
+#      p       "PIPE"-filesystem. All files are pipe commands.
+#              See `doc/PIPE-FS'.
+#      r       readonly volume. Free disk space will also return 0.
+#
+# examples:
+1 SYS         /u3/SYS/           # SYS upper-case filenames
+1 CDROM       /cdrom         km  # lowercase filenames, removable
+1 HOME        ~              k   # users HOME directory, lowercase
+
+
+# Section 2: servername (optional)
+#
+# The servername is the name under which this server will show up when
+# using tools like "slist" (server-list).
+#
+# If you don't supply an entry for this section, the hostname of your
+# Linux-machine will be converted to all-uppercase and used as the servername.
+#
+# Syntax:
+#      2       SERVERNAME
+#
+# SERVERNAME:  a name for this nw-server
+#
+# Example:
+#      2       MARS
+
+
+# Section 3: Number of the internal network
+# If you have mars_nwe V > 0.96pl5 and a kernel >= 1.3.60
+# or the small ipx-kpatch from the examples dir you should use
+# internal net and routing.
+#
+# NOTE: the internal net number must be _unique_ in your IPX-environment!
+#
+# Syntax:
+#      3       INTERNAL_NET    [NODE]
+#
+# INTERNAL_NET:        AUTO  or 0 for using the ip number as INTERNAL_NET
+#
+# NODE:                1 (optional)
+#
+# Examples:
+# 3       0xABCDEF99          # use a unique number
+3   AUTO                      # use ip number as INTERNAL_NET
+
+
+# Section 4: IPX-devices (optional)
+#
+# NOTE for people with other IPX/NCP servers on the net:
+# Your network numbers, frames must be the same as at your
+# other servers on the same net.
+#
+# Syntax:
+#      4       NET_NUMBER      DEVICE  FRAME   TICKS
+#
+# NET_NUMBER:
+# DEVICE:      the network-interface associated with the NET_NUMBER
+# FRAME:
+#      ethernet_ii
+#      802.2
+#      802.3   (default)
+#      snap
+#      token
+#      auto
+# TICKS:       ethernet: 1, isdn: 7
+#
+# Examples:
+4       0x10    eth0    802.3   1
+# Automatic setup:
+4       0x0     *       AUTO    1
+#
+# NOTE: autosetup only works if there are other IXP/NCP servers on
+# the same net which are setup correctly, that means: tells us the required
+# information about netnumber and frame.
+
+
+# Section 5: Saving of ipx-routes (optional)
+#
+# This entry controls if the information regarding the ipx-routes should be
+# saved beyond the livetime of the server.
+# You can achieve a small speedup when starting mars_nwe by using this entry.
+#
+# Syntax:
+#      5       SAVE_FLAG
+#
+# SAVE_FLAG:
+#      0       don't save routes (default)
+#      1       do save routes
+# Example:
+5      0
+
+
+# Section 6: version-spoofing
+#
+# Some clients work better if the server tells that it is a 3.11 Server,
+# although many calls (namespace services) of a real 3.11 Server are
+# missing yet.
+# To test the namespace calls, this entry must be set to > 0 and `config.h'
+# must be altered before compiling "mars_nwe".
+#
+# Syntax:
+#      6       SERVER_VERSION
+#
+# SERVER_VERSION:
+#      0       Version 2.15
+#      1       Version 3.11
+#      2       Version 3.12 (not implemented yet)
+6      0
+
+
+# Section 7: password handling (required)
+# When changing your "mars_nwe"-password from a DOS-client, this client
+# (think of "LOGIN.EXE", "SYSCON.EXE" or "SETPASS.EXE") can encrypt your
+# password before sending it to the "mars_nwe"-server (this improves
+# security a little bit).
+# In this section you can enforce encryption of user-passwords or allow
+# not-encrypted sending of passwords over the net.
+# On the Linux-side, passwords will only be stored in encrypted format.
+#
+# Syntax:
+#      7       FLAG
+#
+# FLAG:
+#      0       use only encrypted passwords stuff.
+#              the encrypted change password call is not
+#              implemented till now, so if you choose this option
+#              you will not be able to change passwords from
+#              client size.
+#      1       allow the unencrypted change password routine (default).
+#              You can use mars_dosutils or an old 2.15 setpass program.
+#
+#      7       allow all unencrypted stuff, no empty nwe passwords.
+#      8       allow all unencrypted stuff, allow empty nwe passwords.
+#      9       use all unencryted calls + get crypt key will allways fail
+#              so the login program will use the old unencryted calls.
+#              this will *not* work with all clients !! (OS2/client)
+7      1
+
+
+# Section 10 + 11 : UID and GID with minimal rights
+#
+# When loading the netware-drivers in the "autoexec.bat" of your
+# DOS-client, you automatically "attach" to a netware-server.
+# As a result, a new drive-letter is accessible under DOS, usally
+# containing the programs "login.exe" and "slist.exe".
+# Because you haven't logged in, nothing else of the netware-server
+# will be visible to you. All actions requested from the DOS-client
+# will be done with the following UID and GID on the Linux-side in this
+# case.
+# To achieve some level of security, the user/group asscociated with
+# the UID and GID should only have _read_ rights on the files visible,
+# _nothing_ else.
+#
+# On most Linux-systems, there is a user and group "nobody" defined in
+# `/etc/passwd' and `/etc/group'. Use the number of that user/group
+# for the following entries.
+#
+# Syntax:
+#      10      GID
+#      11      UID
+# Example:
+#      10      65534
+#      11      65534
+#
+# GID  numeric number of the group
+# UID  numeric number of the user
+10     65534
+11     65534
+
+
+# Section 12: supervisor-login (required)
+#
+# The "supervisor" of a nw-server is much like "root" on the Linux-side.
+#
+# Syntax:
+#      12      NW_LOGIN        LINUX_LOGIN     [PASSWORD]
+#
+# NW_LOGIN:    the login-name for the "mars_nwe"-server (traditionally,
+#              this is "SUPERVISOR")
+# LINUX_LOGIN: the account on the Linux-side associated with the NW_LOGIN
+#              (to improve security, don't use "root" here)
+# PASSWORD:    the password for the NW_LOGIN. It must be clear-text but
+#              will be encrypted and permanent stored in the
+#              bindery-files, so it can be deleted after the first start
+#              of "nwserv".
+#
+# Example:
+12  SUPERVISOR   root       top-secret
+
+
+# Section 13: user-logins (optional)
+#
+# See section 12 for the syntax.
+#
+# Examples:
+13  MAR          mar    mypw
+13  ALF          mar     -      # no password
+
+
+# Section 15: read unix users automaticly from passwd into bindery
+#
+# Syntax:
+#      15      FLAG    DEFAULT_PASSWORD
+#
+# FLAG:
+#      0       off
+#      1       on
+#      99      overwrite existing users.
+#
+# DEFAULT_PASSWORD: password for every new inserted user.
+#
+15   0     top-secret
+#
+# !!! IMPORTANT !!!
+# If you enable this feature you should chose a secure
+# password for the users, because all not existent
+# mars_nwe users will be inserted into bindery with this password.
+
+
+# Section 16: Tests on startup
+#
+16   1  # enable some bindery and sys dir tests/creats after starting.
+#         default = 1
+
+
+# Section 21: print queues (optional)
+#
+# Make the printers connected to your Linux-box accessible from the
+# DOS-clients.
+# Multiple entries are allowed.
+#
+# Syntax:
+#      21      QUEUE_NAME      QUEUE_DIR       PRINT_COMMAND
+#
+# QUEUE_NAME:  the name of the print queue
+# QUEUE_DIR:   spooling directory for the print-jobs; this directory must
+#              exist before printing
+# PRINT_COMMAND: command used for serving the print-jobs under Linux
+#              (see "man lpr" and "man magicfilter" for details)
+#
+# Examples:
+#      21      LASER           SYS:/PRINT/L    lpr -Plaser
+#      21      OCTOPUSS        SYS:/PRINT/O    lpr -Php_deskjet
+
+
+# --------------------------------------------------------
+# You usally don't want to change anything below this line
+# --------------------------------------------------------
+
+# Sections 100-106: amount of debug-information
+#
+# FLAG:
+#      0       no debug messages
+#      1       errors and notes are reported
+#      ..
+#      99      maximum debug level
+100  0   # debug IPX KERNEL (0 | 1)
+101  1   # debug NWSERV
+102  0   # debug NCPSERV
+103  0   # debug NWCONN
+104  0   # debug (start) NWCLIENT
+105  0   # debug NWBIND
+106  1   # debug NWROUTED
+
+
+# Sections 200-202: logging of "nwserv"
+#
+200  1   # 0 = no logfile and dont daemonize nwserv/nwrouted
+#        # 1 = daemonize nwserv/nwrouted and use logfile
+201    /tmp/nw.log  # filename of logfile
+202  1              # 1=creat new logfile, 0=append to logfile
+
+
+# Sections 210,211: timing
+#
+210    10              # 1 .. 600  (default 10) seconds after server
+#                      # really goes down after a down command
+211  60  # 10 .. 600 (default 60) broadcasts every x seconds
+
+
+# Sections 300-302: loging of routing-information
+#
+300    1               # > 0 print routing info to file every x broadcasts.
+#                      # ( normally minutes )
+301    /tmp/nw.routes  # filename of logfile
+302    1               # 1 = creat new routing info file
+#                      # 0 = append to this file
+
+
+# Section 310: watchdogs
+#
+310  7  # send wdog's only to device net < x ticks.
+#         0 = allways send wdogs. < 0 = never send wdogs
+#
+# Section 400:
+# station file for special handling of stations.
+#
+400  /etc/nwserv.stations  # for syntax see file in the examples directory.
+
+
+# Section 401: nearest server
+#
+# for special handling of the 'get nearest server request'.
+401  0  # 0 = ignore entry 400, get nearest response ever enabled.
+#         1 = 400 are excludes, get nearest response normally enabled.
+#         2 = 400 are includes, get nearest response normally disabled.

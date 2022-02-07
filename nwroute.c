@@ -460,9 +460,11 @@ void send_server_response(int respond_typ,
   int        ticks=99;
   int        hops=15;
   int        entry = -1;
+
   int  to_internal = (!no_internal)
           && (GET_BE32(to_addr->net) == internal_net)
           && (GET_BE16(to_addr->sock) != SOCK_SAP);
+
   while (++j < anz_servers) {
     NW_SERVERS *nw=nw_servers[j];
     if (nw->typ == styp && nw->name && *(nw->name)) {
@@ -480,7 +482,9 @@ void send_server_response(int respond_typ,
       }
     }
   }
+#if 0  /* removed: 16-May-96 */
   if (!to_internal)
+#endif
     send_sap_to_addr(entry, hops+1, ticks, respond_typ, to_addr);
 }
 

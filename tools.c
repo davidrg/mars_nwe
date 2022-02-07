@@ -164,14 +164,22 @@ int get_ini_entry(FILE *f, int entry, uint8 *str, int strsize)
   int   do_open = ((FILE*) NULL == f);
   if (do_open) f = open_nw_ini();
   if ((FILE*) NULL != f) {
-    while (fgets((char*)buff, sizeof(buff), f) != NULL){
-      int len   = strlen(buff);
-      char *ppi = NULL;
-      char *ppe = NULL;
-      int  se   =  0;
-      int   j   = -1;
+    while (fgets(buff, sizeof(buff), f) != NULL){
+      int len       = strlen(buff);
+      char *ppi     = NULL;
+      char *ppe     = NULL;
+      char *p_buff  = buff;
+      int  se       =  0;
+      int   j       = -1;
+      char *pp;
+
+      while (len && (*p_buff == '\t' || *p_buff == 32)) {
+        --len;
+        p_buff++;
+      }
+      pp  = p_buff;
+
       while (++j < len){
-        char *pp=(buff+j);
         if (*pp == '#' || *pp == '\r' || *pp == '\n') {
           *pp      = '\0';
           len 	   = j;
@@ -182,11 +190,13 @@ int get_ini_entry(FILE *f, int entry, uint8 *str, int strsize)
           if ((!ppi) && se) ppi = pp;
           ppe=pp;
         }
+        pp++;
       }
+
       if (len > se+1 && se > 0 && se < 4 && ppi){
         char sx[10];
         int  fentry;
-        strmaxcpy((uint8*)sx, (uint8*)buff, se);
+        strmaxcpy((uint8*)sx, (uint8*)p_buff, se);
         fentry = atoi(sx);
         if (fentry > 0 && ((!entry) || entry == fentry)) {
           if (ppe) *(ppe+1) = '\0';
