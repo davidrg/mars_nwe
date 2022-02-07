@@ -1,0 +1,11 @@
+/var/log/nw.log {
+    postrotate
+	/bin/killall -HUP nwserv
+    endrotate
+}
+
+/var/log/nw.routes {
+    postrotate
+	/bin/killall -HUP nwserv
+    endrotate
+}

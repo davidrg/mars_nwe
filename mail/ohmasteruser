@@ -1,0 +1,230 @@
+#! /bin/sh
+#
+# adduser 1.0: a utility to add users to the system
+# Copyright (C) 1994 Ian A. Murdock <imurdock@shell.portal.com>
+# Sorry Ian, dud was ere. 
+# Modified by Marc Ewing <marc@redhat.com> for RHS Linux
+# Modified by gac@eng.rau.ac.za, adw@chopin.rau.ac.za, fwo@eng.rau.ac.za,
+# eddie@rau.ac.za to work great with mars and samba 
+
+# Enhancements: Automagically creates user on mars server side....
+# Please edit the login script of supervisor user to link into this 
+# script...
+# Updates a birthday reminder database
+# updates an expiry database
+# ensures an ftp-only shell
+
+# Everything happens too fast, so don't let the user interrupt.
+trap "" 1 2 3 15
+
+# Set a few important variables before getting started.
+NUMARG=$#
+LOGIN="$1"
+FNAME="$2"
+OFFICE="$3"
+WTEL="$4"
+HTEL="$5"
+BDATE="$6"
+EXIST=0
+NOHOME="$7"
+
+PASSWD="/etc/passwd"
+PBAK="/etc/passwd-"		# Some programs use /etc/passwd-, others use
+				# /etc/passwd.OLD.  Take your pick.
+
+GROUP="/etc/group"
+GBAK="/etc/group-"
+
+PLOCK="/etc/ptmp"		# Standard method of locking the password file.
+
+DSHELL="/etc/ftponly"
+DHOME="/hamster/home"           # modify this to point to base home dirs.
+SKEL="/etc/skel"
+SPOOL="/var/spool/mail"
+FIRST_UID=500
+FIRST_GID=500
+
+# A few sanity checks...
+if [ `id -u` != 0 ]; then
+	echo "Only root may add users to the system." ; exit 1
+fi
+
+if [ $NUMARG = 0 ]; then
+	echo "You need to specify the login to add; for example, \`adduser" \
+		"imurdock'." ; 
+	echo "e.g. ohmasteruser username fullname office worktel hometel birthdate";
+        exit 1
+fi
+
+id $LOGIN >/dev/null 2>/dev/null && EXIST=1
+
+if [ $EXIST = 1 ]; then
+	echo "The login $LOGIN already exists."
+	exit 1
+fi
+
+if [ -f $PLOCK ]; then
+	echo "$PASSWD is locked.  Try again later." ; exit 1
+fi
+
+# And now the program begins: 
+cp $PASSWD /etc/passwd.tmp
+cp $GROUP /etc/group.tmp
+echo "" ; echo -n "Looking for first available UID..."
+NUID=`cut -f 3 -d ":" $PASSWD | sort -n | awk -v uid=$FIRST_UID '
+		{ if ($1 == uid) uid = uid + 1; }
+END		{ print uid; }
+'`
+
+if [ $NUID -ge 65536 ]; then
+	echo "Sorry, ran out of uids."
+	exit 1
+fi
+echo " $NUID"
+
+
+echo -n "Looking for first available GID..."
+NGID=`cut -f 3 -d ":" $GROUP | sort -n | awk -v gid=$FIRST_GID '
+		{ if ($1 == gid) gid = gid + 1; }
+END		{ print gid; }
+'`
+
+if [ $NGID -lt $FIRST_GID ]; then
+	NGID=$FIRST_GID
+fi
+echo " $NGID"
+
+echo "" ; echo -n "Adding login: $LOGIN..."
+touch $PLOCK ;
+
+cp $PASSWD $PBAK
+echo "$LOGIN:*:$NUID:$NGID:New User:$DHOME/./$LOGIN:$DSHELL" >> $PASSWD
+
+# Add user to users group
+cp $GROUP $GBAK
+sed "s/^\(users.*[^:]\)\$/\1,$LOGIN/" < $GBAK |
+sed "s/^\(users.*:\)\$/\1$LOGIN/" > $GROUP
+
+#sed "s/^\(users.*[^:]\)$/\1,$LOGIN/" < $GBAK |
+#sed "s/^\(users.*:\)$/\1,$LOGIN/" > $GROUP
+
+# Add user to httpd group
+cp $GROUP $GBAK
+sed "s/^\(httpd.*[^:]\)\$/\1,$LOGIN/" < $GBAK |
+sed "s/^\(httpd.*:\)\$/\1$LOGIN/" > $GROUP
+ 
+echo "$LOGIN::$NGID:$LOGIN" >> $GROUP
+
+rm -f $PLOCK
+echo "done."
+
+if [ "x$NOHOME" = "x" ]; then
+	echo -n "Creating home directory: $DHOME/$LOGIN..."
+	mkdir $DHOME/$LOGIN
+	chmod 2770 $DHOME/$LOGIN
+	cp -a $SKEL/.??* $SKEL/* $DHOME/$LOGIN >/dev/null 2>/dev/null
+	chown -R $NUID.$NGID $DHOME/$LOGIN
+	echo "done."
+fi
+
+echo -n "Creating mailbox: $SPOOL/$LOGIN..."
+touch $SPOOL/$LOGIN ; chmod 660 $SPOOL/$LOGIN ; chown $NUID.mail $SPOOL/$LOGIN
+echo $LOGIN >> /etc/ohmaillist
+echo "0" > /tmp/mail/$LOGIN
+echo "Done.."
+
+echo ""
+echo "Don't forget to set the password."
+if [ "x$NOHOME" != "x" ]; then
+	echo ""
+	echo "The home directory for $LOGIN was set to $DHOME/$LOGIN but the directory"
+	echo "was not created.  Be sure that you set it up properly."
+fi
+
+if [ "x$FNAME" = "x" ] ; then		# Added to show account expiry times..
+	passwd $LOGIN			# creates /etc/expiry
+	chfn $LOGIN  
+	echo -n "Expiry date: (mm-yy) "
+	read expiry
+	echo "$LOGIN:$expiry" >> /etc/expiry
+        echo -n "Birthdate: (e.g. Oct 24) "
+        read BDATE
+        echo "$LOGIN:$FNAME:$BDATE:Happy Birthday!" >> /etc/birthdays
+else
+#	echo "default" | passwd -P $LOGIN
+        FNAME=`echo "$FNAME" | sed 's/[,:]/ /g'` 
+	OFFICE=`echo "$OFFICE" | sed 's/[:,]/ /g'`
+	WTEL=`echo "$WTEL" | sed 's/[:,]/ /g'`
+	HTEL=`echo "$HTEL" | sed 's/[:,]/ /g'`
+	chfn -f "$FNAME" -r "$OFFICE" -w "$WTEL" -h "$HTEL" $LOGIN 
+	expiry="12-97"
+	echo "$LOGIN:$expiry" >> /etc/expiry 
+        echo "$LOGIN:$FNAME:$BDATE:Happy Birthday!" >> /etc/birthdays
+fi
+
+echo -n "Creating an example www home page..."
+mkdir $DHOME/httpd/html/$LOGIN			# point to your webroot
+chown $NUID.$NGID $DHOME/httpd/html/$LOGIN
+chmod 755 $DHOME/httpd/html/$LOGIN
+LONGNAME="`grep "^$LOGIN:" $PASSWD | cut -f 5 -d : - | cut -f 1 -d , -`"
+/usr/sbin/wwwhomepage "$LONGNAME" $LOGIN > $DHOME/httpd/html/$LOGIN/index.htm
+chown $NUID.httpd $DHOME/httpd/html/$LOGIN/index.htm
+chmod 755 $DHOME/httpd/html/$LOGIN/index.htm
+cp /etc/.htaccess $DHOME/httpd/html/$LOGIN/.htaccess
+chmod 644 $DHOME/httpd/html/$LOGIN/.htaccess
+chown root.httpd $DHOME/httpd/html/$LOGIN/.htaccess
+pushd . > /dev/null
+cd $DHOME/$LOGIN
+ln -s ../httpd/html/$LOGIN www
+popd > /dev/null
+echo "Done..."
+
+echo "Updating myusers.html"
+$DHOME/httpd/cgi-bin/nph-users > /$DHOME/httpd/html/myusers.html
+chmod 755 $DHOME/httpd/html/myusers.html
+
+# Now for the COOOL part: creates users in mars space so that when supervisor
+# logs on, new users are created automagically on the novell side so that
+# user is immediately available on mars.
+# Please have a look at the modified batch file that supervisor login script
+# points to.....
+
+echo "Updating Novell user ID"
+echo -e "#NO_HOME_DIRECTORY\r\n" >> /hamster/home/supervis/users.usr
+
+echo -e "#CREATE $LOGIN;$LONGNAME;default^\r\n" >> /hamster/home/supervis/users.usr
+
+# Change nw-admin to your admin account on the mars side.
+
+chown nw-admin.nw-admin /hamster/home/supervis/users.usr 
+
+# The following updates a dummy ftp passwd file that shows correct user and
+# group stuff when a user ftp's to the server
+
+echo "Updating ftp passwd file"
+cat /etc/passwd | cut -f 1,3,4,5,6,7,8,9,10 -d : - | sed s/:/:*:/ > $DHOME/etc/passwd
+cp /etc/group $DHOME/etc/group
+
+# The next section creates default disk storage space for users, using 
+# user wvdw as template. Please man quota to see how disk quotas works..
+
+echo "Applying system default disk storage quotas..."
+/usr/sbin/edquota -p wvdw $LOGIN
+
+echo ""
+echo "Supervisor, please log on to the Mars server to update the user's Novell login."
+echo ""
+
+# Some sanity checks, if the diff between count is more than one then this
+# script messed up.
+
+echo "Word and linecount of passwd file:"
+wc /etc/passwd.tmp
+wc $PASSWD
+echo "Wordcount of group files:"
+wc /etc/group.tmp
+wc $GROUP
+
+# Yip, we're fin..
+echo "OK, Patricia lets go!"
+# EOF

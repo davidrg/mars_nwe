@@ -1,0 +1,7 @@
+#!/bin/sh
+# clear print spool
+#
+
+PRINTER=lp
+
+/usr/bin/lprm -P $PRINTER -

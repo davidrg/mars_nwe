@@ -1,0 +1,113 @@
+#!/bin/bash
+#
+# ohQuota will send disk quota reports to mars and samba and other users
+# monthly at a certain time and update a html file that lists global disk
+# usage for users.
+# run this once a month through cron (see man cron)
+
+# hbase is the base dir where you would like place the quotas.html file.
+hbase="/hamster/home/httpd/html/main/"
+
+title="RAU Engineering"        		# Your organization's title
+srvname="OhMaster"              	# Your server's name
+fqdn="ohmaster.rau.ac.za"       	# full fqdn to your mail host
+adminemail="root@ohmaster.rau.ac.za"   	# email of the admin account
+wwwsite="www-ing.rau.ac.za/main"	# urlpath to hbase
+
+
+# Month is the current month :)
+mnth=`date`
+dummy="youhavenoteditedthisscript"
+
+if [ $dummy = youhavenoteditedthisscript ] ; then
+   echo "Please edit this script to generate your OWN html file!"
+   exit
+fi
+
+cat <<OOOK > $hbase/quotas.html
+<HTML>
+<HEAD>
+<!--#exec cgi="/cgi-bin/expiry-cgi" -->
+<TITLE>$title - Disk quotas for the slaves as on $mnth</TITLE></HEAD>
+<BODY background=<!--#exec cgi="/cgi-bin/randbg-cgi" -->
+>
+<IMG SRC="/eddie/oheng.gif" ALT="$title" HEIGHT=114 WIDTH=640><BR>
+<FONT SIZE=2>Cnr Ditton and Kingsway Ave, P.O. Box 524, Auckland Park, 2006, Tel
+: +27(11)-489-2016, Fax: +27(11)-489-2097
+</FONT><P><CENTER>
+<h3>Disk space usages for the slaves as on $mnth</h3>
+<I>These are the messy living quaters of the slaves and the amount of data lying
+around in their homeboxes</I>
+<P>
+A slave is granted 134,217,728 binary digits of space  on the oh-so-precious fast wide scsi's of $srvname for their normal household information
+like spreadsheets, important email, scanned images etcetera etcetera.
+
+Some slaves tend to leave data on the $srvname server without ever removing it.
+$srvname gets upset with old data and is busy trying to reduce all files older
+than one year on the server to 42 bytes, a magical number picked up from somewhere.
+ 
+
+<center><TABLE BORDER WIDTH=80%>
+<TD><B><I>User</I></B></TD><TD><B><PRE>Filesystem  blocks   quota   limit   grace   files   quota   limit   grace</PRE></B></TD></TR>
+OOOK
+for l in `cat /etc/ohmaillist | sort`
+#for l in eddie
+do
+dq=`/usr/sbin/quota $l`
+ddq=`/usr/sbin/quota $l | sed ' 1,2 d '`
+cat <<APESHIT >> $hbase/quotas.html
+<TR><TD>$l</TD><TD><PRE>$ddq</PRE></TD></TR>
+APESHIT
+
+cat <<EEEEK # | /usr/sbin/sendmail -t
+From: $srvname Automated Disk Usage reporter <$adminemail>
+Reply-to: $adminemail 
+To: $l@$fqdn <$l@$fqdn>
+Subject: $l's diskusage on $srvname
+X-Mailer: Automated disk Usage reporter script
+
+Oh Yee my little slave
+
+Greetings!
+
+This is your friendly $srvname virtual server reporting:
+
+Monthly account: Diskusage as on $mnth:
+
+$dq
+
+This is just a friendly reminder of your current disk usage. Don't panic.
+You only need to pay respects, no money, this is only for your records.
+
+This disk usage account will be automatically sent out every month.
+Please remove your old data frequently from the server if it is not in
+constant use.
+
+Point your URL to http://$wwwsite/quota.html to see the
+diskspace usage of all the users on $srvname. 
+
+Redirect any replies concerning diskspace usage to your smiling net-admin staff.
+This is a green service: this message will self destruct in 40 seconds.
+(Just kidding!) 
+
+EEEEK
+
+
+done
+cat <<POPO >> $hbase/quotas.html
+</TABLE></CENTER>
+<HR>
+<CENTER>
+<I><B><A HREF="/main/disclaim.htm">disclaimer:</A></B> $title believes
+in freedom of thought  and speech. User
+webcontent is the responsibility of the user.</I><P>
+<FONT SIZE=-4>
+Last modified:
+<!--#echo var="LAST_MODIFIED" -->
+</FONT>
+</CENTER>
+</BODY>
+</HTML>
+POPO
+
+

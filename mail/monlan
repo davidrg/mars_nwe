@@ -1,0 +1,62 @@
+#!/bin/bash
+#
+# Monlan can monitor some of your network resources and inform you
+# about failures...
+#
+
+FLT=0
+MLOG='/var/log/unitrace.log'
+LLOG='/var/log/unilast.log'
+
+if [ ! -f $MLOG ]; then
+        touch $MLOG
+fi
+
+while /bin/true; do
+   touch $LLOG
+    NOW=`date`
+    FLT=0
+    DNSFLT=0
+
+# Reset last log entry
+   echo "Last error: " > $LLOG
+
+# check for nslookup failures
+   /usr/bin/nslookup machineinyourdomain | grep 'partofip.i.e.235' 2>&1 > /dev/null
+   if [ $? -eq 1 ]; then
+        ER="Name lookups on our domain failed on $NOW. "
+        echo "$ER" >> $MLOG
+        echo "$ER" >> $LLOG
+        FLT=1
+        DNSFLT=1
+   fi
+#echo "Fault status $FLT"
+   if [ "$FLT" = "0" ] ; then   
+#	 echo "Nslookup is well" ;
+         for l in machine_list ;
+# i.e. rauteg misty raulink rau3 ing1 rkw info raulink caesar.wits.ac.za shannon.ee.wits.ac.za hippo.ru.ac.za ; 
+    	do
+#               echo "Pinging $l"
+		/bin/ping $l -c 5 -n | grep '100%' 2>&1 > /dev/null
+		if [ $? -eq 0 ]; then
+		ER="Cannot ping $l on $NOW. Possible cable fault or machine failure?"
+		echo "$ER" >> $MLOG
+      		echo "$ER" >> $LLOG
+      		FLT=1
+   		fi 
+	done
+    fi
+# Alerter code....
+
+	if [ "$FLT" = "1" ]; then
+	   if [ "$DNSFLT" = "0" ] ; then
+              echo "." >> $LLOG
+              cat $LLOG | /bin/mail -s "Network failure" netadmin@your.site.name
+              sleep 240
+           fi
+	   FLT=0
+           DNSFLT=0
+	fi
+sleep 900 ;
+done
+

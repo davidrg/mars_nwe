@@ -1,0 +1,179 @@
+Marsmail ver 0.2  GNU-GPL by Eddie Dunckley & Gert Cronje of RAU Engineering.
+----------------    bug reports:eddie@eng.rau.ac.za   gac@chopin.rau.ac.za
+
+This whole package is licensed under the GNU Public License. 
+See the file COPYING for details.
+
+Marsmail is a pascal frontend for mail that translates the
+unix mailfile into smaller files that pegasus mail understands.
+
+Please examine all the files carefully as this is not a commercial
+program suite, it's freeware. Written by staff/students for students..
+
+file list:
+----------
+  327 Feb  4 11:53 marsmail.doc 	This doc file
+ 8608 Feb  4 11:48 marsmail.exe		dos executable to convert mail
+ 5480 Feb  4 12:51 marsmail.pas		dos sources for marsmail
+ 1430 Feb  4 13:32 monlan		Basic monitor for LAN/WAN
+12051 Feb  4 13:12 newuser.pl		Process the user application
+ 3757 Feb  4 12:50 nomasteruser		deletes users with cleanup
+ 4080 Feb  4 11:32 ohbirthcheck		birthday reminder script
+  793 Feb  4 11:34 ohexiry		expire accounts on mars/samba
+13141 Feb  4 13:18 ohform.htm		User application form for Mars server
+ 1296 Feb  4 11:35 ohlogscr.bat		modified supervisor login script
+  690 Feb  4 09:32 ohmail		automatic mail notifier start script
+ 6648 Feb  4 10:50 ohmasteruser		creates new users with extra features
+ 1381 Feb  4 09:27 ohmessage		automatic mail notifier main script
+ 1046 Feb  4 09:33 ohpostme		handles posting from pegasus to unix
+ 3585 Feb  4 10:35 ohquota		Disk quota accounting automated
+  856 Feb  4 09:34 ohsendnt		Console broadcast script
+ 1954 Feb  4 11:45 pmail.bat		front-end dos batch file for pmail
+ 8161 Feb  4 11:48 pmdflts.ini		pmail defaults for all users
+ 1024 Feb  4 11:48 pmgate.sys		USER defined gateway via pconfig
+  859 Feb  4 11:00 wwwhomepage		Creates homepages for new users.
+
+what's new
+----------
+Lot's of automation....
+Lot's of new ideas ie birthday reminders, expiry scripts etc etc
+Better docs
+
+Procedure:
+----------
+Take a deep breath and realize that there is no install script.
+Make sure your mars is running successfully and dos users can log into
+the server with normal novell client software. Make sure your directory 
+layout for Mars looks simmular to the one listed in this document. Get a good
+editor for linux to edit the scripts to suite your company's needs. Get
+the pegasus mail program from one of it's mirror sites. Unpack and follow it's 
+install method. DON't use pegasus's bindery features to fetch mail in the
+SYS:\mail locations. This requires a mercury.nlm that cannot run on linux.
+You can attempt using the pmpop utilities for dos to fetch mail via pop from
+the server, (which might have been the best possible solution if it worked),
+but there is a seperate project to edit the ini file on the fly for multiple
+users....
+
+Make sure you map drive I: to  the user's home directory (or change the
+scripts). I've used a map root i:=sys:\home\%name% to do this in the
+master mars login script that can be created with syscon.
+
+Start by examining each script carefully - there is a lot of undocumented
+features in them... Then start by editing the pmdflts.ini to suite your needs.
+Use the one included as a template.  Read the pmail docs carefully. 
+
+Link your unix mailboxes into your mars SYS 
+volume space i.e. ln -s /var/spool/mail /home/SYS/unixmail
+Run pconfig to create a user defined gateway. Mine looked like this:
+
+
+                     Pegasus Mail/DOS Configuration v3.11
+____+---------------------- User Gateway Definition ----------------------+_____
+___ ¦                                                                     ¦_____
+___ ¦              Gateway name : [OH              ]                      ¦+____
+___ ¦            *New mail path :  i:\pmail\in                            ¦¦____
+___ ¦    Is  a program to run? :  N                                      ¦¦____
+___ ¦     *New mail search mask :  *.cnm                                  ¦¦____
+___ ¦       *Outgoing mail path :  i:\pmail\OUT                           ¦¦____
+___ ¦    *Run for outgoing mail :                                         ¦¦____
+___ ¦          *Filename format :  ~d~d.CNM                               ¦¦____
+___ ¦   Run to validate address :                                         ¦¦____
+___ ¦     *Reply address format :  ~n@eng.rau.ac.za                       ¦¦____
+___ ¦   Accepts SMTP addresses? :  Y                                      ¦¦____
+___ ¦   Simple message headers? :  Simple headers                         ¦¦____
+___ ¦     UUEncode attachments? :  N                                      ¦¦____
+___ ¦           Burst messages? :  N                                      ¦¦____
+___ ¦       Strip gateway name? :  Y                                      ¦¦____
+___ ¦   Force all mail through? :  Y                                      ¦¦____
+___ ¦                                                                     ¦¦____
+___ ¦  The name users will use to access this gateway. Addresses will     ¦¦____
+___ ¦  be entered in the form GWNAME/address.                             ¦¦____
+___ ¦                                                                     ¦+____
+___ +---------------------------------------------------------------------+_____
+___                                                                       ______
+
+
+Check if your  unixmail is secure i.e. mars users cannot read each others mail.
+This can be done by loggin in from a dos box with different user names and
+trying to view the sys:\unixmail\%name% files
+
+Edit the pmail.bat to suite your needs. Make sure the drive mappings is correct.
+i.e. I: maps to userdir. Compile the marsmail.pas to suite your needs if needed.
+Test to see if you can read mail from pegasus and that the gateway places
+outgoing messages in i:\pmail\out.
+
+Edit the ohpostme scripts until it posts mail out for your users.
+This can be tested by posting a message with pmail, seeing if a file is created
+in i:\pmail\out, and waiting for ohpostme to visit the directory, removing and
+posting the file.
+
+Deploy (!) the ohmail and ohmessage scripts to run out of rc.local or however
+you prefer. See if it notifies the user when new mail arrives.... You can
+tail -f the log files to see what is happening. A note on samba notification:
+the message gets sent to a machine instead of a user.
+
+Decide if you want to use the new adduser script called ohmasteruser and 
+nomasteruser for creating users and destroying users on a mars aware unix
+server. MAKE BACKUPS of your original passwd files etc before continueing.
+Note this new adduser creates /etc/expiry /etc/birthdays /etc/ohmyusers
+/etc/ohmaillist
+
+Remove users from ohmaillist to prevent them from mailing
+Remove users from expiry to prevent account expiry
+Remove users from birthdays to prevent birthday notification
+
+Please note the change to passwd file: 
+
+auser:x:505:512:A dummy user:/hamster/home/./auser:/etc/ftponly
+
+The extra dot after home forces ftp to see this as the root, thus
+allowing the ftp to enter ../httpd/html/auser via the link. Note that
+/app or unixmail cannot be reached via ftp.
+
+Edit your mars's net$log.dat in SYS:\public to exit to the extended login
+script ohlogscr.bat that actually creates the users with a default password
+on the mars server. Modify the wwwhomepage script to create homepages for
+your new users.
+
+You might need to either install quotas or remove mentioning of quotas from
+the scripts. 
+
+Customize the ohform.htm to your needs and decide if you would like to use it
+as a user application form from the web. The apache server can run on the
+same server as mars.... ohform.htm calls newuser.pl that creates a script file
+to ease the user creation. newuser.pl sends mail to admin user to inform him
+of the new application.
+
+
+These scripts can handle shadow passwords. Create a blank file /etc/ftponly
+and use this dummy shell for users to prevent them from telnetting to the
+server. Mail fetching via pop and ftp will continue to work.
+
+Suggested directory structure for good operation...
+
+/apps
+/base
+/base/SYS			(mars server SYS volume)
+/base/SYS/unixmail      	ln -s /var/spool/mail /base/SYS/unixmail
+/base/SYS/apps			ln -s /apps /base/SYS/apps
+/base/SYS/home			ln -s ../home home
+/base/home			base home directories
+/base/home/auser		(Yip, the user's home dir)
+/base/home/auser/www		ln -s ../httpd/html/dummyuser www
+/base/home/auser/pmail		gets created from /etc/skel used for pmail
+/base/home/httpd/html		Web server root space
+/base/home/httpd/html/main	non-user related space.
+/base/home/httpd/html/auser	(user's www space)
+
+You can now even share the apps, home dirs and unixmail with samba and you've 
+got a complete novell and nt server all in one, sharing the same space!
+
+If you find ANY errors with this doc or missing files please let me know...
+
+The marsmail is just a dirty hack to satisfy the dos users. Stick with
+pop3 or imap to fetch mail via tcpip from win95, os2, wfw, linux and other.
+The other stuff included with marsmail is just to automate as much as possible 
+for our poor overworked netadmins!
+
+
+

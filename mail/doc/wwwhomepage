@@ -1,0 +1,28 @@
+cat << EOF
+<HTML>
+<TITLE>$1's own WebPage!!</TITLE>
+<BODY BACKGROUND=/yourownbackground.gif>
+<CENTER><H1>$1's own WebPage</H1></CENTER>
+<FONT SIZE=5><CENTER><IMG SRC="/nicepict.jpg" ALT="">--  Hallo World! --<IMG SRC="/nicepict.jpg" ALT=""></CENTER>
+
+<HR>
+<B>I</B> am a new user at The most PowerFull <i>Mars</i> File Server
+
+<BR>
+<B>P</B>lease mail me at <A HREF="mailto:$2@your.domain.name">$2@your.domain.name</A>
+to say that you have actually visited my page.<P>
+
+I <I>promise</I> to update this page as soon as I know I <I>have</I> one!<P>
+
+<B>B</B>eing a new user on this system I will refrain from discussing any of the following topics on this page:<BR>
+<h3>Sex, Religion, Politics, Sport or Business.</H3>
+
+<p>
+
+<HR>
+</FONT>
+<HR>
+If you have a problem with this page <B> DON'T </B> mail the webmaster!
+</BODY>
+</HTML>
+EOF

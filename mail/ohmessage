@@ -1,0 +1,37 @@
+#!/bin/bash
+#
+# Ohmessage: called by ohmail and creates a database of new mail flags
+# for users. Sends a message to mars or samba users informing them of 
+# new mail
+# Please create a directory under /tmp called mail where the mail flags
+# will be stored.. 
+# log files will be stored in /var/log.
+
+marsserver="yourmarsservername"
+mailusr="genericmailuseronmars"
+mailpwd="genericmailusrpasswd"
+
+
+  s1="`cat /var/spool/mail/$1 | grep Subject | wc -l`"
+  let s2=`cat /tmp/mail/$1`
+  if let "$s1 > $s2" 
+	then 
+		if cat /tmp/smbusers.list  | grep " $1 " > /dev/null
+	   		then
+			for machine in `cat /tmp/smbusers.list | grep " $1 " | awk ' {print $5}'  | sort | uniq`
+                        do
+	      			echo "$1 has new mail `grep From: /var/spool/mail/$1 | tail --lines=1`" | smbclient -M $machine 2>&1 > /dev/null
+				echo $s1 > /tmp/mail/$1
+				echo "`date` -- Sent notification to SMB user $1 at $machine" >> /var/log/ohmessage.log
+                        done
+		elif cat /tmp/nwusers.list  | grep -i " $1 " > /dev/null
+	   		then
+   	     			/usr/local/bin/nsend -S $marsserver -U $mailusr -P $mailpwd $1 "New mail `grep From: /var/spool/mail/$1 | tail --lines=1`"
+				echo $s1 > /tmp/mail/$1
+				echo "`date` -- Sent notification to NetWare user $1" >> /var/log/ohmessage.log
+		fi
+  else
+	echo $s1 > /tmp/mail/$1
+fi
+  
+# ohmessage by gac@eng.rau.ac.za, eddie@eng.rau.ac.za 

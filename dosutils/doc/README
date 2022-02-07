@@ -1,0 +1,93 @@
+/* DOC for NET.EXE */
+/* last updated: 21-May-96 */
+This is a short description of net.exe which is a simple DOS-client
+program to allow standard NCP network actions, mainly for mars_nwe.
+All functions are called as a second parameter, or if the program
+is renamed to a guilty function like login.exe then the function
+will be the progname. This is very usefull for login.exe.
+
+This program is very incomplete till now, but some functions
+works well with mars_nwe.
+
+
+LOGIN:
+usage: LOGIN [-u] [user | user password]
+-u = use unencrypted password.
+With this function you can log into a NCP Server.
+If there exists a 'login' file in the same directory as
+net.exe resides then this file will be interpreted as a
+command file. You also can use command files with
+the PROFILE command.
+It is usefull to copy (or do a Linux link) net.exe to login.exe.
+
+example for a 'login' script (resides in same directory as net.exe)
+
+map     f:=SYS:
+map     h:=home:
+map     z:=SYS:PUBLIC
+path    s16:=z:.
+capture lpt1 q1
+profile h:\profile      # will call users home 'profile'
+
+if not exist h:\profile.bat goto :end
+
+
+PROFILE:
+usage: PROFILE filename
+With this function you are able to run a command script.
+In this command script you can use every net.exe command.
+
+SPAWN:
+With SPAWN you can start external programs.
+
+PASSWD:
+usage: PASSWD [user]
+With this function you are able to change a users password.
+This call uses the old unencryted change password call !!
+
+PATH:
+usage: PATH sn:[=[path]]
+       sn = 's1' .. 's16'
+
+With this function a new path element can be created.
+Its only sets the path environment !
+
+PATHINS:
+usage: PATHINS sn:[=[path]]
+       sn = 's1' .. 's16'
+like PATH, but inserts PATH, not overwrites.
+
+PATHDEL:
+usage: PATHDEL sn:
+       sn = 's1' .. 's16'
+deletes PATH element
+
+MAP:
+usage: MAP [d:[=[path]]]
+       d = 'A' .. 'Z'
+Maps a drive to a volume or volume/path.
+
+
+MAPDEL:
+usage: MAPDEL d:
+       d = 'A' .. 'Z'
+Removes a map.
+
+
+LOGOUT:
+Logout from a NCP Server.
+
+DEBUG:
+For setting debug flag in mars_nwe processes.
+If you want to use this, you must set
+mars_nwe/config.h: FUNC_17_02_IS_DEBUG to '1'
+
+
+SPAWN:
+EXEC:
+external program execution spawning or overlayed.
+
+
+
+
+

@@ -1,0 +1,32 @@
+#!/bin/bash
+#
+# This will soon be a script to expire users no longer active
+#
+### WARNING: THIS SCRIPT IS NOT FINISHED!!!! Change to your needs!
+# it uses /etc/expiry created by ohmasteruser to determine 
+# if accounts must be expired or not.... started through cron....
+
+
+hbase="/hamster/home/httpd/html/main/"
+dday=`/bin/date -d "1 month" +%m-%y `
+nday=`/bin/date +%d`
+
+
+for l in `cat /etc/expiry ` ; 
+do
+   erflg="0";
+   uname=`echo "$l" | cut -f 1 -d ":"` ;
+   uday=`echo "$l" | cut -f 2 -d ":"` ;
+   echo "$uday $dday"
+   if [ "$uday" = "$dday" ] ; then
+#issue warning here.
+      echo "Will expire at 0h00 on the 28th of this month"
+	if ["$nday" = "28"] ; then
+           echo "This account has finally expired"
+           erflg="1"
+        fi
+   fi
+
+#now create a new expiry file
+done
+

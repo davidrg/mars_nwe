@@ -1,0 +1,64 @@
+#!/bin/sh
+# This script creates the html document that displays your current
+# users on the mars/samba server in a nice html format
+
+base="/hamster/home/"		# Base dir of home dirs
+
+
+echo "<HTML>"
+echo "<TITLE>Mars Server - Current users</TITLE>"
+echo "<BODY background=/yourown.gif>"
+echo "<H1>MarsServer User List and Email addresses</H1>"
+echo '<IMG SRC="/img/yourown.jpg" ALT="Nice graphic that you cannot see">'
+echo ""
+echo "<P>(See how much <A HREF="/main/quotas.html">diskspace</A> is in use by the users)<P>"
+touch /tmp/ulist.tmp
+rm /tmp/ulist.tmp
+mv /etc/ohulist /etc/ohulist-
+touch /tmp/ulist.tmp
+
+for l in `ls $base/httpd/html`; 
+do
+  LNAME=`grep "^$l:" /etc/passwd | cut -f 5 -d : - | cut -f 1 -d , -`
+  if [ $l = "ftp" ]; then LNAME=""; fi
+  if [ $l = "gopher" ]; then LNAME=""; fia
+
+### NNNB Please add simular lines not to display other kinds of autousers.
+
+  if [ "$LNAME" != "" ]; then 
+      echo "$LNAME : $l" >> /tmp/ulist.tmp
+  fi
+done
+
+cat /tmp/ulist.tmp | sort > /tmp/ulist2.tmp
+rm /tmp/ulist.tmp
+cat /tmp/ulist2.tmp | cut -f 2 -d : - > /tmp/ulist3.tmp 
+rm /tmp/ulist2.tmp
+
+echo "<CENTER><TABLE width=70% BORDER>"
+
+
+for l in `cat /tmp/ulist3.tmp`;
+do
+   LNAME=`grep "^$l:" /etc/passwd | cut -f 5 -d : - | cut -f 1 -d , -` 
+#   OFONE=`grep $l /etc/passwd | cut -f 5 -d : -
+#     echo "$LNAME with $l"
+      echo -n '<TR><TD><A HREF="http://your.full.domain.name/'
+      echo -n "$l"
+      echo -n '">'
+      echo -n "$LNAME</A></TD><TD><A HREF="
+      echo -n '"mailto:'
+      echo -n "$l@email.domain.name"
+      echo -n '">'
+      echo    "$l@eng.rau.ac.za</a></TD></TR>"
+      echo -e "$LNAME \t\t\t email: $l@email.domain.name" >> /etc/ohulist
+  done
+echo "</TABLE></CENTER>"
+echo "This service brought to you by Marsmail scripting."
+echo "<HR>"
+echo "(Use your browsers BACK button to go back to the main page.)"
+echo -n "</BODY>"
+echo -n "</HTML>"
+
+
+rm /tmp/ulist3.tmp

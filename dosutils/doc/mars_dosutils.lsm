@@ -1,0 +1,16 @@
+Begin3
+Title:          mars_dosutils
+Version:        0.10
+Entered-date:   21-May-96
+
+Description:    Simple DOS client program specially
+                for mars_nwe.
+                Supports login, map, capture, passwd
+                Binary + sourcen
+Keywords:       novell, netware, client, ipx, ncp, mars_nwe
+Author:         mstover@freeway.de  (Martin Stover)
+Maintained-by:  mstover@freeway.de  (Martin Stover)
+Primary-site:   ftp.gwdg.de:/pub/linux/misc/ncpfs
+                60kB mars_dosutils-0.10.tgz
+Platforms:      DOS, DOSEMU
+End

@@ -1,0 +1,36 @@
+#!/bin/bash
+#
+#
+# This script runs through all the user dirs to collect mail that needs to 
+# be sent.
+# Pegasus mail for dos will use a gateway that places outgoing mail in
+# /home/username/pmail/out. All these messages will be picked up by this
+# script and mailed out.
+# Please create a file /etc/ohmaillist that contains valid users that
+# may send mail from dos pmail logged into mars.
+# (I added it to the adduser script so all users can have new mail)
+# Format of the ohmaillist file is just a single username per line
+
+# Replace with the base dir of your home directories i.e. /home
+homedirs="/hamster/home"     
+
+# Replace with your domain name
+dm="eng.rau.ac.za"
+
+while [ true ] ;
+do
+  cd /hamster/home
+  for l in `cat /etc/ohmaillist` 
+  do
+    for x in `ls $l/pmail/out` 
+     do
+      cat "$l/pmail/out/$x" | sed "1,4d" | /usr/sbin/sendmail -f "<$l@$dm>" -t
+      rm "$l/pmail/out/$x"
+      echo "`date` -- Mail message $x send from $l mailbox" >> /var/log/ohpostme.log
+    done
+  sleep 1
+  done
+  sleep 7
+done
+
+# ohmail - ends here

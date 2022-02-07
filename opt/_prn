@@ -1,0 +1,19 @@
+#!/bin/sh
+# print using lpr nad lp printer when writing
+# return spool and printer status when reading
+#
+
+PRINTER=lp
+
+case "$1" in
+    WRITE)
+	/usr/bin/lpr -P $PRINTER -
+	;;
+    READ)
+	CR=`echo -n -e '\r'`
+	/usr/sbin/lpc status $PRINTER | sed "s/$/$CR/g"
+	/usr/bin/lpq -l -P $PRINTER | sed "s/$/$CR/g"
+	;;
+    *)
+	;;
+esac

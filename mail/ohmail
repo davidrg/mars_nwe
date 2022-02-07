@@ -1,0 +1,26 @@
+#!/bin/bash
+#
+# Purpose: This shell script will list all users logged in via samba or
+# mars and see if it needs to inform them about new mail waiting..
+# Please create a generic mail handling user on mars and customize this
+# script for your needs...
+#
+
+marsserver="YourMarsServerName"
+mailusr="auseronmarsthathandlesmailnotification"
+mailusrpwd="passwordforyourgenericmailuser"
+
+while [ true ] ;
+do
+  nwuserlist -S $marsserver -U $mailusr -P $mailusrpwd > /tmp/nwusers.list
+  smbstatus > /tmp/smbusers.list
+  for x in `cat /etc/ohmaillist`
+     do
+  	/usr/sbin/ohmessage $x
+        sleep 1
+     done
+
+  sleep 120
+done
+
+# ohmail needs to be installed in /usr/sbin together with ohmessage.

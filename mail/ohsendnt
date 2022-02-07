@@ -1,0 +1,31 @@
+#!/bin/bash
+#
+# OhSendNt is a console broadcast tool to send messages from the unix console
+# to the network users. Usefull for sending broadcasts that server is going
+# down in 10 minutes or whatever :)
+#
+
+messge=$1
+machs=$2
+
+if [ "$messge" = "" ]; then
+   echo "Usage: ohsendnt \"Message\" \"machine.list\"|ALL"
+   echo "e.g. ohsendnt \"Hello!\" \"dud.rau.ac.za\""
+   exit;
+fi
+
+if [ "$machs" = "ALL" ]; then
+     for l in `smbstatus | awk '{ print $5 }' | sed '/machine/d' | sort | uniq | sed '1 d'`
+     do
+       echo "$messge" | smbclient -M $l > /dev/nul
+       d=`date`
+       echo "Message $messge sent to NT user $l on $d" >> /var/log/ohsentnt.log
+     done
+else
+    for l in $machs
+    do
+      echo "$messge" |  smbclient -M $l > /dev/nul
+      d=`date`
+      echo "Message $messge sent to NT user $l on $d" >> /var/log/ohsentnt.log
+    done
+fi

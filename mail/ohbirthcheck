@@ -1,0 +1,98 @@
+#!/bin/bash
+
+# Birthday reminder script for Mars and/or Samba
+# This scripts sends out automated email for logged in users and the
+# birthday boy on the correct date and should be started out of cron
+# once a day before teatime :)
+# Script creates a birthday.html file that can be included in another
+# page. Script logs into mars server with mailusr and does nwuserlist.
+# script can be linked to a notice board.... (i've edited it out though!)
+
+# bpath=basepath
+# lpath=logpath
+# nowdate = current date e.g. Oct 24
+
+srvname="ohmaster"				#Samba or mars server
+marssrv="ohamster"				#Mars server name
+mailusr="agenericmailusertodonwuserlists"	#Mail user
+mailpwd="passwdforgenericmailuser"		#Mail user passwd
+admname="eddie"					#your administrator email name
+admfullname="Eddie Dunckley"			#Full name
+site="RAU Engineering"				#Your site name
+fqdn="ohmaster.rau.ac.za"
+bpath="/hamster/home/httpd/html/main"		# where to place birthday.html
+lpath="/var/log"				# Path to keep log files
+nowdate=`/bin/date | /usr/bin/awk ' { print $2 " " $3 } ' `
+
+
+
+# Script starts here
+: > $bpath/birthday.txt				# clears the birthday file
+
+/usr/bin/grep -i ":$nowdate:" /etc/birthdays > $bpath/birthday.txt
+
+if [ `ls -l $bpath/birthday.txt | /usr/bin/awk ' { print $5 } '` != 0 ] ; 
+then
+  echo -en "$nowdate: Birthday's happening today:\r\n" > $bpath/bday.txt
+  echo -en "-----------------------------------------------\r\n" >> $bpath/bday.txt
+  echo -en "\r\n" >> $bpath/bday.txt
+  echo "<CENTER>Current Birthdays for $nowdate:<BR><TABLE BORDER WIDTH=80% CELLPADDING=5 BGCOLOR=#FFFFFF>" > $bpath/bday.inc
+  
+else
+  : > $bpath/bday.inc  
+  touch $bpath/bday.txt
+  rm $bpath/bday.txt
+fi
+
+for birthuid in `cat $bpath/birthday.txt | cut -f 1 -d ":"` ;
+do
+birthguys=`/usr/bin/grep "^$birthuid:" $bpath/birthday.txt | cut -f 2 -d ":"`
+birthstring=`/usr/bin/grep "^$birthuid:" $bpath/birthday.txt | awk -F ":" ' { print $4 } ' `
+echo "<TR><TD>$birthguys</TD><TD><a href=\"mailto:$birthuid@$fqdn\">$birthuid@$fqdn</a></TD><TD>$birthstring</TD></TR>" >> $bpath/bday.inc
+echo -en "$birthguys's birthday! Send mail to $birthuid@$fqdn...\r\n" >> $bpath/bday.txt
+echo -en "$birthguys: $birthstring \r\n" >> $bpath/bday.txt
+
+cat << EOMES | /usr/sbin/sendmail -f "$admname@$fqdn" -t
+To: $birthuid@$fqdn ($birthguys)
+From: $admname@$fqdn ($admfullname)
+Reply-To: $admname@$fqdn ($admfullname)
+Return-path: <$admname@$fqdn>
+X-Mailer: Automated Birthday notification scripts 
+Subject: Happy Birthday: $birthguys!
+
+Dear $birthguys,
+
+          May you have the best day of your life today.
+
+Congratulations on your birthday! The whole $site staff and students
+are thinking about you today. In far countries strange people are singing
+songs in honour of your birth today.
+
+If you brought cake and drinks along, please invite the $site staff to
+join in the festive activities. May $nowdate be one of the best days you've
+ever encountered!
+
+From your friendly Automated $srvname Virtual Server and programmers.
+EOMES
+
+sleep 4
+  for lnames in `/usr/sbin/smbstatus | /usr/bin/awk ' { print $5 }' | sort | uniq | /bin/sed "/machine/d" | /bin/sed "1 d" ` ; 
+  do
+#      echo "Processing $lnames smbside for $birthguys"
+      echo "NB: It's user $birthuid ($birthguys)'s birthday today!" | /usr/sbin/smbclient -M $lnames 2>&1 > /dev/null
+      echo "`/bin/date` -- Sent Birthday notice to $lnames" >> $lpath/ohmessage.log
+ done
+  for nnames in `/usr/local/bin/nwuserlist -S $marssrv -U $mailusr -P $mailpwd | /usr/bin/awk ' { print $2 } ' | sort | uniq` ;
+  do
+#    echo "Processing nsend to $nnames for $birthguys birthday.."
+    /usr/local/bin/nsend -S ohamster -U ohmessage -P sendthemall $nnames "NB: It's user $birthuid ($birthguys)'s birthday!"
+    echo "`/bin/date` -- Sent Birthday notice to NetWare user $nnames" >> $lpath/ohmessage.log
+  done
+done
+
+if [ `ls -l $bpath/birthday.txt | /usr/bin/awk ' { print $5 } '` != 0 ] ;
+then
+   echo "</TABLE></CENTER>" >> $bpath/bday.inc
+   echo -en "\r\n" >> $bpath/bday.txt
+   echo -en "May he/her/they become as old as the mountains! --$marssrv\r\n" >> $bpath/bday.txt
+fi
