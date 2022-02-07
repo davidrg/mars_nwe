@@ -21,7 +21,7 @@ how it changed over time. The source archives used to build this repo can be fou
 [here](https://ftp.zx.net.nz/pub/archive/novell/mars_nwe_dist/).
 
 ## What can Mars_nwe do?
-From the old [README](README file): 
+From the old [README file](README): 
 
 - mars_nwe is a very functional clone of a NetWare server that runs
   under Linux. It works fine with the usual DOS client software that
