@@ -1,4 +1,4 @@
-/* net.h 11-Feb-96 */
+/* net.h 01-Mar-96 */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -93,7 +93,24 @@
 
 
 /* ===================>  config.h  <======================= */
+#ifdef CALL_NWCONN_OVER_SOCKET
+# undef CALL_NWCONN_OVER_SOCKET
+#endif
+
+#ifdef CALL_NCPSERV_OVER_SOCKET
+# undef CALL_NCPSERV_OVER_SOCKET
+#endif
+
+
 #include "config.h"
+
+#ifndef CALL_NWCONN_OVER_SOCKET
+# define CALL_NWCONN_OVER_SOCKET   0
+#endif
+
+#ifndef CALL_NCPSERV_OVER_SOCKET
+# define CALL_NCPSERV_OVER_SOCKET  1
+#endif
 
 #ifndef DO_DEBUG
 # define DO_DEBUG  1
@@ -270,6 +287,15 @@ typedef union {
     uint8   reserved;        /* high connection */
     uint8   function;        /* Function  */
   } ncprequest;
+  struct S_OWN_DATA {
+    uint8   type[2];         /* 0xeeee  */
+    uint8   type1[2];        /* 0xeeee  */
+    struct {
+      int     size;            /* size of next two entries */
+      int     function;
+      uint8   data[1];
+    } d;
+  } owndata;
   char data[IPX_MAX_DATA];
 } IPX_DATA;
 
@@ -283,6 +309,7 @@ typedef struct S_CONFREQ       CONFREQ;
 typedef struct S_DIAGRESP      DIAGRESP;
 typedef struct S_NCPRESPONSE   NCPRESPONSE;
 typedef struct S_NCPREQUEST    NCPREQUEST;
+typedef struct S_OWN_DATA      OWN_DATA;
 
 /*  SOCKETS  */
 #define SOCK_AUTO        0x0000  /* Autobound Socket               */

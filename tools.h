@@ -1,4 +1,4 @@
-/*  tools.h : 10-Feb-96    */
+/*  tools.h : 10-Mar-96    */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -46,7 +46,7 @@ extern int   get_ini_entry(FILE *f, int entry, char *str, int strsize);
 extern char  *get_exec_path(char *buff, char *progname);
 extern int   get_ini_int(int what);
 extern void  get_ini_debug(int what);
-extern void  init_tools(int module);
+extern void  init_tools(int module, int conn);
 
 extern uint8 down_char(uint8 ch);
 extern uint8 up_char(uint8 ch);

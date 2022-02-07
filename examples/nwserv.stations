@@ -1,0 +1,14 @@
+# you can put station id's into this file for special handlings
+# syntax: EntryNr  net:node:socket (in hex notation or wildcards '?' and '*' )
+# it will be only a very simple matchcoded string compare, therefore you
+# must use the correct syntax.
+#
+#1  0.0.0.22:0.80.48.55.3f.33:50.3    # one special client socket
+#1  0.0.0.22:0.80.48.55.3f.33:40.*    # one special client socket >= 0x4000
+#1  0.0.0.22:0.80.48.55.3f.32:*       # one special client
+#1  0.0.0.22:0.80.48.55.3f.2?:*       # some clients 20 .. 29
+#1  0.0.0.21:*                        # one special net
+# entry 1: is for get nearest server request handling.
+# look also into the examples/nw.ini file.
+
+

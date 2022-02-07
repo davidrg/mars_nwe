@@ -1,4 +1,4 @@
-/* nwserv.c 10-Feb-96 */
+/* nwserv.c 10-Mar-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -71,49 +71,81 @@ static struct        pollfd  polls[NEEDED_POLLS];
 static uint16        spx_diag_socket;    /* SPX DIAGNOSE SOCKET       */
 #endif
 static ipxAddr_t     nw386_adr;          /* Address of NW-TEST Server */
-static int           nw386_found    = 0;
-static int           client_mode    = 0;
+static int           nw386_found    =  0;
+static int           client_mode    =  0;
 static int           ipxdebug       =  0;
 static int           pid_ncpserv    = -1;
+#if !CALL_NCPSERV_OVER_SOCKET
 static int           fd_ncpserv_out = -1;  /* ctrl-pipe out to  ncpserv  */
+#endif
 static int           fd_ncpserv_in  = -1;  /* ctrl-pipe in  from ncpserv */
 
 static  time_t       akttime_stamp             =  0;
-static  int          broadsecs                 =  2048;
+static  int          broadmillisecs            =  2000; /* 2 sec */
 static  time_t       server_down_stamp         =  0;
 static  int          server_goes_down_secs     = 10;
+static  int          server_broadcast_secs     = 60;
 static  int          save_ipx_routes           =  0;
 
+static  uint8        *station_fn=NULL;
+static  int          nearest_request_flag=0;
+
 #if !FILE_SERVER_INACTIV
+static void add_wdata(IPX_DATA *d, char *data, int size)
+{
+  memcpy(d->owndata.d.data+d->owndata.d.size, data, size);
+  d->owndata.d.size+=size;
+}
+
+static void write_wdata(IPX_DATA *d, int what)
+{
+#if CALL_NCPSERV_OVER_SOCKET
+  ipxAddr_t  toaddr;
+#endif
+  d->owndata.d.function=what;
+  d->owndata.d.size +=sizeof(int);
+#if CALL_NCPSERV_OVER_SOCKET
+  memset(d->owndata.type, 0xee, 4);
+  memcpy(&toaddr, &my_server_adr, sizeof(ipxAddr_t));
+  U16_TO_BE16(SOCK_NCP, toaddr.sock);
+  send_ipx_data(-1, 17,
+                 4 +  sizeof(int)+d->owndata.d.size, (char*)d,
+                 &toaddr, "TO NCPSERV");
+#else
+  write(fd_ncpserv_out, (char*) &(d->owndata.d),
+                    sizeof(int)+d->owndata.d.size);
+#endif
+  d->owndata.d.size=0;
+}
+
 static void write_to_ncpserv(int what, int connection,
                            char *data, int data_size)
 {
+  IPX_DATA ipxd;
+  ipxd.owndata.d.size = 0;
   XDPRINTF((2, 0, "write_to_ncpserv what=0x%x, conn=%d, data_size=%d",
            what, connection, data_size));
 
   switch (what) {
     case 0x5555  : /* kill connection  */
-            write(fd_ncpserv_out, (char*) &what,        sizeof(int));
-            write(fd_ncpserv_out, (char*) &connection,  sizeof(int));
+            add_wdata(&ipxd, (char*) &connection,  sizeof(int));
          break;
 
     case 0x3333  : /* 'bindery' calls  */
-            write(fd_ncpserv_out, (char*) &what,        sizeof(int));
-            write(fd_ncpserv_out, (char*) &data_size,   sizeof(int));
-            write(fd_ncpserv_out, data,   data_size);
+            add_wdata(&ipxd,  (char*)&data_size, sizeof(int));
+            add_wdata(&ipxd, data, data_size);
          break;
 
     case 0xeeee  : /* hup, read init */
-            write(fd_ncpserv_out, (char*) &what,        sizeof(int));
          break;
 
     case 0xffff  : /* 'down server' */
-           write(fd_ncpserv_out, (char*) &what, sizeof(int));
-           write(fd_ncpserv_out, (char*) &what, sizeof(int));
+           add_wdata(&ipxd, (char*) &what,  sizeof(int));
          break;
 
-    default     :  break;
+    default :  return;
   }
+  write_wdata(&ipxd, what);
 }
 #else
 static void write_to_ncpserv(int what, int connection,
@@ -180,11 +212,15 @@ static int open_ipx_socket(uint16 sock_nr, int nr, int open_mode)
 static int start_ncpserv(char *nwname, ipxAddr_t *addr)
 {
 #if !FILE_SERVER_INACTIV
+#if !CALL_NCPSERV_OVER_SOCKET
   int fds_out[2];
+#endif
   int fds_in[2];
   int pid;
-  if (pipe(fds_out) < 0 || pipe(fds_in) < 0) return(-1);
-
+#if !CALL_NCPSERV_OVER_SOCKET
+  if (pipe(fds_out) < 0) return(-1);
+#endif
+  if (pipe(fds_in) < 0)  return(-1);
 
   switch (pid=fork()) {
     case 0 : {  /* new Process */
@@ -192,10 +228,11 @@ static int start_ncpserv(char *nwname, ipxAddr_t *addr)
                char addrstr[100];
                char pathname[300];
                int j = FD_NWSERV;
+#if !CALL_NCPSERV_OVER_SOCKET
                close(fds_out[1]);   /* no need to write      */
                dup2(fds_out[0], 0); /* becommes stdin        */
                close(fds_out[0]);   /* no  longer needed     */
-
+#endif
                close(fds_in[0]);            /* no need to read       */
                dup2(fds_in[1], FD_NWSERV);  /* becommes fd FD_NWSERV */
                close(fds_in[1]);            /* no  longer needed     */
@@ -207,14 +244,19 @@ static int start_ncpserv(char *nwname, ipxAddr_t *addr)
              }
              break;
 
-    case -1: close(fds_out[0]);
+    case -1:
+#if !CALL_NCPSERV_OVER_SOCKET
+             close(fds_out[0]);
              close(fds_out[1]);
+#endif
              close(fds_in[0]);
              close(fds_in[1]);
              return(-1);  /* error */
   }
+#if !CALL_NCPSERV_OVER_SOCKET
   fds_out[0]     = -1;
   fd_ncpserv_out = fds_out[1];
+#endif
   fds_in[1]      = -1;
   fd_ncpserv_in  = fds_in[0];
   pid_ncpserv    = pid;
@@ -243,8 +285,11 @@ static int start_nwclient(void)
 }
 
 /* ===========================  WDOG =============================== */
+#ifndef _WDOG_TESTING_
+#define _WDOG_TESTING_  0
+#endif
 
-#ifdef _WDOG_TESTING_
+#if _WDOG_TESTING_
 /* for testing */
 # define WDOG_TRIE_AFTER_SEC   1
 # define MAX_WDOG_TRIES        1
@@ -314,15 +359,13 @@ static void modify_wdog_conn(int conn, int mode)
     if (mode < 99) {
       c->last_time = akttime_stamp;
       switch (mode) {
-        case 1  : c->counter =  MAX_WDOG_TRIES;  /* quick test */
-                  broadsecs  =  4096;
+        case 1  : c->counter      =  MAX_WDOG_TRIES;         /* quick test */
                   break;
 
-        case 2  : c->counter =  1;               /* slow test (activate)*/
-                  broadsecs  =  4096;
+        case 2  : c->counter      =  max(2, MAX_WDOG_TRIES); /* slow test (activate)*/
                   break;
 
-        default : c->counter = 0;  /* reset */
+        default : c->counter 	  =  0;  /* reset */
                   break;
       } /* switch */
     } else if (mode == 99) {  /* remove */
@@ -338,14 +381,15 @@ static void modify_wdog_conn(int conn, int mode)
   }
 }
 
-static void send_wdogs(void)
+static void send_wdogs(int force)
 {
   int  k  = hi_conn;
   while (k--) {
     CONN  *c = &(conns[k]);
     if (c->last_time) {
       time_t t_diff = akttime_stamp - c->last_time;
-      if (c->counter || t_diff > WDOG_TRIE_AFTER_SEC) { /* max. 5 minutes */
+      if ( (c->counter && (t_diff > 50 || force))
+          || t_diff > WDOG_TRIE_AFTER_SEC) { /* max. 5 minutes */
         if (c->counter > MAX_WDOG_TRIES) {
           /* now its enough with trying */
           /* clear connection */
@@ -389,6 +433,61 @@ void get_server_data(char *name,
    XDPRINTF((2,0,"NW386 %s found at:%s", name, visable_ipx_adr(adr)));
 }
 
+static int name_match(uint8 *s, uint8 *p)
+{
+  uint8   pc;
+  while ( (pc = *p++) != 0){
+    switch  (pc) {
+      case '?' : if (!*s++) return(0);    /* simple char */
+	         break;
+
+      case '*' : if (!*p) return(1);      /* last star    */
+	         while (*s) {
+	           if (name_match(s, p) == 1) return(1);
+	           ++s;
+	         }
+	         return(0);
+
+      default : if (pc != *s++) return(0); /* normal char */
+	        break;
+    } /* switch */
+  } /* while */
+  return ( (*s) ? 0 : 1);
+}
+
+static int find_station_match(int entry, ipxAddr_t *addr)
+{
+  int matched = 0;
+  if (station_fn && *station_fn) {
+    FILE *f=fopen(station_fn, "r");
+    if (f) {
+      char  buff[200];
+      char  addrstring[100];
+      int   what;
+      ipx_addr_to_adr(addrstring, addr);
+      upstr(addrstring);
+      while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))){
+        if (what == entry) {
+          char  *p = buff + strlen(buff);
+          while (p-- > buff && *p==32) *p='\0';
+          upstr(buff);
+          if (name_match(addrstring, buff)) {
+            matched=1;
+            break;
+          }
+        }
+      }
+      fclose(f);
+    } else {
+      XDPRINTF((3, 0, "find_station_match, cannot open '%s'",
+           station_fn));
+    }
+  }
+  XDPRINTF((3, 0, "find_station_match entry=%d, matched=%d, addr=%s",
+          entry, matched, visable_ipx_adr(addr)));
+  return(matched);
+}
+
 static void handle_sap(int fd,
                 int        ipx_pack_typ,
                 int        data_len,
@@ -402,7 +501,19 @@ static void handle_sap(int fd,
     XDPRINTF((2,0,"SAP NEAREST SERVER request typ=%d von %s",
              server_type, visable_ipx_adr(from_addr)));
     /* Get Nearest File Server */
-    send_server_response(4, server_type, from_addr);
+    if (!nearest_request_flag)
+      send_server_response(4, server_type, from_addr);
+#if INTERNAL_RIP_SAP
+    else {
+      int  do_sent = (nearest_request_flag == 1) ? 1 : 0;
+      if (find_station_match(1, from_addr)) do_sent = !do_sent;
+
+      if (do_sent)
+        send_server_response(4, server_type, from_addr);
+      XDPRINTF((3,0, "SAP NEAREST REQUEST =%d, nearest_request_flag=%d",
+                       do_sent, nearest_request_flag));
+    }
+#endif
   } else if (query_type == 1) {  /* general Request */
     XDPRINTF((2,0, "SAP GENERAL request server_type =%d", server_type));
     send_server_response(2, server_type, from_addr);
@@ -755,6 +866,12 @@ static void get_ini(int full)
                         server_goes_down_secs = 10;
                       break;
 
+           case 211 : server_broadcast_secs=atoi(inhalt);
+                      if (server_broadcast_secs < 10 ||
+                        server_broadcast_secs > 600)
+                        server_broadcast_secs = 60;
+                      break;
+
            case 300 : print_route_tac=atoi(inhalt);
                       break;
 
@@ -767,6 +884,12 @@ static void get_ini(int full)
            case 310 : wdogs_till_tics=atoi(inhalt);
                       break;
 
+           case 400 : new_str(station_fn, (uint8*)inhalt);
+                      break;
+
+           case 401 : nearest_request_flag=atoi(inhalt);
+                      break;
+
            default : break;
          } /* switch */
       } /* if */
@@ -777,6 +900,11 @@ static void get_ini(int full)
   if (print_route_tac && !pr_route_info_fn && !*pr_route_info_fn)
     print_route_tac = 0;
   if (!print_route_tac) xfree(pr_route_info_fn);
+
+#if INTERNAL_RIP_SAP
+  server_broadcast_secs /= 2;
+#endif
+
   if (full) {
 #ifdef LINUX
 # if INTERNAL_RIP_SAP
@@ -828,15 +956,17 @@ static void close_all(void)
 
   if (pid_ncpserv > 0) {
     int status;
+#if !CALL_NCPSERV_OVER_SOCKET
     if (fd_ncpserv_out > -1) {
       close(fd_ncpserv_out);
       fd_ncpserv_out =-1;
     }
+#endif
     if (fd_ncpserv_in  > -1)  {
       close(fd_ncpserv_in);
       fd_ncpserv_in = -1;
     }
-    kill(pid_ncpserv, SIGTERM);  /* terminate ncpserv */
+    kill(pid_ncpserv, SIGQUIT);  /* terminate ncpserv */
     waitpid(pid_ncpserv, &status, 0);
     kill(pid_ncpserv, SIGKILL);  /* kill ncpserv */
   }
@@ -869,7 +999,7 @@ static void down_server(void)
     fprintf(stderr, "\n*********************************************\n");
     sleep(1);
     fprintf(stderr, "\007\n");
-    broadsecs=100;
+    broadmillisecs  =  100;
     server_down_stamp = akttime_stamp;
     send_down_broadcast();
   }
@@ -908,6 +1038,8 @@ static void set_sigs(void)
   signal(SIGHUP,   sig_hup);
 }
 
+static int server_is_down=0;
+
 int main(int argc, char **argv)
 {
   int j = -1;
@@ -915,7 +1047,7 @@ int main(int argc, char **argv)
   if (argc > 1) client_mode=1;
      /* in client mode the testprog 'nwclient' will be startet. */
 
-  init_tools(NWSERV);
+  init_tools(NWSERV, 0);
   get_ini(1);
 
   while (++j < NEEDED_POLLS) {
@@ -955,12 +1087,12 @@ int main(int argc, char **argv)
                      &my_server_adr, &server_adr_sap, 0, 0, 0);
     }
 #endif
-
-    while (1) {
-      int anz_poll = poll(polls, NEEDED_POLLS, broadsecs);
+    while (!server_is_down) {
+      int anz_poll = poll(polls, NEEDED_POLLS, broadmillisecs);
+      int call_wdog=0;
       time(&akttime_stamp);
       if (fl_get_int) {
-        if (fl_get_int == 1)      handle_hup_reqest();
+        if      (fl_get_int == 1) handle_hup_reqest();
         else if (fl_get_int == 2) down_server();
       }
       if (anz_poll > 0) { /* i have to work */
@@ -1006,6 +1138,7 @@ int main(int argc, char **argv)
                             &&   sizeof(int) == read(fd_ncpserv_in,
                                  (char*)&what, sizeof(what)))
                                 modify_wdog_conn(conn, what);
+                            if (what > 0 && what < 99) call_wdog++;
                             break;
 
                       case  0x6666 :  /* bcast message */
@@ -1035,25 +1168,29 @@ int main(int argc, char **argv)
       } else {
         XDPRINTF((99,0,"POLLING ..."));
       }
+
       if (server_down_stamp) {
-        if (akttime_stamp - server_down_stamp > server_goes_down_secs) break;
+        if (akttime_stamp - server_down_stamp > server_goes_down_secs)
+          server_is_down++;
       } else {
-        if (akttime_stamp - broadtime > (broadsecs / 1000)) { /* ca. 30 seconds */
-          send_sap_rip_broadcast((broadsecs<3000) ? 1 :0);  /* firsttime broadcast */
-          if (broadsecs < 30000) {
+        int bsecs    = broadmillisecs / 1000;
+        int difftime = akttime_stamp - broadtime;
+        if (difftime > bsecs) {
+          send_sap_rip_broadcast((bsecs < 3) ? 1 : 0);  /* firsttime broadcast */
+          if (bsecs < server_broadcast_secs) {
             rip_for_net(MAX_U32);
             get_servers();
-            broadsecs *= 2;
-            if (broadsecs > 30000)
-#if INTERNAL_RIP_SAP
-               broadsecs = 30000;  /* every 30 sec. */
-#else
-               broadsecs = 60000;  /* every 60 sec. */
-#endif
+            bsecs *= 2;
+            if (bsecs > server_broadcast_secs)
+                bsecs=server_broadcast_secs;
+            broadmillisecs = bsecs*1000+10;
           }
-          send_wdogs();
+          send_wdogs(call_wdog);
           broadtime = akttime_stamp;
-        } else if (client_mode) get_servers();  /* Here more often */
+        } else {
+          if (call_wdog) send_wdogs(1);
+          if (client_mode && difftime > 5) get_servers();  /* Here more often */
+        }
       }
     } /* while */
     send_down_broadcast();

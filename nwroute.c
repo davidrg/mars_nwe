@@ -1,4 +1,4 @@
-/* nwroute.c 08-Feb-96 */
+/* nwroute.c 09-Mar-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -190,10 +190,12 @@ void insert_delete_server(uint8  *name,                 /* Server Name */
     nr->hops  = 0xffff;
   } else if (do_delete) {
     nr=nw_servers[k];
+
 #if !FILE_SERVER_INACTIV
     if (!IPXCMPNODE(nr->addr.node, my_server_adr.node) ||
         !IPXCMPNET (nr->addr.net,  my_server_adr.net) )
 #endif
+
     {
       ins_del_bind_net_addr(nr->name, nr->typ, NULL);
       xfree(nr->name);
@@ -394,7 +396,7 @@ void send_server_response(int respond_typ,
 /* respond_typ 2 = general, 4 = nearest service respond */
 {
   IPX_DATA   ipx_data;
-  int           j=-1;
+  int        j=-1;
   int        tics=99;
   int        hops=15;
   int        entry = -1;
@@ -450,8 +452,14 @@ static void send_sap_broadcast(int mode)
       U16_TO_BE16(SOCK_SAP,   wild.sock);
       while (++j < anz_servers) {
         NW_SERVERS *nw=nw_servers[j];
-        if (!nw->typ || (nw->net == nd->net && nw->hops)
-                     || (mode == 2 && nw->hops) ) continue; /* no SAP to this NET */
+        if  ( !nw->typ                           /* server has no typ       */
+         || ( nw->net == nd->net && nw->hops)    /* server has same net but */
+              	      	 	    		 /* hops                    */
+         || ( mode == 2 && nw->hops) ) {         /* no SAP to this NET      */
+          XDPRINTF((3, 0, "No SAP mode=%d, to net=0x%lx for server '%s'",
+                 mode, nd->net, nw->name));
+          continue;
+        }
         memset(&ipx_data, 0, sizeof(ipx_data.sip));
         strcpy(ipx_data.sip.server_name, nw->name);
         memcpy(&ipx_data.sip.server_adr, &(nw->addr), sizeof(ipxAddr_t));
@@ -495,10 +503,10 @@ void send_sap_rip_broadcast(int mode)
 /* mode=1, first trie         */
 /* mode=2, shutdown	      */
 {
-static int flipflop=0;
+static int flipflop=1;
   if (mode) {
-    send_sap_broadcast(mode);
     send_rip_broadcast(mode);
+    send_sap_broadcast(mode);
   } else {
     if (flipflop) {
       send_rip_broadcast(mode);

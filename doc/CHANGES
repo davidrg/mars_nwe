@@ -83,7 +83,15 @@ Erste 'oeffentliche' Version
 - Passwort Strategy erweitert. Nun ist es auch moeglich ueber
   entry '7' in der ini Datei System-Passwoerter zu verwenden.
   Es werden dann unencryted Passwoerter verwendet.
-
-
-
-
+- Neuer Eintrag '15' in ini Datei eingebaut zwecks automatischen
+  Einlesen von User in die Bindery.
+- Moeglichkeit zum Testen/Anlegen der Standarddirs beim Starten
+  eingebaut.
+- Bindery Code veraendert, Dateien bleiben nun geoeffnet.
+- Kommunikation ncpserv <-> nwconn von Pipe auf Socket abgeaendert.
+- Moeglichkeit zu Leistungssteigerung mittels modifizierten ipx-kernel
+  eingebaut.
+- entry '6' erweitert. Nun ist 3.12 Angabe moeglich.
+- Moeglichkeit der stationsabhaengigen Steuerung von
+  Nearest Server Response eingebaut.
+^^^^^^^^^^ VERSION 0.97 ^^^^^^^^

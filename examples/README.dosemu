@@ -1,3 +1,4 @@
+!! this dosemupatch is _not_ needed for kernel >= 1.3.71 :)  !!
 If dosemu don't work together with mars_nwe you should apply
 the dirty dosemu-patch to the dosemu program.
 In 1.3.6? the changing of an existing route over the internal net

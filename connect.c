@@ -1,4 +1,4 @@
-/* connect.c  23-Jan-96 */
+/* connect.c  10-Mar-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,6 +29,9 @@ extern int errno;
 #ifdef TEST_FNAME
   static int test_handle=-1;
 #endif
+
+#define DONT_KNOW_IF_OK  1
+
 
 static int  default_uid=-1;
 static int  default_gid=-1;
@@ -158,8 +161,8 @@ void set_default_guid(void)
 {
   seteuid(0);
   if (setegid(default_gid) < 0 || seteuid(default_uid) < 0) {
-    fprintf(stderr, "Cannot set default gid=%d and uid=%d\nABORTET!!\n" ,
-       default_gid, default_uid);
+    errorp(1, "set_default_guid, !! Abort !!",
+      "Cannot set default gid=%d and uid=%d" , default_gid, default_uid);
     exit(1);
   }
 }
@@ -680,6 +683,7 @@ static int build_verz_name(NW_PATH *nwpath,    /* gets complete path     */
    return(completition);
 }
 
+static int lastdirhandle=0;
 int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
                           uint8 *data, int len, int only_dir)
 /*
@@ -687,7 +691,15 @@ int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
  * else a negativ errcode will be returned
  */
 {
-   int completition                = build_path(nwpath, data, len, only_dir);
+   int completition;
+#if DONT_KNOW_IF_OK
+   if (!dirhandle && len > 1 && *data== ':' && *(data+1) == '/') {
+     --len;
+     data++;
+     dirhandle = lastdirhandle;
+   } else if (dirhandle) lastdirhandle = dirhandle;
+#endif
+   completition = build_path(nwpath, data, len, only_dir);
    if (!completition) completition = build_verz_name(nwpath, dirhandle);
    return(completition);
 }
@@ -810,6 +822,13 @@ int nw_chmod_datei(int dir_handle, uint8 *data, int len, int modus)
   struct stat   stbuff;
   int           completition=-0x9c;
   NW_PATH nwpath;
+#if DONT_KNOW_IF_OK
+  if (!dir_handle && len > 1 && *data== ':' && *(data+1) == '/') {
+     --len;
+     data++;
+     dir_handle = lastdirhandle;
+  } else if (dir_handle) lastdirhandle = dir_handle;
+#endif
   build_path(&nwpath, data, len, 0);
   if (nwpath.fn[0] != '.') { /* Files with . at the beginning are not ok */
     completition = build_verz_name(&nwpath, dir_handle);
@@ -924,6 +943,13 @@ static int change_dir_entry( NW_DIR *dir,     int volume,
   }
 }
 
+void nw_exit_connect(void)
+{
+  if (connect_is_init) {
+    init_file_module();
+  }
+}
+
 int nw_init_connect(void)
 /* Cann be called when ever you want */
 {
@@ -971,12 +997,12 @@ int nw_init_connect(void)
     fclose(f);
 
     if (used_nw_volumes < 1) {
-      errorp(0, "No Volumes defined. Look at ini file entry 1, Abort !!", NULL);
+      errorp(1, "No Volumes defined. Look at ini file entry 1, Abort !!", NULL);
       return(-1);
     }
 
     if (stat(build_unix_name(&nwlogin, 0), &stbuff)) {
-      errorp(0, "Stat error LOGIN Directory, Abort !!",
+      errorp(1, "Stat error LOGIN Directory, Abort !!",
             "UnixPath=`%s`", build_unix_name(&nwlogin, 0));
       return(-1);
     }
@@ -1052,7 +1078,7 @@ int nw_search(uint8 *info,
 
 {
    NW_PATH nwpath;
-   int     completition = conn_get_kpl_path(&nwpath, dirhandle, data, len, 0);
+   int     completition= conn_get_kpl_path(&nwpath, dirhandle, data, len, 0);
    XDPRINTF((5,0,"nw_search path:%s:, fn:%s:, completition:0x%x",
      nwpath.path, nwpath.fn, completition));
    if (completition > -1) {

@@ -1,4 +1,4 @@
-/* connect.h 28-Jan-96 */
+/* connect.h 10-Mar-96 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
 typedef struct {
@@ -53,6 +53,8 @@ typedef struct {
 
 
 extern int nw_init_connect(void);
+extern void nw_exit_connect(void);
+
 extern int nw_free_handles(int task);
 
 extern int nw_creat_open_file(int dir_handle, uint8 *data, int len,

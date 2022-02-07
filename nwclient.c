@@ -702,7 +702,7 @@ static void test_wdog(void)
 /* --------------------------------------------------------- */
 int main(int argc, char **argv)
 {
-  init_tools(NWCLIENT);
+  init_tools(NWCLIENT, 0);
 
   if (argc != 3) {
     fprintf(stderr, "usage: nwclient MY_ADDR SERVER_ADDR\n");

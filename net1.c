@@ -108,7 +108,7 @@ void adr_to_ipx_addr(ipxAddr_t *p, char *s)
   int net0, net1, net2, net3;
   int node0, node1, node2, node3, node4, node5;
   int sock0, sock1;
-  sscanf(s, "%x.%x.%x.%x,%x.%x.%x.%x.%x.%x,%x.%x",
+  sscanf(s, "%x.%x.%x.%x:%x.%x.%x.%x.%x.%x:%x.%x",
 	  &net0, &net1, &net2, &net3,
 	  &node0, &node1, &node2, &node3, &node4, &node5,
 	  &sock0, &sock1);
@@ -128,7 +128,7 @@ void adr_to_ipx_addr(ipxAddr_t *p, char *s)
 
 void ipx_addr_to_adr(char *s, ipxAddr_t *p)
 {
-  sprintf(s, "%x.%x.%x.%x,%x.%x.%x.%x.%x.%x,%x.%x",
+  sprintf(s, "%x.%x.%x.%x:%x.%x.%x.%x.%x.%x:%x.%x",
 	     (int)p->net[0] ,
 	     (int)p->net[1] ,
 	     (int)p->net[2] ,

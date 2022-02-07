@@ -1,5 +1,5 @@
 /* ncpserv.c */
-#define REVISION_DATE "13-Feb-96"
+#define REVISION_DATE "10-Mar-96"
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -19,7 +19,11 @@
 
 #include "net.h"
 #include "nwdbm.h"
+
+#if !CALL_NCPSERV_OVER_SOCKET
 static  struct     pollfd polls[2];
+#endif
+
 static  int        ncp_fd = -1;
 static  uint8      ipx_in_data[IPX_MAX_DATA+500]; /* space for additional data */
 static  NCPREQUEST *ncprequest = (NCPREQUEST*)&ipx_in_data;
@@ -32,6 +36,10 @@ static  int        rcv_flags = 0;
 static  char       my_nwname[50];
 static  time_t 	   akttime;
 static  int        server_goes_down=0;
+static  int 	   ipx_out_fd=-1;
+
+/* next should be '1', is for testing only */
+#define USE_PERMANENT_OUT_SOCKET  1
 
 static void write_to_nwserv(int what, int connection, int mode,
        	    			char *data, int size)
@@ -58,7 +66,7 @@ static void write_to_nwserv(int what, int connection, int mode,
                    write(FD_NWSERV, &connection, sizeof(int));
                    break;
 
-    case 0xffff  : /* say nwserv to down the server */
+    case 0xffff  : /* tell nwserv to down the server */
                    write(FD_NWSERV, &what, sizeof(int));
                    write(FD_NWSERV, &what, sizeof(int));
                    break;
@@ -85,12 +93,12 @@ static void write_to_nwserv(int what, int connection, int mode,
 #define nwserv_down_server() \
    write_to_nwserv(0xffff, 0, 0, NULL, 0)
 
-static int open_ncp_socket()
+static int open_ipx_sockets()
 {
   struct t_bind bind;
   ncp_fd=t_open("/dev/ipx", O_RDWR, NULL);
   if (ncp_fd < 0) {
-    if (nw_debug) t_error("t_open !Ok");
+    t_error("t_open !Ok");
     return(-1);
   }
   U16_TO_BE16(SOCK_NCP, my_addr.sock); /* NCP_SOCKET */
@@ -99,15 +107,30 @@ static int open_ncp_socket()
   bind.addr.buf    = (char*)&my_addr;
   bind.qlen        = 0; /* immer */
   if (t_bind(ncp_fd, &bind, &bind) < 0){
-    if (nw_debug) t_error("t_bind in open_ncp_socket !OK");
+    t_error("t_bind in open_ipx_sockets !OK");
     close(ncp_fd);
     return(-1);
   }
+#if USE_PERMANENT_OUT_SOCKET
+  ipx_out_fd=t_open("/dev/ipx", O_RDWR, NULL);
+  if (ipx_out_fd > -1) {
+    U16_TO_BE16(0, my_addr.sock); /* dynamic socket */
+    if (t_bind(ipx_out_fd, &bind, &bind) < 0) {
+      if (nw_debug) t_error("2. t_bind in open_ipx_sockets !OK");
+      t_close(ipx_out_fd);
+      ipx_out_fd = -1;
+    }
+  } else {
+    if (nw_debug) t_error("2. t_open !Ok");
+  }
+#endif
   return(0);
 }
 
 typedef struct {
-   int        fd;           /* writepipe             */
+   int        fd;           /* writepipe                       */
+                            /* or if CALL_NWCONN_OVER_SOCKET then sock_nr of nwconn */
+
    int        pid;          /* pid from son          */
    ipxAddr_t  client_adr;   /* address client        */
    uint32     object_id;    /* logged object         */
@@ -126,43 +149,53 @@ static int 	  anz_connect=0;   /* actual anz connections */
 static int new_conn_nr(void)
 {
   int  j = -1;
+  int  one_found=0;
   if (!anz_connect){ /* init all */
     j = MAX_CONNECTIONS;
     while (j--) {
       connections[j].fd       	= -1;
+      connections[j].pid       	= -1;
       connections[j].message[0] = '\0';
     }
     anz_connect++;
     return(1);
   }
+
   j = -1;
   while (++j < MAX_CONNECTIONS) {
     CONNECTION *c=&(connections[j]);
-    if (c->fd < 0) {
+    if (c->fd < 0 && c->pid < 0) {
       c->message[0] = '\0';
       if (++j > anz_connect) anz_connect=j;
       return(j);
     }
   }
+
   /* nothing free */
   j=MAX_CONNECTIONS;
-  while (j--)  {
+  while (j-- && one_found < 3)  {
     CONNECTION *c=&(connections[j]);
     if (!c->object_id) {  /* NOT LOGGED IN */
       /* makes wdog test faster */
       nwserv_handle_wdog(j+1, 1);
-      return(0);
+      one_found++;
     }
   }
-  j=0;
-  while (j++ < MAX_CONNECTIONS) nwserv_handle_wdog(j, 2);
+
+  if (!one_found) {
+    j=0;
+    while (j++ < MAX_CONNECTIONS)
+      nwserv_handle_wdog(j, 2);  /* slow activate wdog */
+  }
+
   return(0); /* nothing free */
 }
 
 static int free_conn_nr(int nr)
 {
   if (nr && --nr < anz_connect) {
-    connections[nr].fd = -1;
+    connections[nr].fd  = -1;
+    connections[nr].pid = -1;
     return(0);
   }
   return(-1);
@@ -185,20 +218,42 @@ static void clear_connection(int conn)
   if (conn > 0 && --conn < anz_connect) {
     CONNECTION *c = &connections[conn];
     if (c->fd > -1) {
+#if !CALL_NWCONN_OVER_SOCKET
       close(c->fd);
+#endif
       c->fd = -1;
-      if (c->pid > -1) {
-        kill(c->pid, SIGTERM); /* kill it */
-        c->pid = -1;
-      }
+      if (c->pid > -1) kill(c->pid, SIGTERM); /* kill it */
     }
     c->object_id = 0;
-    conn = anz_connect;
+  }
+}
+
+static void kill_connections(void)
+/* here the connections will really removed */
+{
+  int conn;
+  int stat_loc;
+  int pid;
+  while ((pid=waitpid(-1, &stat_loc, WNOHANG)) > 0) {
+    conn =  anz_connect;
     while (conn--) {
       CONNECTION *c = &connections[conn];
-      if (c->fd < 0) anz_connect--;
-      else break;
+      if (c->pid == pid) clear_connection(conn+1);
     }
+  }
+  conn =  anz_connect;
+  while (conn--) {
+    CONNECTION *c = &connections[conn];
+    if (c->fd < 0 && c->pid > -1) {
+      kill(c->pid, SIGKILL); /* kill it */
+      c->pid = -1;
+    }
+  }
+  conn         = anz_connect;
+  while (conn--) {
+    CONNECTION *c = &connections[conn];
+    if (c->fd < 0 && c->pid < 0) anz_connect--;
+    else break;
   }
 }
 
@@ -214,6 +269,7 @@ static int find_get_conn_nr(ipxAddr_t *addr)
   if (!connection){
     if ((connection = new_conn_nr()) > 0){
       CONNECTION *c=&(connections[connection-1]);
+#if !CALL_NWCONN_OVER_SOCKET
       int fds[2];
       memcpy((char*) &(c->client_adr), (char *)addr, sizeof(ipxAddr_t));
       if (pipe(fds) < 0) {
@@ -221,15 +277,50 @@ static int find_get_conn_nr(ipxAddr_t *addr)
 	free_conn_nr(connection);
 	return(0);
       } else {
+#else
+      int ipx_fd=-1;
+      struct t_bind bind;
+      memcpy((char*) &(c->client_adr), (char *)addr, sizeof(ipxAddr_t));
+      ipx_fd=t_open("/dev/ipx", O_RDWR, NULL);
+      if (ipx_fd > -1) {
+        U16_TO_BE16(0,  my_addr.sock); /* actual write socket */
+        bind.addr.len    = sizeof(ipxAddr_t);
+        bind.addr.maxlen = sizeof(ipxAddr_t);
+        bind.addr.buf    = (char*)&my_addr;
+        bind.qlen        = 0; /* allways */
+        if (t_bind(ipx_fd, &bind, &bind) < 0){
+          if (nw_debug) t_error("t_bind !OK");
+          t_close(ipx_fd);
+          ipx_fd = -1;
+        } else {
+          ;
+#if 0
+          t_unbind(ipx_fd);
+          t_close(ipx_fd);
+          ipx_fd = (int) GET_BE16(my_addr.sock);
+#endif
+        }
+      } else {
+        if (nw_debug) t_error("t_open !Ok");
+      }
+      if (ipx_fd < 0) {
+	errorp(0, "find_get_conn_nr, socket", NULL);
+	free_conn_nr(connection);
+	return(0);
+      } else {
+#endif
 	int akt_pid = getpid();
 	int pid     = fork();
 	if (pid < 0) {
 	  errorp(0, "find_get_conn_nr, fork", NULL);
 	  free_conn_nr(connection);
+#if !CALL_NWCONN_OVER_SOCKET
 	  close(fds[0]);
 	  close(fds[1]);
+#endif
 	  return(0);
 	}
+
 	if (pid == 0) {
          /* new process */
 	  char *progname="nwconn";
@@ -238,10 +329,14 @@ static int find_get_conn_nr(ipxAddr_t *addr)
 	  char connstr[20];
 	  char addrstr[100];
 	  int j = 2;
+#if !CALL_NWCONN_OVER_SOCKET
 	  close(fds[1]);   /* no writing    */
 	  dup2(fds[0], 0); /* becomes stdin */
 	  close(fds[0]);   /* not needed    */
-
+#else
+          dup2(ipx_fd, 0); /* becomes stdin */
+          close(ipx_fd);
+#endif
 	  while (j++ < 100) close(j);  /* close all > stderr */
 
 	  sprintf(pidstr, "%d", akt_pid);
@@ -253,8 +348,13 @@ static int find_get_conn_nr(ipxAddr_t *addr)
 	  exit(1);  /* normaly not reached */
         }
 	c->pid = pid;
+#if CALL_NWCONN_OVER_SOCKET
+        c->fd = (int) GET_BE16(my_addr.sock);
+        close(ipx_fd);
+#else
 	c->fd  = fds[1];
 	close(fds[0]);   /* no need to read */
+#endif
         XDPRINTF((5,0, "AFTER FORK new PROCESS =%d, connection=%d", pid, connection));
       }
     }
@@ -289,6 +389,16 @@ static void get_login_time(uint8 login_time[], CONNECTION *cx)
   login_time[5] = s_tm->tm_sec;
   login_time[6] = s_tm->tm_wday;
 }
+
+#if CALL_NWCONN_OVER_SOCKET
+static void send_to_nwconn(int nwconn_sock, char *data, int size)
+{
+  ipxAddr_t nwconn_addr;
+  memcpy(&nwconn_addr, &my_addr, sizeof(ipxAddr_t));
+  U16_TO_BE16(nwconn_sock, nwconn_addr.sock);
+  send_ipx_data(ipx_out_fd, 17, size, data, &nwconn_addr, NULL);
+}
+#endif
 
 
 static int handle_fxx(CONNECTION *c, int gelen, int func)
@@ -426,7 +536,9 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
 	               xdata->subversion = 15;
                      } else {
 	               xdata->version    =  3;
-	               xdata->subversion = 11;
+	               xdata->subversion = (tells_server_version == 2)
+	                                      ? 12
+	                                      : 11;
                      }
 
                      i=0;
@@ -888,7 +1000,7 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                                          newpassword));
 	                if (c->object_id == 1 ||
 	                   0 == (result=nw_test_unenpasswd(obj.id, oldpassword)))
-	                  result=nw_set_passwd(obj.id, newpassword);
+	                  result=nw_set_passwd(obj.id, newpassword, 0);
                       }
 	              if (result < 0) completition = (uint8) -result;
                     } else {
@@ -1232,10 +1344,16 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
   ncpresponse->completition   = completition;
   if (c->message[0]) connect_status |= 0x40;
   ncpresponse->connect_status = connect_status;
+#if CALL_NWCONN_OVER_SOCKET
+  data_len+=sizeof(NCPRESPONSE);
+  send_to_nwconn(c->fd, (char*)ncpresponse, data_len);
+#else
   data_len=write(c->fd, (char*)ncpresponse,
                          sizeof(NCPRESPONSE) + data_len);
+#endif
   XDPRINTF((2, 0, "0x%x 0x%x compl:0x%x, write to %d, anz = %d",
       func, (int)ufunc, (int) completition, c->fd, data_len));
+
   return(0);  /* ok */
 }
 
@@ -1256,20 +1374,24 @@ static void ncp_response(int type, int sequence,
   if (nw_debug){
     char comment[80];
     sprintf(comment, "NCP-RESP compl=0x%x ", completition);
-    send_ipx_data(-1, 17, sizeof(NCPRESPONSE) + data_len,
+    send_ipx_data(ipx_out_fd, 17, sizeof(NCPRESPONSE) + data_len,
 	                 (char *) ncpresponse,
 	                 &from_addr, comment);
   } else
-    send_ipx_data(-1, 17, sizeof(NCPRESPONSE) + data_len,
+    send_ipx_data(ipx_out_fd, 17, sizeof(NCPRESPONSE) + data_len,
 	               (char *) ncpresponse,
 	                &from_addr, NULL);
 }
 
+#if 0
 static void sig_child(int isig)
 {
   int k=-1;
   int status;
-  int pid=wait(&status);
+  int pid;
+  signal(SIGCHLD, sig_child);
+  pid=wait(&status);
+  XDPRINTF((1,0, "GOT conn pid=%d", pid));
   if (pid > -1) {
     while (++k < anz_connect) {
       CONNECTION *c = &connections[k];
@@ -1278,9 +1400,10 @@ static void sig_child(int isig)
         break;
       }
     }
+    kill(pid, SIGKILL); /* kill it */
   }
-  signal(SIGCHLD, sig_child);
 }
+#endif
 
 static void close_all(void)
 {
@@ -1291,20 +1414,32 @@ static void close_all(void)
     t_close(ncp_fd);
     XDPRINTF((2,0, "LEAVE ncpserv"));
     ncp_fd = -1;
+    if (ipx_out_fd > -1) {
+      t_unbind(ipx_out_fd);
+      t_close(ipx_out_fd);
+      ipx_out_fd = -1;
+    }
   }
+  sync_dbm();
 }
 
+static int server_is_down=0;
 static void sig_quit(int isig)
 {
-  close_all();
-  exit(0);
+  server_is_down++;
 }
 
+static int got_sig_child=0;
+static void sig_child(int isig)
+{
+  got_sig_child++;
+  signal(SIGCHLD, sig_child);
+}
 
 static void set_sig(void)
 {
-  signal(SIGTERM,  sig_quit);
   signal(SIGQUIT,  sig_quit);
+  signal(SIGTERM,  SIG_IGN);
   signal(SIGINT,   SIG_IGN);
   signal(SIGPIPE,  SIG_IGN);
   signal(SIGCHLD,  sig_child);
@@ -1323,7 +1458,7 @@ static void handle_bind_calls(uint8 *p)
          p += 2;
          strmaxcpy(obj.name, p+1, *p);
          p += (*p+1);
-         nw_new_create_prop(0, obj.name, obj.type, O_FL_DYNA, 0x40,
+         nw_new_obj_prop(0, obj.name, obj.type, O_FL_DYNA, 0x40,
                            "NET_ADDRESS", P_FL_DYNA|P_FL_ITEM,  0x40,
                            (char *)p, sizeof(ipxAddr_t));
        }
@@ -1343,26 +1478,68 @@ static void handle_bind_calls(uint8 *p)
   }
 }
 
-static int handle_ctrl(void)
-/* reads stdin pipe */
+static int xread(IPX_DATA *ipxd, int *offs, uint8 *data, int size)
 {
+  if (*offs == 0) {
+#if CALL_NCPSERV_OVER_SOCKET
+    memcpy(ipxd, &ipx_in_data, ud.udata.len);
+#else
+    if (read(0, (char*)&(ipxd->owndata.d), sizeof(int)) == sizeof(int)) {
+      if (ipxd->owndata.d.size >= size &&
+          ipxd->owndata.d.size < IPX_MAX_DATA - sizeof(ipxd->owndata)) {
+
+        if (ipxd->owndata.d.size >
+              read(0, (char*)&(ipxd->owndata.d.function),
+                                  ipxd->owndata.d.size) ) {
+          size=-1;
+        }
+
+      } else {
+        errorp(1, "xread:", "datasize = %d", ipxd->owndata.d.size);
+        size=-1;
+      }
+    } else size = -1;
+#endif
+  }
+  if (size > -1 && *offs + size > ipxd->owndata.d.size) {
+    errorp(1, "xread:", "prog error: *offs=%d + size=%d > d.size=%d",
+                  *offs, size, ipxd->owndata.d.size);
+    size = -1;
+  }
+
+  if (size > -1) {
+    memcpy(data,  ((uint8 *)&(ipxd->owndata.d.function)) + *offs, size);
+    *offs+=size;
+  } else {
+    errorp(1, "xread:", "readerror");
+  }
+  return(size);
+}
+
+static int handle_ctrl(void)
+/* reads stdin pipe or packets from nwserv */
+{
+  IPX_DATA ipxd;
   int   what;
   int   conn;
   int   result   = 0;
-  int   data_len = read(0, (char*)&what, sizeof(what));
-  if (data_len  == sizeof(what)) {
-    XDPRINTF((2, 0, "GOT CTRL what=0x%x", what));
+  int   offs=0;
+  int   data_len =  xread(&ipxd, &offs, (uint8*)&(what), sizeof(int));
+  if   (data_len == sizeof(int)) {
+    XDPRINTF((2, 0, "GOT CTRL what=0x%x, len=%d", what, ipxd.owndata.d.size));
     switch (what) {
       case 0x5555 : /* clear_connection */
-        data_len = read(0, (char*)&conn, sizeof(conn));
-        if (sizeof(int) == data_len) clear_connection(conn);
+        if (sizeof (int) ==
+            xread(&ipxd, &offs, (uint8*)&(conn), sizeof(int)))
+          clear_connection(conn);
         break;
 
       case 0x3333 : /* 'bindery' calls */
-        if (sizeof(conn) == read(0, (char*)&conn, sizeof(conn))) {
+        if (sizeof (int) ==
+            xread(&ipxd, &offs, (uint8*)&(conn), sizeof(int))) {
           uint8 *buff = (uint8*)  xmalloc(conn+10);
           XDPRINTF((2,0, "0x3333 len=%d", conn));
-          if (conn == read(0, (char*)buff, conn))
+          if (conn == xread(&ipxd, &offs, buff, conn))
              handle_bind_calls(buff);
           else
             XDPRINTF((1, 1, "0x3333 protokoll error:len=%d", conn));
@@ -1372,11 +1549,12 @@ static int handle_ctrl(void)
 
       case 0xeeee:
         get_ini_debug(NCPSERV);
-        nw_fill_standard(NULL, NULL);
+        (void)nw_fill_standard(NULL, NULL);
+        sync_dbm();
         break;
 
       case 0xffff : /* server down */
-        data_len = read(0, (char*)&conn, sizeof(conn));
+        data_len = xread(&ipxd, &offs, (char*)&conn, sizeof(int));
         if (sizeof(int) == data_len && conn == what)
            sent_down_message();
         break;
@@ -1384,27 +1562,175 @@ static int handle_ctrl(void)
       default : break;
     } /* switch */
     result++;
-  } else XDPRINTF((2, 0, "GOT CTRL size=%d", data_len));
+  } else {
+    errorp(1, "handle_ctrl", "wrong data len=%d", data_len);
+  }
   return(result);
+}
+
+static void handle_ncp_request(void)
+{
+  if (t_rcvudata(ncp_fd, &ud, &rcv_flags) > -1){
+    int type;
+    in_len = ud.udata.len;
+    time(&akttime);
+    XDPRINTF((10, 0, "NCPSERV-LOOP von %s", visable_ipx_adr(&from_addr)));
+    if ((type = GET_BE16(ncprequest->type)) == 0x2222 || type == 0x5555) {
+      int connection = (int)ncprequest->connection;
+      XDPRINTF((10,0, "GOT 0x%x in NCPSERV connection=%d", type, connection));
+      if ( connection > 0 && connection <= anz_connect) {
+        CONNECTION *c = &(connections[connection-1]);
+        if (!memcmp(&from_addr, &(c->client_adr), sizeof(ipxAddr_t))) {
+          if (c->fd > -1){
+            if (type == 0x2222) {
+              int sent_here  = 1;
+              int func       = ncprequest->function;
+              int diff_time  = akttime - c->last_access;
+              c->last_access = akttime;
+
+              if (diff_time > 50) /* after max. 50 seconds */
+                 nwserv_reset_wdog(connection);
+                 /* tell the wdog there's no need to look */
+#if !CALL_NWCONN_OVER_SOCKET
+              if (ncprequest->sequence == c->sequence
+                  && !c->retry++) {
+                /* perhaps nwconn is busy  */
+                ncp_response(0x9999, ncprequest->sequence,
+    	                         connection, 0, 0x0, 0, 0);
+                XDPRINTF((2, 0, "Send Request being serviced to connection:%d", connection));
+                return;
+              }
+#endif
+              switch (func) {
+                case 0x15 : /* Messages */
+                case 0x17 : /* File Server Environment */
+                            sent_here = handle_fxx(c, in_len, func);
+                            break;
+
+                case 0x57 : if (!tells_server_version) {
+                         /* 2.15 er don't have namespace_calls */
+                              sent_here = handle_fxx(c, in_len, func);
+                            }
+                            break;
+
+                default :   break;
+              } /* switch */
+
+              if (sent_here) {
+                int anz=
+#if CALL_NWCONN_OVER_SOCKET
+                in_len;
+                send_to_nwconn(c->fd, (char*)ncprequest, in_len);
+#else
+                write(c->fd, (char*)ncprequest, in_len);
+#endif
+                XDPRINTF((10,0, "write to %d, anz = %d", c->fd, anz));
+                if (func == 0x19) {  /* logout */
+                  c->object_id  = 0; /* not LOGIN  */
+                }
+              }
+              c->sequence    = ncprequest->sequence; /* save last sequence */
+              c->retry       = 0;
+              return;
+            } else {  /* 0x5555, close connection  */
+#if !CALL_NWCONN_OVER_SOCKET
+              if ( (uint8) (c->sequence+1) == (uint8) ncprequest->sequence)
+#endif
+              {
+                clear_connection(ncprequest->connection);
+                ncp_response(0x3333,
+                             ncprequest->sequence,
+                             connection,
+         	                 1,    /* task */
+         	                 0x0,  /* completition */
+         	                 0,    /* conn status  */
+         	                 0);
+                return;
+              }
+            }
+          }
+          XDPRINTF((10,0, "c->fd = %d", c->fd));
+        }
+      }
+      /* here someting is wrong */
+      XDPRINTF((1,0, "GOT 0x%x connection=%d of %d conns not OK",
+          type, ncprequest->connection, anz_connect));
+
+      ncp_response(0x3333, ncprequest->sequence,
+    	               ncprequest->connection,
+    	               0,    /* task         */
+    	               0xff, /* completition */
+    	               0xff, /* conn status  */
+    	               0);
+
+    } else if (type == 0x1111) {
+      /* GIVE CONNECTION Nr connection */
+      int connection = (server_goes_down) ? 0 : find_get_conn_nr(&from_addr);
+      XDPRINTF((2, 0, "GIVE CONNECTION NR=%d", connection));
+      if (connection) {
+        CONNECTION *c = &(connections[connection-1]);
+        int anz;
+        c->message[0] = '\0';
+        c->object_id  = 0; /* firsttime set 0 for NOT LOGIN */
+        c->sequence   = 0;
+#if CALL_NWCONN_OVER_SOCKET
+        anz = in_len;
+        send_to_nwconn(c->fd, (char*)ncprequest, in_len);
+#else
+        anz=write(c->fd, (char*)ncprequest, in_len);
+#endif
+        XDPRINTF((10, 0, "write to oldconn %d, anz = %d", c->fd, anz));
+      } else  /* no free connection */
+        ncp_response(0x3333, 0, 0, 0,
+                     0xf9, /* completition */
+                     0,    /* conn status  */
+                     0);
+#if CALL_NCPSERV_OVER_SOCKET
+    } else if (type == 0xeeee
+       && ((OWN_DATA*)(&ipx_in_data))->type1[0] == 0xee
+       && ((OWN_DATA*)(&ipx_in_data))->type1[1] == 0xee
+       && IPXCMPNODE(from_addr.node, my_addr.node)
+       && IPXCMPNET (from_addr.net,  my_addr.net)) {
+      /* comes from nwserv  */
+      handle_ctrl();
+#endif
+    } else {
+      int connection     = (int)ncprequest->connection;
+      int sequence       = (int)ncprequest->sequence;
+      XDPRINTF((1,0, "Got UNKNOWN TYPE: 0x%x", type));
+      ncp_response(0x3333, sequence, connection,
+                   1, 0xfb, 0, 0);
+    }
+  }
 }
 
 int main(int argc, char *argv[])
 {
-  int     result;
-  int     type;
   if (argc != 3) {
     fprintf(stderr, "usage ncpserv address nwname\n");
     exit(1);
   }
-  init_tools(NCPSERV);
+  init_tools(NCPSERV, 0);
   strncpy(my_nwname, argv[1], 48);
   my_nwname[47] = '\0';
   adr_to_ipx_addr(&my_addr, argv[2]);
-  nw_init_dbm(my_nwname, &my_addr);
+
+  if (nw_init_dbm(my_nwname, &my_addr) <0) {
+    errorp(1, "nw_init_dbm", NULL);
+    exit(1);
+  }
+
 #ifdef LINUX
   set_emu_tli();
 #endif
-  if (open_ncp_socket()) exit(1);
+  if (open_ipx_sockets()) {
+    errorp(1, "open_ipx_sockets", NULL);
+    exit(1);
+  }
+
+  XDPRINTF((1, 0, "USE_PERMANENT_OUT_SOCKET %s",
+                (ipx_out_fd > -1) ? "enabled" : "disabled"));
+
   ud.opt.len       = sizeof(ipx_pack_typ);
   ud.opt.maxlen    = sizeof(ipx_pack_typ);
   ud.opt.buf       = (char*)&ipx_pack_typ; /* gets actual Typ */
@@ -1418,133 +1744,32 @@ int main(int argc, char *argv[])
   ud.udata.buf     = (char*)&ipx_in_data;
   set_sig();
 
+#if CALL_NCPSERV_OVER_SOCKET
+  while (!server_is_down) {
+    handle_ncp_request();
+    if (got_sig_child) {
+      kill_connections();
+      got_sig_child=0;
+    }
+  }
+#else
   polls[0].events  = polls[1].events = POLLIN|POLLPRI;
   polls[0].revents = polls[1].revents= 0;
   polls[0].fd      = ncp_fd;
   polls[1].fd      = 0;        /* stdin */
-  while (1) {
+  while (!server_is_down) {
     int anz_poll = poll(polls, 2, 60000);
-    time(&akttime);
     if (anz_poll > 0) { /* i have to work */
       struct pollfd *p = &polls[0];
       int    j = -1;
       while (++j < 2) {
-
         if (p->revents){
           if (!j) {  /* ncp-socket */
             XDPRINTF((99,0, "POLL revents=%d", p->revents));
             if (p->revents & ~POLLIN)
               errorp(0, "STREAM error", "revents=0x%x", p->revents );
-            else {
-              if ((result = t_rcvudata(ncp_fd, &ud, &rcv_flags)) > -1){
-                in_len = ud.udata.len;
-                XDPRINTF((10, 0, "NCPSERV-LOOP von %s", visable_ipx_adr(&from_addr)));
-                if ((type = GET_BE16(ncprequest->type)) == 0x2222 || type == 0x5555) {
-                  int connection = (int)ncprequest->connection;
-                  XDPRINTF((10,0, "GOT 0x%x in NCPSERV connection=%d", type, connection));
-                  if ( connection > 0 && connection <= anz_connect) {
-	            CONNECTION *c = &(connections[connection-1]);
-                    if (!memcmp(&from_addr, &(c->client_adr), sizeof(ipxAddr_t))) {
-                      if (c->fd > -1){
-                        if (type == 0x2222) {
-                          int sent_here  = 1;
-                          int func       = ncprequest->function;
-                          int diff_time  = akttime - c->last_access;
-                          c->last_access = akttime;
-
-                          if (diff_time > 50) /* after max. 50 seconds */
-                             nwserv_reset_wdog(connection);
-                             /* tell the wdog there's no need to look */
-
-                          if (ncprequest->sequence == c->sequence
-                              && !c->retry++) {
-                            /* perhaps nwconn is busy  */
-                            ncp_response(0x9999, ncprequest->sequence,
-			                         connection, 0, 0x0, 0, 0);
-                            XDPRINTF((2, 0, "Send Request being serviced to connection:%d", connection));
-                            continue;
-                          }
-
-                          switch (func) {
-                            case 0x15 : /* Messages */
-                            case 0x17 : /* File Server Environment */
-                                        sent_here = handle_fxx(c, in_len, func);
-                                        break;
-
-                            case 0x57 : if (!tells_server_version) {
-                                     /* 2.15 er has no namespace_calls */
-                                          sent_here = handle_fxx(c, in_len, func);
-                                        }
-                                        break;
-
-                            default :   break;
-                          } /* switch */
-
-  	                  if (sent_here) {
-	                    int anz=write(c->fd, (char*)ncprequest, in_len);
-	                    XDPRINTF((10,0, "write to %d, anz = %d", c->fd, anz));
-                            if (func == 0x19) {  /* logout */
-                              c->object_id  = 0; /* not LOGIN  */
-                            }
-	                  }
-                          c->sequence    = ncprequest->sequence; /* save last sequence */
-                          c->retry       = 0;
-	                  continue;
-                        } else {  /* 0x5555, close connection  */
-                          if ( (uint8) (c->sequence+1) == (uint8) ncprequest->sequence) {
-                            clear_connection(ncprequest->connection);
-	                    ncp_response(0x3333,
-	                                 ncprequest->sequence,
-	                                 connection,
-	             	                 1,    /* task */
-	             	                 0x0,  /* completition */
-	             	                 0,    /* conn status  */
-	             	                 0);
-	                    continue;
-                          }
-                        }
-                      }
-                      XDPRINTF((10,0, "c->fd = %d", c->fd));
-                    }
-	          }
-                  /* here someting is wrong */
-                  XDPRINTF((1,0, "GOT 0x%x connection=%d of %d conns not OK",
-                      type, ncprequest->connection, anz_connect));
-
-	          ncp_response(0x3333, ncprequest->sequence,
-			               ncprequest->connection,
-			               0,    /* task         */
-			               0xff, /* completition */
-			               0xff, /* conn status  */
-			               0);
-
-                } else if (type == 0x1111) {
-	          /* GIVE CONNECTION Nr connection */
-	          int connection = (server_goes_down) ? 0 : find_get_conn_nr(&from_addr);
-                  XDPRINTF((2, 0, "GIVE CONNECTION NR=%d", connection));
-	          if (connection) {
-	            CONNECTION *c = &(connections[connection-1]);
-	            int anz;
-                    c->message[0] = '\0';
-	            c->object_id  = 0; /* firsttime set 0 for NOT LOGIN */
-                    c->sequence   = 0;
-	            anz=write(c->fd, (char*)ncprequest, in_len);
-	            XDPRINTF((10, 0, "write to oldconn %d, anz = %d", c->fd, anz));
-	          } else  /* no free connection */
-	            ncp_response(0x3333, 0, 0, 0,
-	                         0xf9, /* completition */
-	                         0,    /* conn status  */
-	                         0);
-
-                } else {
-	          int connection     = (int)ncprequest->connection;
-	          int sequence       = (int)ncprequest->sequence;
-	          XDPRINTF((1,0, "Got UNKNOWN TYPE: 0x%x", type));
-	          ncp_response(0x3333, sequence, connection,
-	                       1, 0xfb, 0, 0);
-                }
-              }
-            }
+            else
+              handle_ncp_request();
           } else if (p->fd==0)  {  /* fd_ncpserv_in */
             XDPRINTF((2,0,"POLL %d, fh=%d", p->revents, p->fd));
             if (p->revents & ~POLLIN)
@@ -1558,7 +1783,12 @@ int main(int argc, char *argv[])
     } else {
       XDPRINTF((3,0,"POLLING ..."));
     }
+    if (got_sig_child) {
+      kill_connections();
+      got_sig_child=0;
+    }
   }
+#endif
   close_all();
   return(0);
 }

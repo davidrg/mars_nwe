@@ -1,4 +1,4 @@
-/* nwconn.c 10-Feb-96       */
+/* nwconn.c 01-Mar-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -44,7 +44,7 @@ static NCPREQUEST   *ncprequest  = (NCPREQUEST*)readbuff;
 static uint8        *requestdata = readbuff + sizeof(NCPREQUEST);
 static int          ncp_type;
 
-static int open_ipx_socket()
+static int open_ipx_socket(int wanted_sock)
 {
   struct t_bind bind;
   ipx_fd=t_open("/dev/ipx", O_RDWR, NULL);
@@ -52,7 +52,7 @@ static int open_ipx_socket()
     if (nw_debug) t_error("t_open !Ok");
     return(-1);
   }
-  U16_TO_BE16(0,  my_addr.sock); /* actual write socket */
+  U16_TO_BE16(wanted_sock, my_addr.sock); /* actual write socket */
   bind.addr.len    = sizeof(ipxAddr_t);
   bind.addr.maxlen = sizeof(ipxAddr_t);
   bind.addr.buf    = (char*)&my_addr;
@@ -67,9 +67,7 @@ static int open_ipx_socket()
   return(0);
 }
 
-
 static int req_printed=0;
-
 static int ncp_response(int sequence,
 	        int completition, int data_len)
 
@@ -1282,7 +1280,7 @@ extern int t_errno;
 
 static void close_all(void)
 {
-  nw_init_connect();
+  nw_exit_connect();
   close(0);
   if (ipx_fd > -1){
     while (t_unbind(ipx_fd) < 0) {
@@ -1292,69 +1290,81 @@ static void close_all(void)
   }
 }
 
+static int  fl_get_int=0;
+
 static void sig_quit(int rsig)
 {
-  close_all();
-  exit(0);
-}
-
-static int  fl_get_debug=0;
-static void get_new_debug(void)
-{
-  get_ini_debug(3);
-  fl_get_debug=0;
+  XDPRINTF((2, 0, "Got Signal=%d", rsig));
+  fl_get_int=2;
 }
 
 static void sig_hup(int rsig)
 {
-  signal(SIGHUP,   SIG_IGN);
-  fl_get_debug++;
+  fl_get_int=1;
   signal(SIGHUP,   sig_hup);
 }
 
-#if 0
-static void sig_child(int isig)
+static void get_new_debug(void)
 {
-  int status;
-  int pid=wait(&status);
-  if (pid > -1) kill(pid, SIGKILL); /* evtl Toechter killen */
-  signal(SIGCHLD, sig_child);
+  get_ini_debug(3);
+  fl_get_int=0;
 }
-#endif
 
 static void set_sig(void)
 {
   signal(SIGTERM,  sig_quit);
   signal(SIGQUIT,  sig_quit);
+  signal(SIGINT,   sig_quit);
+  signal(SIGPIPE,  sig_quit);
   signal(SIGHUP,   sig_hup);
-  signal(SIGINT,   SIG_IGN);
-  signal(SIGPIPE,  SIG_IGN);
- /*  signal(SIGCHLD,  sig_child); */
 }
 
 int main(int argc, char **argv)
 {
+#if CALL_NWCONN_OVER_SOCKET
+  uint8      i_ipx_pack_typ;
+  ipxAddr_t  x_from_addr;
+  ipxAddr_t  client_addr;
+  struct     t_unitdata iud;
+#endif
+  int        wanted_sock = (argc==5) ? atoi(*(argv+4)) : 0;
+  if (argc == 5) argc--;
   if (argc != 4) {
-    fprintf(stderr, "usage nwconn PID FROM_ADDR Connection\n");
+    fprintf(stderr, "usage nwconn PID FROM_ADDR Connection [sock]\n");
     exit(1);
   } else father_pid = atoi(*(argv+1));
   setuid(0);
   setgid(0);
 
-  init_tools(NWCONN);
+  init_tools(NWCONN, atoi(*(argv+3)));
 
-  XDPRINTF((1, 0, "FATHER PID=%d, ADDR=%s CON:%s", father_pid, *(argv+2), *(argv+3)));
+  XDPRINTF((2, 0, "FATHER PID=%d, ADDR=%s CON:%s", father_pid, *(argv+2), *(argv+3)));
 
-  adr_to_ipx_addr(&from_addr, *(argv+2));
+  adr_to_ipx_addr(&from_addr,   *(argv+2));
+#if CALL_NWCONN_OVER_SOCKET
+  adr_to_ipx_addr(&client_addr, *(argv+2));
+#endif
 
   if (nw_init_connect()) exit(1);
 
 #ifdef LINUX
   set_emu_tli();
 #endif
-
   last_sequence = -9999;
-  if (open_ipx_socket()) exit(1);
+#if !CALL_NWCONN_OVER_SOCKET
+  if (open_ipx_socket(wanted_sock)) exit(1);
+#else
+  ipx_fd =0;
+# if 1
+#  ifdef SIOCIPXNCPCONN
+   {
+     int conn   = atoi(*(argv+3));
+     int result = ioctl(ipx_fd, SIOCIPXNCPCONN, &conn);
+     XDPRINTF((2, 0, "ioctl:SIOCIPXNCPCONN result=%d", result));
+   }
+#  endif
+# endif
+#endif
 
   set_default_guid();
 
@@ -1371,15 +1381,39 @@ int main(int argc, char **argv)
   ncpresponse->reserved       = (uint8) 0;    /* allways 0 */
   ncpresponse->connection     = (uint8) atoi(*(argv+3));
 
+#if CALL_NWCONN_OVER_SOCKET
+  iud.opt.len       = sizeof(i_ipx_pack_typ);
+  iud.opt.maxlen    = sizeof(i_ipx_pack_typ);
+  iud.opt.buf       = (char*)&i_ipx_pack_typ; /* gets actual Typ */
+
+  iud.addr.len      = sizeof(ipxAddr_t);
+  iud.addr.maxlen   = sizeof(ipxAddr_t);
+  iud.addr.buf      = (char*)&x_from_addr;
+
+  iud.udata.len     = IPX_MAX_DATA;
+  iud.udata.maxlen  = IPX_MAX_DATA;
+  iud.udata.buf     = (char*)readbuff;
+#endif
+
   set_sig();
 
   while (1) {
+#if CALL_NWCONN_OVER_SOCKET
+    int rcv_flags = 0;
+    int data_len = (t_rcvudata(ipx_fd, &iud, &rcv_flags) > -1)
+                            ? iud.udata.len : -1;
+#else
     int data_len = read(0, readbuff, sizeof(readbuff));
+#endif
     ncpresponse->connect_status = (uint8) 0;
-    if (data_len > 0) {
-      if (fl_get_debug) get_new_debug();
-      XDPRINTF((99, 0,  "NWCONN GOT DATA len = %d",data_len));
 
+    if (fl_get_int) {
+      if (fl_get_int      == 1) get_new_debug();
+      else if (fl_get_int == 2) break;
+    }
+
+    if (data_len > 0) {
+      XDPRINTF((99, 0,  "NWCONN GOT DATA len = %d",data_len));
       if ((ncp_type = (int)GET_BE16(ncprequest->type)) == 0x3333) {
         /* OK for direct sending */
         data_len -= sizeof(NCPRESPONSE);
@@ -1390,13 +1424,23 @@ int main(int argc, char **argv)
         ncp_response((int)(ncprequest->sequence), (int)(ncprequest->function), data_len);
       } else { /* this calls I must handle */
         requestlen = data_len - sizeof(NCPREQUEST);
+#if 0 /* CALL_NWCONN_OVER_SOCKET */
+#ifdef SIOCIPXNCPCONN
+        if (ncp_type == 0x2222 &&
+           (0x17 == ncprequest->function || 0x15 == ncprequest->function)
+             && IPXCMPSOCK (from_addr.sock, client_addr.sock)
+             && IPXCMPNODE (from_addr.node, client_addr.node)
+             && IPXCMPNET  (from_addr.net,  client_addr.net)  {
+           /* this call must be prehandled by ncpserv */
+          XDPRINTF((2,0, "SEND TO NCPSERV"));
+        } else
+#endif
+#endif
         handle_ncp_serv();
       }
-    } else if (data_len < 0) {
-      if (fl_get_debug) get_new_debug();
-      else break;
     }
-  }
+  } /* while */
   close_all();
+  XDPRINTF((2,0, "leave nwconn pid=%d", getpid()));
   return(0);
 }

@@ -1,4 +1,4 @@
-!! this kernelpatch is not needed for kernel >= 1.3.60 :)  !!
+!! this kernelpatch is _not_ needed for kernel >= 1.3.60 :)  !!
 
 this kernelpatch for clean kernels 1.3.56,57,58, pur 59 makes 3 things.
 

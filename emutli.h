@@ -36,6 +36,11 @@ typedef struct {
 	   uint8  sock[IPX_SOCK_SIZE];
 	} ipxAddr_t;
 
+#define IPXCMPSOCK(a, b) ( \
+       ((char *)(a))[0]  == ((char*)(b))[0] && \
+       ((char *)(a))[1]  == ((char*)(b))[1]    \
+)
+
 #define IPXCMPNODE(a, b) ( \
        ((char *)(a))[0]  == ((char*)(b))[0] && \
        ((char *)(a))[1]  == ((char*)(b))[1] && \

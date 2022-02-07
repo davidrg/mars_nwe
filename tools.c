@@ -1,4 +1,4 @@
-/* tools.c  22-Jan-96 */
+/* tools.c  09-Mar-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,7 +29,8 @@ extern char _sys_errlist[];
 int  nw_debug=0;
 FILE *logfile=stdout;
 
-static int   in_module=0;  /* in which process i am ? */
+static int   in_module=0;  /* in which process i am ?   */
+static int   connection=0; /* which connection (nwconn) */
 static char *modnames[] =
 { "???????",
   "NWSERV ",
@@ -46,7 +47,7 @@ char *xmalloc(uint size)
 {
   char *p = (size) ? (char *)malloc(size) : (char*)NULL;
   if (p == (char *)NULL && size){
-    fprintf(logfile, "not enough core, need %d Bytes\n", size);
+    errorp(1, "xmalloc", "not enough core, need %d Bytes\n", size);
     exit(1);
   }
   return(p);
@@ -67,7 +68,7 @@ void x_x_xfree(char **p)
   }
 }
 
-int   strmaxcpy(uint8 *dest, uint8 *source, int len)
+int strmaxcpy(uint8 *dest, uint8 *source, int len)
 {
   int slen = (source != (uint8 *)NULL) ? min(len, strlen((char*)source)) : 0;
   if (slen) memcpy(dest, source, slen);
@@ -103,7 +104,7 @@ void xdprintf(int dlevel, int mode, char *p, ...)
 {
   va_list ap;
   if (nw_debug >= dlevel) {
-    if (!(mode & 1)) fprintf(logfile, "%s:", get_modstr());
+    if (!(mode & 1)) fprintf(logfile, "%s %d:", get_modstr(), connection);
     if (p) {
       va_start(ap, p);
       vfprintf(logfile, p, ap);
@@ -117,18 +118,24 @@ void xdprintf(int dlevel, int mode, char *p, ...)
 void errorp(int mode, char *what, char *p, ...)
 {
   va_list ap;
-  int errnum   = errno;
-  if (errnum >= 0 && errnum < _sys_nerr)
-    fprintf(logfile, "%s:%s:%s\n",       get_modstr(),  what, _sys_errlist[errnum]);
-  else
-    fprintf(logfile, "%s:%s:errno=%d\n", get_modstr(), what, errnum);
-  if (p) {
-    va_start(ap, p);
-    vfprintf(logfile, p, ap);
-    va_end(ap);
-    fprintf(logfile, "\n");
+  int errnum      = errno;
+  FILE *lologfile = logfile;
+  while (1) {
+    if (mode) fprintf(lologfile, "\n!! %s %d:PANIC !!\n", get_modstr(), connection);
+    if (errnum >= 0 && errnum < _sys_nerr)
+      fprintf(lologfile, "%s %d:%s:%s\n", get_modstr(), connection,  what, _sys_errlist[errnum]);
+    else
+      fprintf(lologfile, "%s %d:%s:errno=%d\n", get_modstr(), connection,  what, errnum);
+    if (p) {
+      va_start(ap, p);
+      vfprintf(lologfile, p, ap);
+      va_end(ap);
+      fprintf(lologfile, "\n");
+    }
+    fflush(lologfile);
+    if ((!mode) || (lologfile == stderr)) break;
+    else lologfile = stderr;
   }
-  fflush(logfile);
 }
 
 FILE *open_nw_ini(void)
@@ -218,7 +225,7 @@ static void sig_segv(int isig)
   exit(99);
 }
 
-void init_tools(int module)
+void init_tools(int module, int conn)
 {
   char buff[300];
   char logfilename[300];
@@ -226,7 +233,8 @@ void init_tools(int module)
   int  withlog=0;
   int  dodaemon=0;
   int  new_log=0;
-  in_module = module;
+  in_module  = module;
+  connection = conn;
   if (f) {
     int  what;
     while (0 != (what=get_ini_entry(f, 0, buff, sizeof(buff)))) { /* daemonize */

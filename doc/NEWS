@@ -1,4 +1,21 @@
-------13-Feb-96---------
+# in this files are important notes for user of mars_nwe.
+------10-Mar-96--- 0.97.pl0 ----------
+New Conf-file entry '211' for broadcast periods.
+Entries 400, 401 for special handling of the nearest server request.
+-
+Conf-file entry '6' enlarged.
+-
+New Entries '15' + '16' in conf-file.
+With entry '15' you can allow mars_nwe insert all not yet known
+users from /etc/passwd to mars_nwe bindery. But be carefully,
+all new inserted users will get the same password from entry '15'.
+-
+If entry '16' is enabled ( '1' ) then mars_nwe will make some
+checks for bindery and 'SYS:' directory.
+For every user a MAIL/XXXXX dir will also be created.
+-
+Much more better bindery performance. :)
+------13-Feb-96--- 0.96.pl9 ----------
 New alternative password strategy in mars_nwe:
 There is an new entry '7' in ini/conf file.
 
