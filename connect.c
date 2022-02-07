@@ -808,6 +808,8 @@ static int do_delete_file(NW_PATH *nwpath, FUNC_SEARCH *fs)
   XDPRINTF((5,0,"DELETE FILE unname:%s:", unname));
   if (get_volume_options(nwpath->volume, 1) & VOL_OPTION_IS_PIPE)
       return(0); /* don't delete 'pipe commands' */
+  else if (get_volume_options(nwpath->volume, 1) & VOL_OPTION_READONLY)
+      return(-0x8a); /* don't delete 'readonly' */
   if (!unlink(unname)) return(0);
   return(-0x8a); /* NO Delete Privileges */
 }
@@ -828,10 +830,13 @@ static int do_set_file_info(NW_PATH *nwpath, FUNC_SEARCH *fs)
 {
   char  unname[256];
   NW_FILE_INFO *f=(NW_FILE_INFO*)fs->ubuf;
+  int voloption;
   strcpy(unname, build_unix_name(nwpath, 0));
   XDPRINTF((5,0,"set_file_info  unname:%s:", unname));
-  if (get_volume_options(nwpath->volume, 1) & VOL_OPTION_IS_PIPE)
+  if ((voloption = get_volume_options(nwpath->volume, 1)) & VOL_OPTION_IS_PIPE)
       return(0); /* don't change 'pipe commands' */
+  else if (voloption & VOL_OPTION_READONLY)
+      return(-0x8c); /* no modify rights */
   else {
     struct utimbuf ut;
     ut.actime = ut.modtime = nw_2_un_time(f->modify_date, f->modify_time);
@@ -882,7 +887,6 @@ int nw_chmod_datei(int dir_handle, uint8 *data, int len, int modus)
   return(-0x9c); /* wrong path */
 }
 
-
 int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
 {
   NW_PATH nwpath;
@@ -891,25 +895,34 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
   if (completition > -1) {
     char unname[256];
     strcpy(unname, build_unix_name(&nwpath, 2));
-#if 0
-    if (unname[0] && unname[1]) {
-      char *p=unname+strlen(unname)-1;
-      if (*p=='/') *p = '\0';
-    }
-#endif
-
+    if (get_volume_options(nwpath.volume, 1) & VOL_OPTION_READONLY)
+       return(mode ? -0x84 : -0x8a);
     if (mode) {
       XDPRINTF((5,0,"MKDIR dirname:%s:", unname));
       if (!mkdir(unname, 0777)) return(0);
       completition = -0x84; /* No Create Priv.*/  /* -0x9f Direktory Aktive */
     } else { /* rmdir */
+      int  j = -1;
+      while (++j < (int)anz_dirhandles){
+        DIR_HANDLE  *fh=&(dir_handles[j]);
+        if (fh->inode == completition && fh->f != (DIR*) NULL) {
+          closedir(fh->f);
+          fh->f = (DIR*)NULL;
+        }
+      }
       XDPRINTF((5,0,"RMDIR dirname:%s:", unname));
+
       if (!rmdir(unname)) {
         NW_DIR *d=&(dirs[0]);
-        int  j = 0;
+        j = 0;
         while (j++ < (int)used_dirs){
           if (d->inode == completition) d->inode = 0;
           d++;
+        }
+        j = -1;
+        while (++j < (int)anz_dirhandles){
+          DIR_HANDLE  *fh=&(dir_handles[j]);
+          if (fh->inode == completition) free_dir_handle(j+1);
         }
         completition = 0;
       } else if (errno == EEXIST)
@@ -926,14 +939,15 @@ int mv_file(int qdirhandle, uint8 *q, int qlen,
   NW_PATH quellpath;
   NW_PATH zielpath;
   int completition=conn_get_kpl_path(&quellpath, qdirhandle, q, qlen, 0);
-  if (!completition > -1){
+  if (!completition > -1) {
     completition=conn_get_kpl_path(&zielpath,    zdirhandle, z, zlen, 0);
     if (completition > -1) {
-      if (get_volume_options(quellpath.volume, 1) &
-           VOL_OPTION_IS_PIPE ||
-          get_volume_options(zielpath.volume, 1) &
-            VOL_OPTION_IS_PIPE)
-          completition = -0x9c;
+      int optq = get_volume_options(quellpath.volume, 1);
+      int optz = get_volume_options(zielpath.volume,  1);
+      if      ((optq & VOL_OPTION_IS_PIPE) ||
+               (optz & VOL_OPTION_IS_PIPE)) completition = -0x9c;
+      else if ((optq & VOL_OPTION_READONLY) ||
+               (optz & VOL_OPTION_READONLY)) completition = -0x8b;
     }
     if (completition > -1){
       char unquelle[256];
@@ -942,7 +956,7 @@ int mv_file(int qdirhandle, uint8 *q, int qlen,
       strcpy(unziel,   build_unix_name(&zielpath,0));
       if (!link(unquelle, unziel)){
         if (unlink(unquelle)) {
-          completition=-0x9c;
+          completition=-0x8b;
           /* TODO: here completition must be no pernmissions */
           unlink(unziel);
         }
@@ -968,9 +982,12 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
     memcpy(&zielpath, &quellpath, sizeof(NW_PATH));
     strmaxcpy(zielpath.fn, z, zlen);
     if (completition > -1) {
-      if (get_volume_options(quellpath.volume, 1) &
-           VOL_OPTION_IS_PIPE)
-          completition = -0x9c;
+      int optq = get_volume_options(quellpath.volume, 1);
+      int optz = get_volume_options(zielpath.volume,  1);
+      if      ((optq & VOL_OPTION_IS_PIPE) ||
+               (optz & VOL_OPTION_IS_PIPE)) completition = -0x9c;
+      else if ((optq & VOL_OPTION_READONLY) ||
+               (optz & VOL_OPTION_READONLY)) completition = -0x8b;
     }
     if (completition > -1){
       int result;
@@ -978,6 +995,7 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
       char unziel[256];
       strcpy(unquelle, build_unix_name(&quellpath, 0));
       strcpy(unziel,   build_unix_name(&zielpath,  0));
+
       result = unx_mvdir((uint8 *)unquelle, (uint8 *)unziel);
       XDPRINTF((2,0, "rendir result=%d, '%s'->'%s'",
                  result, unquelle, unziel));

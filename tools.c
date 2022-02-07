@@ -1,4 +1,4 @@
-/* tools.c  06-May-96 */
+/* tools.c  13-May-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -266,7 +266,7 @@ static char *get_pidfilefn(char *buf)
 {
   char lbuf[100];
   strcpy(lbuf, get_modstr());
-  return(get_div_pathes(buf, downstr((uint8*)lbuf), 2, ".pid"));
+  return(get_div_pathes(buf, (char*)downstr((uint8*)lbuf), 2, ".pid"));
 }
 
 void creat_pidfile(void)
@@ -293,30 +293,33 @@ void init_tools(int module, int options)
   in_module  = module;
   connection = (NWCONN == module) ? options : 0;
   if (NWSERV == module || NWROUTED == module) {
-    char *pidfn=get_pidfilefn(buf);
+    int kill_pid=-1;
+    char *pidfn=get_pidfilefn((char*)buf);
     if (fn_exist(pidfn)) {
+      FILE *pf=fopen(pidfn, "r");
+      if ( NULL != pf) {
+        if (1 != fscanf(pf, "%d", &kill_pid) || kill_pid < 1
+           || kill(kill_pid, 0) < 0)
+          kill_pid=-1;
+        fclose(pf);
+      }
+      if (kill_pid < 0) unlink((char*)buf);
+    }
+    if (kill_pid > -1) {
       int sig;
-      FILE *pf;
       if (options == 1) {  /* kill -HUP prog */
         sig = SIGHUP;
       } else if (options == 2) { /* kill prog */
         sig = SIGTERM;
       } else {
-        errorp(11, "INIT", "Program allways running or pidfn=%s exists" ,
-               pidfn);
+        errorp(11, "INIT", "Program pid=%d already running and pidfn=%s exists" ,
+               kill_pid, pidfn);
         exit(1);
       }
-      if ( NULL != (pf=fopen(pidfn, "r"))) {
-        int kill_pid=0;
-        if (1 == fscanf(pf, "%d", &kill_pid) && kill_pid > 1)
-           kill(kill_pid, sig);
-        fclose(pf);
-        exit(0);
-      }
-      exit(1);
+      if (kill_pid > 1) kill(kill_pid, sig);
+      exit(0);
     } else if (options == 1 || options == 2) {
-      errorp(11, "INIT", "Program not running or pidfn=%s not exists" ,
-               pidfn);
+      errorp(11, "INIT", "Program not running yet" );
       exit(1);
     }
   }

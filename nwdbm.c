@@ -1,4 +1,4 @@
-/* nwdbm.c  30-Apr-96  data base for mars_nwe */
+/* nwdbm.c  13-May-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,7 +42,7 @@
 #define DBM_REMAINS_OPEN  1
 
 int        tells_server_version=0;
-int        password_scheme=0;
+int        password_scheme=PW_SCHEME_CHANGE_PW;
 
 static datum key;
 static datum data;
@@ -62,7 +62,7 @@ static int x_dbminit(char *s)
 {
   char buff[256];
   sprintf(buff, "%s/%s", PATHNAME_BINDERY, s);
-  my_dbm = dbm_open(buff, O_RDWR|O_CREAT, 0666);
+  my_dbm = dbm_open(buff, O_RDWR|O_CREAT, 0600);
   return( (my_dbm == NULL) ? -1 : 0);
 }
 
@@ -189,10 +189,12 @@ static int loc_delete_property(uint32 obj_id, uint8 *prop_name, uint8 prop_id)
 	if (p->obj_id == obj_id) {
 	  data = fetch(key);
 	  p = (NETPROP*)data.dptr;
-	  if (p != NULL && name_match(p->name, prop_name)){
+          if (p != NULL && name_match(p->name, prop_name)){
 	    XDPRINTF((2,0, "found prop: %s, id=%d for deleting", p->name, (int)p->id));
-	    if ((int)(p->id) > result) result = (int)(p->id);
-	    xset[p->id]++;
+            if (!b_acc(obj_id, p->security, 0x13)) {
+	      if ((int)(p->id) > result) result = (int)(p->id);
+	      xset[p->id]++;
+            } else if (result < 0) result = -0xf6; /* no delete priv. */
 	  }
 	}
       } /* for */
@@ -246,9 +248,10 @@ static int loc_delete_property(uint32 obj_id, uint8 *prop_name, uint8 prop_id)
   return(result);
 }
 
-static int loc_delete_obj(uint32 objid)
+static int loc_delete_obj(uint32 objid, int security)
 {
-  int result=0;
+  int result = b_acc(objid, 0x33, 0x03); /* only supervisor or intern */
+  if (result) return(result); /* no object delete priv */
   (void)loc_delete_property(objid, (uint8*)"*", 0);
   if (!dbminit(FNOBJ)){
     key.dptr  = (char*)&objid;
@@ -263,7 +266,7 @@ int nw_delete_obj(NETOBJ *obj)
 {
   int result = find_obj_id(obj, 0);
   XDPRINTF((2,0, "nw_delete_obj obj_id=%d, obj_name=%s", obj->id, obj->name));
-  if (!result) result=loc_delete_obj(obj->id);
+  if (!result) result=loc_delete_obj(obj->id, obj->security);
   return(result);
 }
 
@@ -272,7 +275,9 @@ int nw_rename_obj(NETOBJ *o, uint8 *newname)
 {
   int result = find_obj_id(o, 0);
   if (!result) {
-    result = -0xff;
+    result = b_acc(0, 0x33, 0x04); /* only supervisor */
+    if (result) return(result); /* no obj rename priv */
+    else result=-0xff;
     if (!dbminit(FNOBJ)){
       key.dsize = NETOBJ_KEY_SIZE;
       key.dptr  = (char*)o;
@@ -285,6 +290,7 @@ int nw_rename_obj(NETOBJ *o, uint8 *newname)
       }
     }
     dbmclose();
+
   }
   return(result);
 }
@@ -294,7 +300,9 @@ int nw_change_obj_security(NETOBJ *o, int newsecurity)
 {
   int result = find_obj_id(o, 0);
   if (!result) {
-    result = -0xff;
+    result = b_acc(o->id, o->security, 0x05);
+    if (result) return(result);
+    else result=-0xff;
     if (!dbminit(FNOBJ)){
       key.dsize = NETOBJ_KEY_SIZE;
       key.dptr  = (char*)o;
@@ -321,9 +329,9 @@ int nw_get_obj(NETOBJ *o)
     data      = fetch(key);
     if (data.dptr != NULL){
       NETOBJ *obj=(NETOBJ*)data.dptr;
+      result = b_acc(o->id, obj->security, 0x0);
       XDPRINTF((2,0, "got OBJ name=%s, id = 0x%x", obj->name, (int)obj->id));
-      memcpy(o, data.dptr, sizeof(NETOBJ));
-      result = 0;
+      if (!result) memcpy(o, data.dptr, sizeof(NETOBJ));
     }
   } else result = -0xff;
   dbmclose();
@@ -375,7 +383,7 @@ static int loc_change_prop_security(NETPROP *p, uint32 obj_id)
 	if (data.dptr != NULL  && name_match(prop->name, p->name) )  {
 	  uint8 security = p->security;
 	  XDPRINTF((2,0, "found PROP %s, id=0x%x", prop->name, (int) prop->id));
-          result = b_acc(obj_id, prop->security, 1);
+          result = b_acc(obj_id, prop->security, 0x15);
           if (!result) {
 	    memcpy(p, prop, sizeof(NETPROP));
 	    p->security = security;
@@ -534,7 +542,7 @@ L1:
 static int ins_prop_val(uint32 obj_id, NETPROP *prop, int segment,
 	         uint8 *property_value, int erase_segments)
 {
-  int result = b_acc(obj_id, prop->security, 1);
+  int result = b_acc(obj_id, prop->security, 0x11);
   if (result) return(result);
   if (!dbminit(FNVAL)){
     NETVAL  val;
@@ -814,8 +822,9 @@ int nw_create_obj(NETOBJ *obj, uint32 wanted_id)
  * wanted_id should be taken as obj_id.
 */
 {
-  int result = 0; /* OK */
+  int result = b_acc(0, 0x33, 0x02);
   XDPRINTF((2,0, "creat OBJ=%s,type=0x%x", obj->name, (int)obj->type));
+  if (result) return(result); /* no object creat rights */
   if (!dbminit(FNOBJ)){
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);
@@ -863,10 +872,10 @@ int nw_obj_has_prop(NETOBJ *obj)
   return(result);
 }
 
-
-int nw_create_obj_prop(NETOBJ *obj, NETPROP *prop)
+static int nw_create_obj_prop(NETOBJ *obj, NETPROP *prop)
 {
-  int result=0;
+  int result = b_acc(obj->id, obj->security, 0x12);
+  if (result) return(result);
   if (!dbminit(FNPROP)){
     uint8   founds[256];
     memset((char*)founds, 0, sizeof(founds) );
@@ -918,7 +927,7 @@ int nw_create_prop(int object_type,
   if ((result = find_obj_id(&obj, 0)) == 0){
     prop.flags    = (uint8)prop_flags;
     prop.security = (uint8)prop_security;
-    result = nw_create_obj_prop(&obj, &prop);
+    result        = nw_create_obj_prop(&obj, &prop);
   }
   return(result);
 }
@@ -956,7 +965,8 @@ uint32 nw_new_obj_prop(uint32 wanted_id,
   if (objname && *objname)
     nw_new_obj(&wanted_id, objname, objtype,
                          objflags, objsecurity);
-  obj.id = wanted_id;
+  obj.id       = wanted_id;
+  obj.security = objsecurity;
   if (propname && *propname) {
     strmaxcpy(prop.name, propname, sizeof(prop.name));
     prop.flags    =   (uint8)propflags;
@@ -1064,13 +1074,13 @@ int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
     nw_encrypt(keybuff, buf, keybuff);
     return (memcmp(akt_key, keybuff, sizeof(keybuff)) ? -0xff : 0);
   } else {
+    if (obj_id == 1) return(-0xff);
     if (password_scheme & PW_SCHEME_LOGIN) {
       if (!(password_scheme & PW_SCHEME_ALLOW_EMPTY_PW)) {
         MYPASSWD *pw = nw_getpwnam(obj_id);
         if (pw && *(pw->pw_passwd) && !crypt_pw_ok(NULL, pw->pw_passwd))
           return(-0xff);
       }
-      if (obj_id == 1) return(-0xff);
     }
     return(0); /* no password */
   }
@@ -1180,14 +1190,16 @@ static void create_nw_db(char *fn, int allways)
   struct stat stbuff;
   sprintf(fname, "%s/%s.dir", PATHNAME_BINDERY, fn);
   if (allways || stat(fname, &stbuff)){
-    int fd = open(fname, O_CREAT | O_TRUNC | O_RDWR, 0666);
+    int fd = open(fname, O_CREAT | O_TRUNC | O_RDWR, 0600);
     if (fd > -1) close(fd);
   }
+  chmod(fname, 0600);
   sprintf(fname, "%s/%s.pag", PATHNAME_BINDERY, fn);
   if (allways || stat(fname, &stbuff)){
-    int fd = open(fname, O_CREAT | O_TRUNC | O_RDWR, 0666);
+    int fd = open(fname, O_CREAT | O_TRUNC | O_RDWR, 0600);
     if (fd > -1) close(fd);
   }
+  chmod(fname, 0600);
 }
 
 static void add_pr_queue(uint32 q_id,
@@ -1246,7 +1258,7 @@ static void add_user(uint32 u_id,   uint32 g_id,
                   char *password, int dont_ch)
 {
                                       /*   Typ    Flags  Security */
-  if (nw_new_obj(&u_id,  name,           0x1  , 0x0,   0x33)
+  if (nw_new_obj(&u_id,  name,           0x1  , 0x0, (u_id == 1) ? 0x33 : 0x31)
        && dont_ch) return;
   XDPRINTF((1, 0, "Add/Change User='%s', UnixUser='%s'",
      	       	  name, unname));
@@ -1346,7 +1358,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   FILE *f	     = open_nw_ini();
   int  auto_ins_user = 0;
   char auto_ins_passwd[100];
-  int  make_tests    = 0;
+  int  make_tests    = 1;
   char sysentry[256];
   sysentry[0] = '\0';
   ge_id = nw_new_obj_prop(ge_id, "EVERYONE",        0x2,   0x0,  0x31,
@@ -1444,11 +1456,17 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
     struct passwd *pw;
     upstr(auto_ins_passwd);
     while (NULL != (pw=getpwent())) {
-      char nname[100];
-      xstrcpy(nname, pw->pw_name);
-      upstr(nname);
-      add_user(0L, ge_id, nname, pw->pw_name, auto_ins_passwd,
-        (auto_ins_user == 99) ? 0 : 99);
+      if ( (pw->pw_passwd[0] != '*' && pw->pw_passwd[0] != 'x')
+           || pw->pw_passwd[1] != '\0') {
+        char nname[100];
+        xstrcpy(nname, pw->pw_name);
+        upstr(nname);
+        add_user(0L, ge_id, nname, pw->pw_name, auto_ins_passwd,
+          (auto_ins_user == 99) ? 0 : 99);
+      } else {
+        XDPRINTF((1,0, "Unix User:'%s' not added because passwd='%s'",
+           pw->pw_name, pw->pw_passwd));
+      }
     }
     endpwent();
   }
@@ -1527,12 +1545,18 @@ int nw_init_dbm(char *servername, ipxAddr_t *adr)
 	  /* dynamic or without name */
 	  objs[anz++] = obj->id;
 	  if (anz == 10000) break;
+        } else if (obj->type == 1 && obj->id != 1 && obj->security != 0x31) {
+          /* this is for correcting wrong obj security */
+          obj->security=0x31;
+	  (void)store(key, data);
+          XDPRINTF((1,0, "Correcting access obj_id=0x%lx(%s)",
+                  obj->id, obj->name));
         }
       }
     }
   }
   dbmclose();
-  while (anz--) loc_delete_obj(objs[anz]);  /* Now delete */
+  while (anz--) loc_delete_obj(objs[anz], 0x44);  /* Now delete */
   anz = 0;
   if (!dbminit(FNPROP)){
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {

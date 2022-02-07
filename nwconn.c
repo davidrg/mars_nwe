@@ -1279,6 +1279,14 @@ static int handle_ncp_serv(void)
 	             break;
 
 #if WITH_NAME_SPACE_CALLS
+	 case 0x56 : /* some extended atrribute calls */
+                     {
+                       int result = handle_func_0x56(requestdata, responsedata, ncprequest->task);
+                       if (result > -1) data_len = result;
+                       else completition=(uint8)-result;
+                     }
+                     break;
+
 	 case 0x57 : /* some new namespace calls */
                      {
                        int result = handle_func_0x57(requestdata, responsedata, ncprequest->task);

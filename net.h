@@ -181,7 +181,7 @@ extern int errno;
 #endif
 
 #ifndef WITH_NAME_SPACE_CALLS
-# define WITH_NAME_SPACE_CALLS 1
+# define WITH_NAME_SPACE_CALLS 0
 #endif
 
 #ifndef MAX_DIR_BASE_ENTRIES

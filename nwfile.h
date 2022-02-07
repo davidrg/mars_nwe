@@ -1,4 +1,4 @@
-/* nwfile.h 23-Jan-96 */
+/* nwfile.h 11-May-96 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
 #include "nwqueue.h"
@@ -10,8 +10,10 @@ typedef struct {
   FILE_PIPE *f;         /* for PIPE                          */
   int    flags;         /* 2 = PIPE                          */
                         /* 4 = don't reuse after close       */
+                        /* 0x20 = readonly                   */
   char   fname[256];    /* UNIX filename                     */
 } FILE_HANDLE;
+#define FILE_IS_READONLY   0x20
 
 extern void init_file_module(void);
 

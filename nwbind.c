@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "05-May-96"
+#define REVISION_DATE "08-May-96"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -144,9 +144,14 @@ int b_acc(uint32 obj_id, int security, int forwrite)
    * 3 = only supervisor has access
    * 4 = only internal access.
    */
+  char *acc_what=NULL;
+  char *acc_typ=NULL;
+  int  errcode =0;
+  XDPRINTF((5,0, "b_acc for id=0x%lx, security=0x%x, forwrite=0x%x",
+          obj_id, security, forwrite));
   if (internal_act || !act_c) return(0); /* allways full access to internal routines */
-  if (forwrite) security >>= 4; /* writesecurity */
-  security &= 0x4;
+  if (forwrite & 0xf) security >>= 4; /* writesecurity */
+  security &= 0xf;
   if (!security) return(0);     /* rights for all */
   else if (security == 1) {
     if (act_c->object_id > 0) return(0);  /* rights for all logged */
@@ -155,10 +160,39 @@ int b_acc(uint32 obj_id, int security, int forwrite)
        || act_c->object_id == 1 ) return(0); /* rights for the user */
   } else if (security == 3 && act_c->object_id == 1) return(0);
 
-  XDPRINTF((1, 0, "b_acc no rights for 0x%x to %s property",
-                  act_c->object_id, forwrite ? "read" : "write" ));
+  switch (forwrite&0xf) {
+    case 0 : acc_what = "read";   break;
+    case 1 : acc_what = "write";  break;
+    case 2 : acc_what = "creat";  break;
+    case 3 : acc_what = "delete"; break;
+    case 4 : acc_what = "rename"; break;
+    case 5 : acc_what = "change security"; break;
+    default : acc_what = "?" ; break;
+  }
 
-  return(forwrite ? -0xf8 : -0xfb);
+  switch ( (forwrite >> 4) & 0xf) {
+    case 0  : acc_typ  = "obj" ;   break;
+    case 1  : acc_typ  = "prop";   break;
+    default : acc_typ  = "?";      break;
+  }
+
+  switch (forwrite) {
+    case 0x00 : errcode = -0xf2; break;
+    case 0x01 : errcode = -0xf8; break;  /* should be changed */
+    case 0x02 : errcode = -0xf5; break;
+    case 0x03 : errcode = -0xf4; break;
+    case 0x04 : errcode = -0xf3; break;
+
+    case 0x10 : errcode = -0xf9; break;
+    case 0x11 : errcode = -0xf8; break;
+    case 0x12 : errcode = -0xf7; break;
+    case 0x13 : errcode = -0xf6; break;
+
+    default   : errcode = -0xff; break;
+  }
+  XDPRINTF((1, 0, "b_acc no rights for 0x%x to %s %s",
+                  act_c->object_id, acc_what, acc_typ));
+  return(errcode);
 }
 
 static void sent_down_message(void)
@@ -421,10 +455,11 @@ static void handle_fxx(int gelen, int func)
                           XDPRINTF((1, 0, "Supervisor tried unencrypted LOGIN"));
                         } else
 #endif
-
+                        {
                           internal_act = 1;
                           result=nw_test_unenpasswd(obj.id, password);
                           internal_act = 0;
+                        }
                       } else {
                         XDPRINTF((1, 0, "unencryted logins are not enabled"));
                         result=-0xff;
@@ -438,7 +473,7 @@ static void handle_fxx(int gelen, int func)
                       result = get_home_dir(responsedata + 2*sizeof(int)+1, obj.id);
                       *(responsedata+ 2 * sizeof(int)) = (uint8) result;
                       data_len = 2 * sizeof(int) + 1 + (int) *(responsedata+2* sizeof(int));
-                      write_utmp(1, act_connection, act_c->pid_nwconn, &from_addr, pw_name);
+                      write_utmp(1, act_connection, act_c->pid_nwconn, &(act_c->client_adr), pw_name);
                     } else completition = (uint8) -result;
                   } break;
 
@@ -540,7 +575,7 @@ static void handle_fxx(int gelen, int func)
                       *(responsedata+ 2 * sizeof(int)) = (uint8) result;
                       data_len = 2 * sizeof(int) + 1 + (int) *(responsedata+2* sizeof(int));
                       write_utmp(1, act_connection, act_c->pid_nwconn,
-                                    &from_addr, pw_name);
+                                    &(act_c->client_adr), pw_name);
                     } else {
 #if 0
                       /* this is not ok */
@@ -551,7 +586,7 @@ static void handle_fxx(int gelen, int func)
 #endif
                         completition = (uint8) -result;
                     }
-                    /* completition = 0xde menas login time has expired */
+                    /* completition = 0xde means login time has expired */
                     /* completition = 0xdf means good login, but */
                     /* login time has expired 	      	     	 */
                     /* perhaps I will integrate it later         */
@@ -932,30 +967,22 @@ static void handle_fxx(int gelen, int func)
                     struct XDATA {
                       uint8 acces_level;
                       uint8 object_id[4];
-                    } *xdata = (struct XDATA*) responsedata;
-#else
-                    uint8    *xdata = responsedata;
-#endif
-
-                    NETOBJ    obj;
-                    obj.id    = act_c->object_id;
-                    if (0 != obj.id) {
-                      int result = nw_get_obj(&obj);
-                      if (!result) {
-                        *xdata  = obj.security;
-                        U32_TO_BE32(obj.id, (xdata+1));
-                        XDPRINTF((2,0, "ACCESS LEVEL:=0x%x, obj=0x%lx",
-                                  (int) obj.security, obj.id));
-                        data_len = 5;
-                      } else completition = (uint8)-result;
-                    } else {
-                      *xdata = 0;
-                      memset(xdata+1, 0xff, 4);
-                      data_len = 5;
                     }
+#endif
+                    uint8    *xdata = responsedata;
+                    if (!act_c->object_id) {
+                      *xdata  = (uint8) 0;
+                      memset(xdata+1, 0xff, 4);
+                    } else {
+                      *xdata  = (act_c->object_id == 1) ? (uint8) 0x33
+                                                        : (uint8) 0x22;
+                      U32_TO_BE32(act_c->object_id, (xdata+1));
+                    }
+                    data_len = 5;
+                    XDPRINTF((2,0, "ACCESS LEVEL:=0x%x, obj=0x%lx",
+                                  (int) *xdata, act_c->object_id));
                   }
                   break;
-
 
      case 0x47 :  { /* SCAN BINDERY OBJECT TRUSTEE PATH */
                     /* TODO !!! */
@@ -979,12 +1006,10 @@ static void handle_fxx(int gelen, int func)
                   break;
 
      case 0x49 :  { /* IS CALLING STATION A MANAGER */
-                    NETOBJ    obj;
-                    obj.id =  GET_BE32(rdata);
-                    /* TODO !! */
-                    completition = 0;  /* here allways Manager  */
+                    completition = (act_c->object_id == 1) ? 0 : 0xff;
+                     /* here only SU = Manager  */
                     /* not manager, then completition = 0xff */
-                    }
+                  }
                   break;
 
      case 0x4a :  { /* keyed verify password  */
@@ -1216,7 +1241,7 @@ static void handle_fxx(int gelen, int func)
        default : completition = 0xfb; /* not known here */
     }  /* switch */
   } else if (func == 0x19) {  /* logout */
-    write_utmp(0, act_connection, act_c->pid_nwconn, &from_addr, NULL);
+    write_utmp(0, act_connection, act_c->pid_nwconn, &(act_c->client_adr), NULL);
     act_c->object_id  = 0; /* not LOGIN  */
   } else completition = 0xfb;
 

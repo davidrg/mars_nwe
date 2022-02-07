@@ -162,8 +162,6 @@ extern int nw_create_obj(NETOBJ *obj, uint32 wanted_id);
 extern int nw_obj_has_prop(NETOBJ *obj);
 
 
-extern int nw_create_obj_prop(NETOBJ *obj, NETPROP *prop);
-
 extern int nw_create_prop(int object_type,
 	        uint8 *object_name, int object_namlen,
 	        uint8 *prop_name, int prop_namlen,

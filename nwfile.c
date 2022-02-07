@@ -1,4 +1,4 @@
-/* nwfile.c  01-May-96 */
+/* nwfile.c  11-May-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -69,7 +69,8 @@ static int free_file_handle(int fhandle)
         if (fh->f) ext_pclose(fh->f);
         fh->f = NULL;
       } else close(fh->fd);
-      if (fh->tmodi > 0L && !(fh->flags & 2)) {
+      if (fh->tmodi > 0L && !(fh->flags & 2)
+                         && !(fh->flags & FILE_IS_READONLY)) {
       /* now set date and time */
         struct utimbuf ut;
         ut.actime = ut.modtime = fh->tmodi;
@@ -112,11 +113,14 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
    if (fhandle > 0){
      FILE_HANDLE *fh=&(file_handles[fhandle-1]);
      int completition = -0xff;  /* no File  Found */
-     if (get_volume_options(volume, 1) & VOL_OPTION_IS_PIPE) {
+     int dowrite      = (access & 2) || creatmode ;
+     int voloptions   = get_volume_options(volume, 1);
+     if (dowrite && (voloptions & VOL_OPTION_READONLY)) {
+       completition = (creatmode) ? -0x84 : -0x94;
+     } else if (voloptions & VOL_OPTION_IS_PIPE) {
        /* this is a PIPE Volume */
        int statr = stat(fh->fname, stbuff);
        if (!statr && (stbuff->st_mode & S_IFMT) != S_IFDIR) {
-         int  dowrite= (access & 2) || creatmode ;
          char pipecommand[300];
          char *topipe             = "READ";
          if (creatmode) topipe    = "CREAT";
@@ -165,7 +169,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
             fh->offd = 0L;
             if (fh->fd > -1) {
               if (statr) stat(fh->fname, stbuff);
-            } else completition = -0x9a;
+            } else completition = dowrite ? -0x94 : -0x93;
          }
        }
        if (fh->fd > -1) {
@@ -184,8 +188,10 @@ int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
   if (fhandle > 0 && (--fhandle < anz_fhandles) ) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
-      fh->tmodi = nw_2_un_time(datum, zeit);
-      return(0);
+      if (!(fh->flags & FILE_IS_READONLY)) {
+        fh->tmodi = nw_2_un_time(datum, zeit);
+        return(0);
+      } else return(-0x8c);
     }
   }
   return(-0x88); /* wrong filehandle */
@@ -208,7 +214,8 @@ int nw_close_datei(int fhandle, int reset_reuse)
         fh->f = NULL;
       } else result=close(fh->fd);
       fh->fd = -1;
-      if (fh->tmodi > 0L && !(fh->flags&2)) {
+      if (fh->tmodi > 0L && !(fh->flags&2)
+                         && !(fh->flags & FILE_IS_READONLY)) {
         struct utimbuf ut;
         ut.actime = ut.modtime = fh->tmodi;
         utime(fh->fname, &ut);
@@ -289,6 +296,7 @@ int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
   if (fhandle > 0 && (--fhandle < anz_fhandles)) {
     FILE_HANDLE *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
+      if (fh->flags & FILE_IS_READONLY) return(-0x94);
       if (fh->flags & 2) { /* PIPE */
         if (size)
           return(fwrite(data, 1, size, fh->f->fildes[0]));
@@ -336,6 +344,7 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
     if (fhq->fd > -1 && fhz->fd > -1) {
       char buff[2048];
       int  wsize;
+      if (fhz->flags & FILE_IS_READONLY) return(-0x94);
       if (lseek(fhq->fd, qoffset, SEEK_SET) > -1L &&
           lseek(fhz->fd, zoffset, SEEK_SET) > -1L) {
         retsize = 0;

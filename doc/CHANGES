@@ -120,4 +120,15 @@ Erste 'oeffentliche' Version
 - Parameter -k fuer SIGTERM und -h fuer SIGHUP eingebaut.
 - eigene 'pipe' Routine fuer Druck Queue Aufruf eingebaut.
 - namespace services call rename file/dir eingebaut.
+<----- ^^^^^^^^^^ pl3 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- utmp/wtmp Ipx-Adresseintraege korrigiert.
+- setgroups(0,NULL) in nwserv eingbaut. (security)
+- falls internal net = 0 wird nun die IP Nummer als internal net verwendet.
+- Zugriffsrechte Bindery erweitert und korrigiert.
+- Volume option -r fuer readonly eingebaut.
+
+
+
+
+
 

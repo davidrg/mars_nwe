@@ -1,4 +1,4 @@
-/* nwvolume.h  29-Mar-96 */
+/* nwvolume.h  11-May-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -39,7 +39,7 @@ typedef struct {
   int   max_maps_count; /* may be less than MAX_DEV_NAMESPACE_MAPS */
   int   maps_count;     /* count of dev_namespace_maps       */
   uint32 high_inode;    /* hight inode to can handle correct */
-  int   options;        /* *_1_* all is lowercase            */
+  int   options;        /* see defines below                 */
 } NW_VOL;
 
 #define VOL_OPTION_DOWNSHIFT 0x01  /* All downshift               */
@@ -47,6 +47,7 @@ typedef struct {
 #define VOL_OPTION_REMOUNT   0x04  /* Volume can be remounted (cdroms) */
 #define VOL_OPTION_IS_HOME   0x08  /* Volume is USERS HOME        */
 #define VOL_OPTION_ONE_DEV   0x10  /* Volume has only one filesys */
+#define VOL_OPTION_READONLY  0x20  /* Volume is readonly          */
 
 /* stolen from GNU-fileutils */
 /* Space usage statistics for a filesystem.  Blocks are 512-byte. */

@@ -1,4 +1,4 @@
-/* nwvolume.c  22-Apr-96 */
+/* nwvolume.c  11-May-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -92,6 +92,10 @@ void nw_init_volumes(FILE *f)
 
               case 'p' : vol->options
                          |= VOL_OPTION_IS_PIPE;
+                         break;
+
+              case 'r' : vol->options
+                         |= VOL_OPTION_READONLY;
                          break;
 
               default : break;
@@ -273,7 +277,17 @@ int nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu)
 /* returns 0 if OK, else errocode < 0 */
 {
   int volnr = nw_get_volume_number(volname, strlen((char*)volname));
-  return((volnr>-1 && !get_fs_usage((char*)nw_volumes[volnr].unixname, fsu)) ? 0 : -1);
+  if (volnr > -1) {
+    NW_VOL *v=&(nw_volumes[volnr]);
+    if (0 == (volnr=get_fs_usage((char*)v->unixname, fsu))) {
+      if (v->options & VOL_OPTION_READONLY) {
+        fsu->fsu_bfree  = 0;
+        fsu->fsu_bavail = 0;
+        fsu->fsu_ffree  = 0;
+      }
+    }
+  }
+  return(volnr);
 }
 
 int get_volume_options(int volnr, int mode)

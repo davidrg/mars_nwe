@@ -1,0 +1,373 @@
+Dieses HowTo ist noch unfertig.
+
+Aktuelle Version erhaeltlich bei:
+Hardy Buchholz <hardy@kool.f.eunet.de>
+
+
+ALLGEMEINES
+^^^^^^^^^^^
+
+MARS_NWE ist ein frei erhaeltlicher Netware-Emulator fuer Linux.
+(auch fuer Unixware)
+
+
+IPX
+^^^
+
+
+QUICKINST (fuer alle Ungeduldigen und Wiederholungstaeter ;-)
+^^^^^^^^^
+1. "make" aufrufen.
+2. "config.h" evtl. anpassen.
+3. "make" aufrufen.
+4. "nw.ini" zum Konfigurieren des Servers bearbeiten.
+5. "make install" (und dann "make install_ini" wenn neue Konf-Datei).
+6. "nwserv" starten, MsDOS | WIN | WfW | WIN95 | OS/2-Clients starten,
+   einloggen, Spass haben ;-)
+
+
+Und wenns dann doch nicht funktioniert:
+
+INSTALLATION
+^^^^^^^^^^^^
+
+Kernel
+^^^^^^
+Voraussetzung  um  MARS_NWE  laufen  zu  lassen  ist  ein  Kernel  mit
+IPX-Option. Grundsaetzlich  sollte  der MARS_NWE  unter  allen neueren
+Kernelversionen  nutzbar sein. Die Kernelpatches aus dem  Verzeichniss
+"mars_mwe/examples"   sind   keine    Vorraussetzung,   steigern   die
+Performance des Servers aber ganz erheblich (ca. 30-40%). Weiter  wird
+dringend    empfohlen,   die   Option    FULL_INTERNAL_NET   in    der
+Kernel-Konfiguration  auf   NEIN  zu   setzen.   Sind   die  genannten
+Bedingungen  erfuellt, steht  der  Installation  vom  MARS_NWE von der
+Linux-Seite  nichts mehr im Weg, andernfalls  sollte zuerst ein  neuer
+Kernel erzeugt  (IPX = Y,  FULL_INTERNAL_NET =  N, Patch eingespielt?)
+und Linux neu gebootet werden.
+
+
+Novell
+^^^^^^
+Im Augenblick (Mai 96) werden noch einige Novell-Dateien benoetigt, um
+sich z.b. auf dem  Server  anzumelden,  Printqueues einzurichten  etc.
+Ausserdem  muss ein  Verzeichniss existieren, dass spaeter als  Volume
+"SYS"  genutzt  werden kann. Als minimale  Dateien werden "LOGIN.EXE",
+"CAPTURE.EXE",  "MAP.EXE" und vielleicht noch "SYSCON.EXE"  gebraucht.
+In  allernaechster  Zukunft sollte  es  von  Martin  Stover  auch  die
+"mars_dosutils"  geben, so dass auf die Novell-Files verzichtet werden
+kann.  Damit ist dann ein vollwertiger  Netware-kompatibler Server als
+Freeware fuer Linux verfuegbar. Die Novell-Unterverzeichnisse "LOGIN",
+"PUBLIC", "SYSTEM"  und "MAIL" werden beim ersten Aufruf von  "nwserv"
+automatisch   erzeugt  (dafuer  sollte   der   Eintrag   16   in   der
+"nw.ini/nwserv.conf" auf 1  bleiben).  Man kann also mars_nwe, nachdem
+in  der nwserv.conf Datei  der  SYS  Eintrag bearbeitet wurde, erstmal
+einmal starten und dann per Client versuchen einen attach zu erhalten.
+Der  Client  muss dann  ein leeres LOGIN Verzeichnis bzw. Volume  (bei
+vlms)  vorfinden.  Dann  sollte  sich  der  Client  mit  einem  extern
+gestarteten  LOGIN.EXE  oder entsprechendem  aus mars_dosutils auf dem
+Server als Supervisor einloggen und  die benoetigten Dateien ins LOGIN
+Verzeichniss kopieren. Dieses hat den Vorteil, dass die Dateien in der
+richtigen  Schreibweise gross  bzw. klein  in  das Verzeichnis kopiert
+werden.  Dateinamen  die  nicht  in   das   Dos-Schema  passen,   oder
+irrtuemlich  in  Gross-  und  Kleinschreibung  gemischt  wurden,  sind
+spaeter fuer den Client schlicht nicht sichtbar (waere z.b. bei LOGIN.
+EXE nicht so schoen, wenns unsichtbar bliebe ;-).
+
+
+Directories
+^^^^^^^^^^^
+Wie   bereits   gesagt  muss  wenigstens  ein  Verzeichniss   mit  der
+Novell-Directory-Struktur  existieren,  wofuer  der "nwserv"  aber mit
+Eintrag 16=1 in der nwserv.conf  selbst sorgt.  Daneben  wird ein oder
+mehrere Verzeichnisse  gebraucht,  die als Uebergabeverzeichnisse fuer
+die  Printqueues  und  eventuell  eingerichtete  Pipe-Dateien  dienen.
+Letztere  koennen  aber jederzeit nachtraeglich angelegt  und auch neu
+konfiguriert werden, unverzichtbar  ist nur das  Verzeichniss mit  den
+Novell-Directories,  dass  spaeter  als Volume  SYS freigegeben  wird.
+Generell ist es bestimmt  keine schlechte Idee, alle Verzeichnisse und
+Files, die fuer die Clients sichtbar sein sollen, gross zu schreiben.
+
+
+MARS_NWE
+^^^^^^^^
+Die  aktuelle  Version  vom MARS_NWE  auspacken,  was jetzt wohl schon
+passiert   ;-)   ist.  Wenn  alles  komplett  ist,  gibts   jetzt  die
+Verzeichnisse "mars_nwe",  "mars_nwe/examples" und "mars_nwe/doc".  Im
+doc-Verzeichniss  sind   ein   paar   Texte  zum   MARS_NWE   und   im
+examples-Verzeichniss   finden  sich  u.a.  die  bereits  besprochenen
+Patches. Hat  bisher  alles  geklappt, kann  jetzt  der  erste  "make"
+aufgerufen  werden. Damit werden  die  Dateien "mk.li" und  "config.h"
+erzeugt. "mk. li" ist ein Scriptfile, mit dessen Hilfe der "make" fuer
+Linux  angepasst  wird  und  braucht  fuer  Linux  normalerweise nicht
+veraendert werden, die "config.h" (die eigentliche Konfigurationsdatei
+fuer "make" und den  Compilerlauf) sollte aber wenigstens kontrolliert
+werden.
+Im Einzelnen kann man hier  Folgendes einstellen:
+Mit DO_DEBUG  wird  gesteuert, ob  der  Debugging-Code  mit compiliert
+werden soll. Generell ist besser mit debug-code, denn der  Debug-Level
+kann dann spaeter ueber die nwserv.conf eingestellt werden.
+Abhaengig  vom  Eintrag  DO_TESTING wird  der MARS_NWE  nur  local (im
+aktuellen  Verzeichniss)  oder  endgueltig  installiert.
+Die meisten folgenden Eintraege sind selbsterklaerend (MAX_CONNECTIONS
+...).  Um  MARS_NWE  mit   ncpfs  oder   WIN95  zu   betreiben  sollte
+WITH_NAMESPACE_CALLS = 1 gesetzt werden.
+INTERNAL_RIP_SAP  ist  standard auf  1, soll der MARS_NWE aber nur als
+Server  und  nicht  als  Router  eingesetzt werden,  muss es auf  Null
+gesetzt werden, dann muss aber auch das  Routing von Hand eingerichtet
+werden und es wird ein externer RIP/SAP Daemon benoetigt.  Wenn dieser
+Define auf  Null gesetzt ist,  wird beim  compilieren ein tool  namens
+"nwrouted" erzeugt. Dies ist der Routingund IPX-Konfigurationsteil aus
+MARS_NWE. Er kann z.B. verwendet werden, wenn Linux normalerweise ohne
+MARS_NWE  lauft,  IPX-Routing  aber (z.B. fuer  Linux  als IPX-Client)
+gebraucht wird, bzw. wenn  MARS_NWE  nur ab und  zu, dass Routing aber
+generell fuer Clients benoetigt wird.
+
+Grundsaetzlich kann MARS_NWE auf zwei Arten eingerichtet werden:
+
+1.Man kann alle Routen "von Hand" anlegen und  MARS_NWE nur als Server
+einsetzen. Hat natuerlich den Nachteil, dass man selbst fuer korrektes
+IPX-Routing  und richtige  Einstellung  der  Internal-Net Nummern etc.
+sorgen muss, bzw. dass zusaetzliche Programme wie  ipx-configure, ipxd
+usw.  benoetigt  werden.  In  mars_nwe/config.h  muss  folgende  Zeile
+vorhanden  sein:
+#define  INTERNAL_RIP_SAP 0
+Wie schon gesagt, wird dabei ab Version 0.97-PL3 der "routed" erzeugt.
+
+2.
+(Der  Standard-Modus) MARS_NWE legt alle  Routen selbst, man  kann die
+entsprechenden Devices  in  der Conf-Datei bestimmen  und der MARS_NWE
+arbeitet als RIP/SAP-Router (z.B. auch ueber ISDN...). Es werden keine
+zusaetzlichen Tools wie IPX_Configure etc. benoetigt.
+
+Sind  alle  Defines gesetzt, kann der  zweite make  gestartet  werden.
+Damit  werden die Binaries "nwserv", "ncpserv", "nwbind", "nwconn" und
+"nwclient"  erzeugt  (wenn  INTERNAL_RIP_SAP=0  war  auch "nwrouted").
+Bevor  der  MARS_NWE  endgueltig  installiert wird, sollte  jetzt  die
+"nw.ini"  bearbeitet  werden. Diese  wird  vom  anschliessenden  "make
+install"  ins   "/etc/"-Verzeichniss  unter  dem  Namen  "nwserv.conf"
+kopiert und ist die eigentliche Konfigurationsdatei fuer den MARS_NWE.
+Sollte bereits  eine "nwserv.conf" im "/etc"-Verzeichniss liegen, wird
+diese   nicht  automatisch   ueberschrieben.  Will   man,   dass   die
+"nwserv.conf" mit  der neuen "nw.ini" ueberschrieben  wird (z.B.  beim
+Wechseln  auf  eine  neue  MARS_NWE-Version, so muss  noch  ein  "make
+install_ini" durchgefuehrt werden.
+Die  "nwserf.conf"  kann  jederzeit  nachtraeglich bearbeitet  werden,
+viele  Einstellungen  koennen  mit  dem  Aufruf  "nwserv  -h"  in  den
+laufenden Server uebernommen  werden. Die  Eintraege sind  nummeriert,
+alles  nach einem "#" ist Kommentar und wird ignoriert.  Die Eintraege
+und ihre Bedeutung sind kurz in  der "nwserv.conf" selbst kommentiert.
+Im Detail wird  die  "nwserv.conf" weiter unten besprochen. Fuer einen
+ersten  Testlauf  sollten  die   Eintraege  1,3,4,  und  12  unbedingt
+kontrolliert oder geaendert werden. Nachdem das passiert ist, wird der
+"make install" aufgerufen, um die  Binaries und  die  "nwserf.conf" zu
+installieren.
+Ist  alles   fehlerfrei   durchgelaufen   (ein   paar  Warnings   beim
+Compilerlauf   zaehlen  nicht  ;-),  kann   der  "nwserv"  zum  testen
+aufgerufen werden. Danach sollten mit "ps" drei Prozesse sichtbar sein
+(etwa folgendermassen):
+
+<-------------------- schnipp --------------------------------------->
+ 1132 psf 1 <   0:00 nwserv
+ 1133 psf 1 N   0:00 nwbind NWE_SERVER 22.22.22.22:0.0.0.0.0.1:4.51 4001
+ 1134 psf 1 N   0:00 ncpserv NWE_SERVER 22.22.22.22:0.0.0.0.0.1:4.51 4001
+ 1136 pP8 1 N   0:00 ps
+<-------------------- schnipp --------------------------------------->
+
+Passiert ist folgendes:
+Der  Hauptprozess  "nwserv"  ruft  die  beiden  Prozesse  "nwbind" und
+"ncpserv" auf ("ncpserv" lauert  auf eventuell startende IPX-Clients).
+Die Parameter hinter  den  beiden Prozessen  nwbind und ncpserv  haben
+folgende Bedeutung:
+
+NWE_SERVER:	 	Der Name, der in den nw.ini (nwserv.conf) als
+			SERVER-Name angegeben wurde (Eintrag Nr.2),
+			oder falls nichts eingegeben wurde der Unix-
+			Hostname.
+
+22.22.22.22		Internal-Net Nummer des Servers.
+
+0.0.0.0.0.1		Node-Nummer des Servers.
+
+4.51			Socket-Nummer.
+
+4001			Socket, ueber den die Prozesse miteinander kom-
+			munizieren
+
+Es hat  also keinen  Sinn, "nwbind"  oder "ncpserv" als eigenstaendige
+Programme aufzurufen!
+
+Ein "cat /proc/net/ipx*" sollte jetzt in etwa folgendes zeigen:
+
+<-------------------- schnipp --------------------------------------->
+ipx:
+Local_Address  Remote_Address              Tx_Queue  Rx_Queue  State  Uid
+22222222:4000  Not_Connected               00000000  00000000  07     000
+22222222:0452  Not_Connected               00000000  00000000  07     000
+22222222:0453  Not_Connected               00000000  00000000  07     000
+22222222:4001  Not_Connected               00000000  00000000  07     000
+22222222:0451  Not_Connected               00000000  00000000  07     000
+22222222:4002  Not_Connected               00000000  00000000  07     000
+22222222:4003  Not_Connected               00000000  00000000  07     000
+ipx_interface:
+Network    Node_Address   Primary  Device     Frame_Type
+22222222   000000000001   Yes      Internal   None
+0000000A   0000E8037ECC   No       eth0       802.3
+0000AFFE   FCFCAC100101   No       isdn2      EtherII
+ipx_route:
+Network    Router_Net   Router_Node
+0000AFFE   Directly     Connected
+0000000A   Directly     Connected
+22222222   Directly     Connected
+<-------------------- schnipp --------------------------------------->
+
+Die "ipx_interfaces" sind in diesem Beispiel eine Ethernetkarte (eth0)
+und ein ISDN-Interface (auch das geht!). Das erste "Interface" ist der
+Server mit seiner Internal-Net Nummer. "ipx_route" zeigt die aktuellen
+Netzwerk-Routen, die  vom  nwserv  verwaltet werden,  d.h.  die beiden
+Netzwerke 0000AFFE und  0000000A sind augenblicklich erreichbar. "ipx"
+zeigt die  Sockets auf denen der  Server lauscht. Meldet  sich nun ein
+IPX-Client auf dem  Netz (Start von  NETX oder mit VLM), so  wird fuer
+jeden  Client  ein  Prozess  "nwconn"  gestartet,  der die  Connection
+verwaltet. Wenn der Client  erkannt wurde und alles funktioniert  hat,
+dann zeigt ein "ps" unter anderem folgendes:
+
+<-------------------- schnipp --------------------------------------->
+ 51 psf 5 <   0:00 /sbin/nwserv
+ 53 psf 5 N   0:00 nwbind NWE_SERVER 22.22.22.22:0.0.0.0.0.1:4.51 4001
+ 54 psf 5 N   0:00 ncpserv NWE_SERVER 22.22.22.22:0.0.0.0.0.1:4.51 4001
+    ...
+342 psf 5 N   0:00 nwconn 54 0.0.0.a:0.20.cb.0.1a.e8:40.3 1 4001
+<-------------------- schnipp --------------------------------------->
+
+Hier ist ein Client dazugekommen mit folgenden Daten:
+
+Netzwerk-Nummer (nicht Internal-Net): 0.0.0.A
+Kartennummer (Physikalisch):          0.20.cb.0.1a.e8
+Socket-Nummer:			      40.3
+Connection Nummer:		      1
+Die letzte Nummer (4001) ist eine MARS_NWE interne Socketnummer.
+
+Auf der Client-Seite sollte jetzt der Server mit SLIST sichtbar sein:
+
+<-------------------- schnipp --------------------------------------->
+Known NetWare File Servers           Network   Node Address Status
+--------------------------           -------   ------------ ------
+NWE_SERVER                           [22222222][           1]Default
+
+Total of 1 file servers found
+<-------------------- schnipp --------------------------------------->
+
+Auch die Dateien im Verzeichniss SYS:\LOGIN des  Servers sollten jetzt
+sichtbar sein (wenn nicht, ist moeglicherweise  die Option "k" gesetzt
+und  die  File-Namen  sind auf der Linux-Seite  grossgeschrieben  oder
+umgekehrt?. Siehe auch Kapitel Novell, weiter oben).
+
+
+NWSERV.CONF
+
+Die Datei "nw.ini" ist  waerend der  Installation als Vorlage fuer die
+eigentliche Konfigurationsdatei "nwserv.conf" angelegt und  bearbeitet
+worden.  Alle  relevanten  Einstellungen  des  MARS_NWE   (ausser  den
+Compilereinstellungen  in  der  "config.h") werden  hier  vorgenommen.
+Einige  davon koennen  sogar waehrend der Laufzeit des Servers mittels
+"nwserv -h" uebernommen werden.
+In letzter Zeit hat Winfried Truemper die Kommentare ueberarbeitet und
+erweitert, so dass viele Parameter  jetzt in der Datei selber erklaert
+werden.
+Hier sollen nur ein paar  Einstellungen  diskutiert werden, die  immer
+wieder  Fragen  aufwerfen:
+Mindesten   ein  Eintrag  1  (Volumes)  muss   vorhanden   sein.  Wie
+schon  im  Kapitel Novell gesagt, gibt  es  auf  Netware-Servern  eine
+minimale  Directory-Struktur  die   aus  den  Verzeichnissen  "LOGIN",
+PUBLIC,  "SYSTEM"  und  "MAIL"  besteht,  und  in  der standardmaessig
+bestimmte  Dateien  (Login-Scripte, Map-, Capture- und  Login-Commands
+etc.) abgelegt  sind. Damit der  Client auf den Server  Zugreifen kann
+muessen diese also vorhanden sein. Mit Eintrag 16=1  werden diese beim
+ersten Start von "nwserv" angelegt. Der Volume-Name ist ueblicherweise
+"SYS".
+Beim Anlegen und Eintragen der Optionen fuer das Volume  SYS unbedingt
+auf Gross-  und  Kleinschreibung  achten,  sonst  sind  diese  Dateien
+nachher  fuer  den Client nicht  Sichtbar. Alle  weiteren Volumes sind
+Optional und  koennen beliebige  Verzeichnisse  (ausser /)  freigeben.
+Auf Verzeichniss  "/" hat  nur der  root=Supervisor  Zugriff.  Volumes
+koennen   mit  NFS  gemountete  Verzeichnisse,  CD-Roms,  Floppys  und
+beliebige  unter   Linux  mountbare  Filesystems  sein.   Die  einzige
+Einschraenkung besteht in  der Beschraenkung  auf entweder alles gross
+oder  klein  geschrieben  und  der  Dos-Namensgebung  fuer  die  Files
+(xxxxxxxx.xxx).
+Eine Besonderheit sind  beim  MARS_NWE die  sogenannten  PIPE-Volumes.
+Hier  koennen  spaeter  Shell-Scripte  abgelegt  werden,  auf die  vom
+Dos-Client aus lesend  und  schreibend  zugegriffen werden kann (siehe
+PIPE-Volumes,  weiter unten).
+Eintrag 3 ist fuer  die Internal-Net  Nummer. Diese ist nur  fuer  den
+Server und muss einmalig im gesamten Netzwerk sein. Mit einer Null als
+Eintrag,   wird  die   IP-Nummer  des  Linux-Hosts  genommen,  die  ja
+ueblicherweise  einmalig   im  Netz  ist.  Die  Node-Nummer   ist  bei
+Netware-Servern  1,  sollte  also auch  hier nicht  anders eingestellt
+werden. Die  Internal-Net Nummer  einzurichten ist zwingend  notwendig
+wenn   der  Server  auch  als  Router  arbeiten  soll  (mehr  als  ein
+Net-device),  oder mehr  als ein Server im Netz aktiv ist, sollte aber
+generell   geschehen.
+Bei Netware  gibt es zwei Typen von Netzwerknummern,  die interne  und
+externe Netzwerknummer. Die  hier eingestellte interne wird verwendet,
+damit  nur solche Pakete vom Server empfangen werden, die auch  direkt
+fuer  ihn   bestimmt   sind.  Wenn  mehrere   Net-devices  im   Server
+konfiguriert   sind,   dann   uebernimmt    der   Server   automatisch
+Routing-Aufgaben. In  diesem  Fall sollen Pakete,  die nicht fuer  den
+Server  bestimmt, sind  ja  nur  weitergeleitet  werden.  Die  in  der
+Netzwerkkarte  enthaltene  physikalische   Netzwerknummer   ist  daher
+natuerlich ungeeignet.
+Die Server unterscheiden sich aus Sicht der Arbeitsstationen nur durch
+ihre  interne Netznummer, Pakete  werden  von den Clients nur an diese
+geschickt,  der Server adressiert  seine Paeckchen  an  den Client mit
+Absender = interne Netznummer und Empfaenger = externe Netznummer. Die
+externe Netzwerkadresse (in Eintrag 4) muss nun mit der Netzwerknummer
+des  LAN's  uebereinstimmen,  das  an  das  hier  konfigurierte Device
+angeschlossen  ist.  Der  Frame-Typ   muss  natuerlich  auch  mit  dem
+uebereinstimmen,  der  auf   diesem  LAN  gueltig  ist  (Standard  bei
+Netware-Netzen ist meist 802.3, 802.2 ist bei einigen neueren (Netware
+3.12 ..)  zu finden.
+Neuerdings  kann   in  der  "nwserv.conf"   auch  ein  Autodetect  der
+Net-Devices   eingestellt    werden.   Dies   kann    natuerlich   nur
+funktionieren,  wenn  an   diesem  Device   mindestens   ein   anderer
+Netware-Server  haengt, der  korrekt eingerichtet ist,  damit vom
+MARS_NWE die  externe Netzwerknummer und der Frame-Typ  vom  laufenden
+Datenverkehr abgeleitet  werden  kann.
+Eintraege  7 -  13 legen  die  Securety-  und  Login-Details fest. Als
+Besonderheit bei Eintrag 7 gilt: auch wenn die 8 (allow empty passwds)
+eingetragen  ist, muss der  Supervisor ein Passwort haben  (zumindest,
+wenn der  Root auf  dem  Linux-Rechner eines  hat).  Die Optionen fuer
+Eintrag  7  (Passwd-Handling) sind hirarchisch  gestaffelt,  wobei die
+Null nur  verschluesseltes Passworthandling  zulaesst,  und damit  die
+sicherste  Variante  darstellt.  Die  unter 12 und  13  einzutragenden
+Usernamen und Passworte  werden beim  ersten Start von "nwserv" in die
+Bindery-Dateien (*.pag  und *.dir-Files in /etc/) eingetragen.  Danach
+koennen (und sollten in  der Praxis  auch) diese Eintraege  wieder aus
+der "nwserv.conf" entfernt werden.
+
+
+
+FILE-SERVICES
+^^^^^^^^^^^^^
+
+PINT-QUEUES
+^^^^^^^^^^^
+
+PIPE-VOLUMES
+^^^^^^^^^^^^
+
+CLIENTS INSTALLIEREN
+^^^^^^^^^^^^^^^^^^^^
+
+FAQ's
+^^^^^
+
+
+TIPS UND LESESTOFF
+^^^^^^^^^^^^^^^^^^
+
+EMAIL-ADRESSEN
+^^^^^^^^^^^^^^
+
+
+

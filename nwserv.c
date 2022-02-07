@@ -21,8 +21,12 @@
 #include "net.h"
 #include "nwserv.h"
 
+#ifdef LINUX
+#  include <netdb.h>
+#endif
+
 uint32     internal_net  = 0x0L;     /* NETWORKNUMMER INTERN (SERVER) */
-int        no_internal   =   0;      /* no use of internal net	      */
+int        no_internal   =   0;      /* no use of internal net        */
 int        auto_creat_interfaces=0;
 
 ipxAddr_t  my_server_adr;            /* Address of this server        */
@@ -438,7 +442,7 @@ static void modify_wdog_conn(int conn, int mode)
         case 2  : c->counter      =  max(2, MAX_WDOG_TRIES); /* slow test (activate)*/
                   break;
 
-        default : c->counter 	  =  0;  /* reset */
+        default : c->counter      =  0;  /* reset */
                   break;
       } /* switch */
     } else if (mode == 99) {  /* remove */
@@ -514,17 +518,17 @@ static int name_match(uint8 *s, uint8 *p)
   while ( (pc = *p++) != 0){
     switch  (pc) {
       case '?' : if (!*s++) return(0);    /* simple char */
-	         break;
+                 break;
 
       case '*' : if (!*p) return(1);      /* last star    */
-	         while (*s) {
-	           if (name_match(s, p) == 1) return(1);
-	           ++s;
-	         }
-	         return(0);
+                 while (*s) {
+                   if (name_match(s, p) == 1) return(1);
+                   ++s;
+                 }
+                 return(0);
 
       default : if (pc != *s++) return(0); /* normal char */
-	        break;
+                break;
     } /* switch */
   } /* while */
   return ( (*s) ? 0 : 1);
@@ -837,18 +841,37 @@ static void get_ini(int full)
                      }
                      break;
 
+#if INTERNAL_RIP_SAP
            case 3 :
                      if (full) {
-                       if (sscanf(inhalt, "%ld%c", &internal_net, &dummy) != 1)
-                           sscanf(inhalt, "%lx",   &internal_net);
+                       upstr(inhalt);
+                       if (!strcmp(inhalt, "AUTO")) internal_net = 0;
+                       else {
+                         if (sscanf(inhalt, "%ld%c", &internal_net, &dummy) != 1)
+                             sscanf(inhalt, "%lx",   &internal_net);
+                       }
                        if (anz > 1) {
                          if (sscanf(inhalt2, "%ld%c", &node, &dummy) != 1)
                             sscanf(inhalt2, "%lx",   &node);
                        }
+                       if (0 == internal_net) {   /* now we try ip number */
+                         char locname[50];
+                         struct hostent *hent;
+                         gethostname(locname, 48);
+                         hent=gethostbyname(locname);
+                         if (NULL != hent && hent->h_length == 4) {
+                           internal_net = GET_BE32(*(hent->h_addr_list));
+                         } else {
+                           XDPRINTF((0, 0, "Cannot gethostbyname from '%s'",
+                             locname));
+                           if (hent) {
+                             XDPRINTF((0, 0, "hent->h_length=%d", hent->h_length));
+                           }
+                         }
+                       }
                      }
                      break;
 
-#if INTERNAL_RIP_SAP
            case 4 :
                      if (full) {
                        if (anz_net_devices < MAX_NET_DEVICES &&
@@ -978,11 +1001,12 @@ static void get_ini(int full)
     }
 # endif
 #endif
+
     if (!get_ipx_addr(&my_server_adr)) {
       internal_net = GET_BE32(my_server_adr.net);
     } else exit(1);
 
-#if LINUX && INTERNAL_RIP_SAP
+#if INTERNAL_RIP_SAP
     if (no_internal) {
       errorp(10, "WARNING:No use of internal net", NULL);
     } else if (!anz_net_devices) {
@@ -1111,6 +1135,21 @@ static void set_sigs(void)
 
 static int server_is_down=0;
 
+static int usage(char *prog)
+{
+#if !IN_NWROUTED
+  fprintf(stderr, "usage:\t%s [-h|-k|y]\n", prog);
+#else
+  fprintf(stderr, "usage:\t%s [-h]|-k]\n", prog);
+#endif
+  fprintf(stderr, "\t-h: send HUP to main process\n");
+  fprintf(stderr, "\t-k: stop main process\n");
+#if !IN_NWROUTED
+  fprintf(stderr, "\t y: start testclient code.\n");
+#endif
+  return(1);
+}
+
 int main(int argc, char **argv)
 {
   int j = 0;
@@ -1123,12 +1162,16 @@ int main(int argc, char **argv)
         switch (*a)  {
           case 'h' : init_mode = 1; break;
           case 'k' : init_mode = 2; break;
-          default  : break;
+          default  : return(usage(argv[0]));
         }
       }
-    } else if (*a == 'y') client_mode=1;
+    } else if (*a == 'y')
+      client_mode=1;
      /* in client mode the testprog 'nwclient' will be startet. */
+    else
+      return(usage(argv[0]));
   }
+  setgroups(0, NULL);
   init_tools(IN_PROG, init_mode);
   get_ini(1);
   j=-1;

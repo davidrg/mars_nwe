@@ -68,5 +68,6 @@ typedef struct {
 
 
 extern int handle_func_0x57(uint8 *p, uint8 *responsedata, int task);
+extern int handle_func_0x56(uint8 *p, uint8 *responsedata, int task);
 
 #endif

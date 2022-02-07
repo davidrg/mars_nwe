@@ -1,4 +1,4 @@
-/* nwroute.c 24-Apr-96 */
+/* nwroute.c 12-May-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -55,7 +55,7 @@ static void insert_delete_net(uint32 destnet,
   NW_NET_DEVICE *nd_dev = NULL;
   int       ndticks     = 99;
 
-  XDPRINTF((3,0,"%s net:0x%X, over 0x%X, 0x%02x:%02x:%02x:%02x:%02x:%02x",
+  XDPRINTF((3,0,"Beg: %s net:0x%X, over 0x%X, 0x%02x:%02x:%02x:%02x:%02x:%02x",
     (do_delete) ? "DEL" : "INS", destnet, rnet,
     (int)rnode[0], (int)rnode[1], (int)rnode[2],
     (int)rnode[3], (int)rnode[4], (int)rnode[5]));
@@ -388,7 +388,7 @@ void handle_rip(int fd,       int ipx_pack_typ,
                 int data_len, IPX_DATA *ipxdata,
                 ipxAddr_t     *from_addr)
 
-/* All received rip packeta reach this function  */
+/* All received rip packets reach this function  */
 /* It can be a RIP Request or a RIP Respons      */
 {
   int operation    = GET_BE16(ipxdata->rip.operation);
@@ -429,46 +429,84 @@ void handle_rip(int fd,       int ipx_pack_typ,
 }
 
 /* <========================= SAP ============================> */
+static void send_sap_to_addr(int entry, int hops, int ticks,
+                            int respond_typ, ipxAddr_t *to_addr)
+{
+  if (entry > -1) {
+    IPX_DATA   ipx_data;
+    NW_SERVERS *nw=nw_servers[entry];
+    memset(&ipx_data, 0, sizeof(ipx_data.sip));
+    strcpy((char*)ipx_data.sip.server_name, nw->name);
+    memcpy(&ipx_data.sip.server_adr, &nw->addr, sizeof(ipxAddr_t));
+    XDPRINTF((4, 0, "%s SERVER=%s, typ=0x%x, ticks=%d, hops=%d",
+             (respond_typ==4) ? "NEAREST" : "GENERAL", nw->name,
+                  nw->typ, ticks, hops));
+    U16_TO_BE16(respond_typ, ipx_data.sip.response_type);
+    U16_TO_BE16(nw->typ,     ipx_data.sip.server_type);
+    U16_TO_BE16(hops,        ipx_data.sip.intermediate_networks);
+    send_ipx_data(sockfd[SAP_SLOT],
+                       4,  /* this is the official packet typ for SAP's */
+                       sizeof(ipx_data.sip),
+                       (char *)&(ipx_data.sip),
+                       to_addr, "Sap Server Response");
+  }
+}
+
 void send_server_response(int respond_typ,
-                                 int styp, ipxAddr_t *to_addr)
+                              int styp, ipxAddr_t *to_addr)
 /* respond_typ 2 = general, 4 = nearest service respond */
 {
-  IPX_DATA   ipx_data;
   int        j=-1;
-  int        tics=99;
+  int        ticks=99;
   int        hops=15;
   int        entry = -1;
-  memset(&ipx_data, 0, sizeof(ipx_data.sip));
+  int  to_internal = (!no_internal)
+          && (GET_BE32(to_addr->net) == internal_net)
+          && (GET_BE16(to_addr->sock) != SOCK_SAP);
   while (++j < anz_servers) {
     NW_SERVERS *nw=nw_servers[j];
     if (nw->typ == styp && nw->name && *(nw->name)) {
-      int xtics=999;
+      int xticks=999;
       if (nw->net != internal_net) {
         NW_NET_DEVICE *nd=find_netdevice(nw->net);
-        if (nd) xtics = nd->ticks;
-      } else xtics =0;
-      if (xtics < tics || (xtics == tics && nw->hops <= hops)) {
-        tics  = xtics;
+        if (nd) xticks = nd->ticks;
+        if (to_internal)
+          send_sap_to_addr(j, nw->hops+1, xticks, respond_typ, to_addr);
+      } else xticks = 0;
+      if (xticks < ticks || (xticks == ticks && nw->hops <= hops)) {
+        ticks  = xticks;
         hops  = nw->hops;
         entry = j;
       }
     }
   }
-  if (entry > -1) {
-    NW_SERVERS *nw=nw_servers[entry];
-    strcpy((char*)ipx_data.sip.server_name, nw->name);
-    memcpy(&ipx_data.sip.server_adr, &nw->addr, sizeof(ipxAddr_t));
-    hops++;
-    XDPRINTF((4, 0, "NEAREST SERVER=%s, typ=0x%x, ticks=%d, hops=%d",
-                  nw->name, styp, tics, hops));
-    U16_TO_BE16(respond_typ, ipx_data.sip.response_type);
-    U16_TO_BE16(styp, ipx_data.sip.server_type);
-    U16_TO_BE16(hops, ipx_data.sip.intermediate_networks);
-    send_ipx_data(sockfd[SAP_SLOT],
-                       4,  /* this is the official packet typ for SAP's */
-                       sizeof(ipx_data.sip),
-                       (char *)&(ipx_data.sip),
-                       to_addr, "Nearest Server Response");
+  if (!to_internal)
+    send_sap_to_addr(entry, hops+1, ticks, respond_typ, to_addr);
+}
+
+
+static void send_sip_to_net(uint32 nd_net, int nd_ticks, int mode)
+{
+  ipxAddr_t     wild;
+  int           j=-1;
+  memset(&wild, 0, sizeof(ipxAddr_t));
+  U32_TO_BE32(nd_net,    wild.net);
+  memset(wild.node, 0xFF, IPX_NODE_SIZE);
+  U16_TO_BE16(SOCK_SAP,   wild.sock);
+  while (++j < anz_servers) {
+    NW_SERVERS *nw=nw_servers[j];
+    if  ( !nw->typ                           /* server has no typ       */
+     || ( nw->net == nd_net && nw->hops)     /* server has same net but */
+                                             /* hops                    */
+     || ( mode == 2 && nw->hops) ) {         /* no SAP to this NET      */
+      XDPRINTF((3, 0, "No SAP mode=%d, to net=0x%lx for server '%s'",
+             mode, nd_net, nw->name));
+      continue;
+    }
+    send_sap_to_addr(j,   (mode == 2) ? 16 : nw->hops+1,
+                             nd_ticks,
+                             2,     /* General    */
+                             &wild);
   }
 }
 
@@ -482,42 +520,7 @@ static void send_sap_broadcast(int mode)
     NW_NET_DEVICE *nd=net_devices[k];
     if (nd->is_up && (nd->ticks < 7 || mode)) {
     /* isdn devices should not get SAP broadcasts everytime */
-      IPX_DATA      ipx_data;
-      ipxAddr_t     wild;
-      int           j=-1;
-      memset(&wild, 0, sizeof(ipxAddr_t));
-      U32_TO_BE32(nd->net,    wild.net);
-      memset(wild.node, 0xFF, IPX_NODE_SIZE);
-      U16_TO_BE16(SOCK_SAP,   wild.sock);
-      while (++j < anz_servers) {
-        NW_SERVERS *nw=nw_servers[j];
-        if  ( !nw->typ                           /* server has no typ       */
-         || ( nw->net == nd->net && nw->hops)    /* server has same net but */
-                                                 /* hops                    */
-         || ( mode == 2 && nw->hops) ) {         /* no SAP to this NET      */
-          XDPRINTF((3, 0, "No SAP mode=%d, to net=0x%lx for server '%s'",
-                 mode, nd->net, nw->name));
-          continue;
-        }
-        memset(&ipx_data, 0, sizeof(ipx_data.sip));
-        strcpy(ipx_data.sip.server_name, nw->name);
-        memcpy(&ipx_data.sip.server_adr, &(nw->addr), sizeof(ipxAddr_t));
-        U16_TO_BE16(2,       ipx_data.sip.response_type);  /* General    */
-        U16_TO_BE16(nw->typ, ipx_data.sip.server_type);    /* Fileserver */
-        if (mode == 2) {
-          U16_TO_BE16(16,         ipx_data.sip.intermediate_networks);
-        } else {
-          U16_TO_BE16(nw->hops+1, ipx_data.sip.intermediate_networks);
-         /* I hope hops are ok here */
-          XDPRINTF((3, 0, "SEND SIP %s,0x%04x, hops=%d",
-                   nw->name, nw->typ, nw->hops+1));
-        }
-        send_ipx_data(sockfd[SAP_SLOT],
-                       4,  /* this is the official packet typ for SAP's */
-                       sizeof(ipx_data.sip),
-                       (char *)&(ipx_data.sip),
-                       &wild, "SIP Broadcast");
-      }
+       send_sip_to_net(nd->net, nd->ticks, mode);
     }
   }
 }
