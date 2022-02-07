@@ -1,4 +1,4 @@
-/* connect.h 29-Jul-97 */
+/* connect.h 27-Nov-97 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
 
@@ -133,6 +133,8 @@ extern int mv_file(int qdirhandle, uint8 *q, int qlen,
 extern int mv_dir(int dir_handle, uint8 *q, int qlen,
                            uint8 *z, int zlen);
 
+extern int nw_creat_node(int volnr, uint8 *unname, int mode);
+
 extern int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode);
 
 extern int nw_search(uint8 *info, uint32 *fileowner,
@@ -208,8 +210,6 @@ extern int     act_uid;
 extern int     act_gid;
 extern int     act_obj_id;   /* not login == 0             */
 extern int     entry8_flags; /* special flags, see examples nw.ini, entry 8 */
-extern int     act_umode_dir;
-extern int     act_umode_file;
 
 extern int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
 	                  uint8 *data,   int len, int only_dir) ;
@@ -224,8 +224,11 @@ extern void   set_default_guid(void);
 extern void   set_guid(int gid, int uid);
 extern void   reset_guid(void);
 extern void   reseteuid(void);
-extern void   set_act_obj_id(uint32 obj_id);
 extern int    in_act_groups(gid_t gid);
+extern void   set_nw_user(int gid, int uid,
+                        uint32 obj_id, uint8 *objname,
+                        int homepathlen, uint8 *homepath);
+
 extern int    get_real_access(struct stat *stb);
 extern uint32 get_file_owner(struct stat *stb);
 

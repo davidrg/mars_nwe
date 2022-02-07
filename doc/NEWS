@@ -1,3 +1,7 @@
+------27-Nov-97--- 0.99.pl4 ---------
+- section 1: dir/file creat modes can now be set volume dependent.
+- section 9: dir creat mode may now be '-1' for use st_mode of
+  parent directory.
 ------10-Nov-97--- 0.99.pl3 ---------
 - some defaults in config.h and nw.ini changed.
   default programpath is now /usr/sbin/ !!

@@ -1,4 +1,4 @@
-/* nwvolume.h  01-Nov-97 */
+/* nwvolume.h  28-Nov-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -45,6 +45,9 @@ typedef struct {
   uint32 high_inode;     /* hight inode to can handle correct */
   int    options;        /* see defines below                 */
   uint8  *os2buf;        /* special stuff for os2 namspace    */
+
+  int    umode_dir;      /* umask/umode for creating dirs     */
+  int    umode_file;     /* umask/umode for creating files    */
 } NW_VOL;
 
 /* vol options */
@@ -79,9 +82,16 @@ extern int       home_dir_len;
 extern char      *path_vol_inodes_cache;  /* for namespace routines */
 
 extern void nw_init_volumes(FILE *f);
+extern void nw_setup_vol_opts(int act_gid, int act_uid, 
+                       int act_umode_dir, int act_umode_file,
+                       int homepathlen, uint8 *homepath);
 extern void nw_setup_home_vol(int len, uint8 *fn);
 extern int  nw_get_volume_number(uint8 *volname, int namelen);
 extern int  nw_get_volume_name(int volnr, uint8 *volname);
+
+extern int  get_volume_umode_dir(int volnr);
+extern int  get_volume_umode_file(int volnr);
+
 extern int  nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu, int limit);
 extern int  get_volume_options(int volnr);
 extern int  get_volume_inode(int volnr, struct stat *stb);

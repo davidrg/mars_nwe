@@ -59,6 +59,8 @@ extern uint8 *downstr(uint8 *ss);
 extern uint8 *upstr(uint8 *ss);
 
 extern int hextoi(char *buf);
+extern int octtoi(char *buf);
+
 extern unsigned int atou(char *buf);
 extern char *hex_str(char *buf, uint8 *s, int len);
 

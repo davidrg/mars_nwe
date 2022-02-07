@@ -1,4 +1,4 @@
-/* nwfile.c  26-Aug-97 */
+/* nwfile.c  26-Nov-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -333,33 +333,25 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
        } else {
          /* <========= this is NOT a PIPE Volume ====================> */
          if (creatmode&0x3) {  /* creat File  */
+           int was_ok=0;
+           fh->fd=-1;
+           
            if (creatmode & 0x2) { /* creatnew */
              XDPRINTF((5,0,"CREAT FILE:%s: Handle=%d", fh->fname, fhandle));
-             fh->fd       = creat(fh->fname, 0777);
-             if (fh->fd < 0)
-                completition = -0x84; /* no create Rights */
-             else  if (act_umode_file)
-               chmod(fh->fname, act_umode_file);
+             if (!nw_creat_node(volume, fh->fname, 0))
+               was_ok++;
+             else
+               completition = -0x84; /* no create Rights */
            } else {
              XDPRINTF((5,0,"CREAT FILE, ever with attrib:0x%x, access:0x%x, fh->fname:%s: handle:%d",
                attrib,  access, fh->fname, fhandle));
-             fh->fd = open(fh->fname, O_CREAT|O_TRUNC|O_RDWR, 0777);
-             if (fh->fd < 0) {
-               if (creatmode & 0x8) {
-                 if ( (!seteuid(0)) && (-1 < (fh->fd =
-                      open(fh->fname, O_CREAT|O_TRUNC|O_RDWR, 0777)))) {
-                   chown(fh->fname, act_uid, act_gid);
-                 }
-                 did_grpchange=0;
-                 reset_guid();
-               }
-               if (fh->fd < 0)
-                 completition = -0x85; /* no delete /create Rights */
-             } else if (act_umode_file)
-               chmod(fh->fname, act_umode_file);
+             if (!nw_creat_node(volume, fh->fname, 
+                    (creatmode & 0x8) ? (2|8) : 2))
+               was_ok++;
+             else    
+              completition = -0x85; /* no delete /create Rights */
            }
-           if (fh->fd > -1) {
-             close(fh->fd);
+           if (was_ok) {
              fh->fd   = open(fh->fname, O_RDWR);
              fh->offd = 0L;
              stat(fh->fname, stbuff);

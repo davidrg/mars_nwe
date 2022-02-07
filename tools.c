@@ -1,4 +1,4 @@
-/* tools.c  08-Jun-97 */
+/* tools.c  26-Nov-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -451,10 +451,6 @@ void init_tools(int module, int options)
       }
       if (kill_pid > 1) {
         kill(kill_pid, sig);
-        if (sig == SIGUSR1 || sig == SIGTERM) {  /* we try twice */
-          sleep(2);
-          kill(kill_pid, sig);
-        }
         if (sig == SIGTERM && options == 2 ) { /* we want to wait for stop */
           int k = 120; /* max. 4 min */
           fprintf(stdout, "\nwaiting for stop of %s ...\n", get_modstr());
@@ -467,13 +463,16 @@ void init_tools(int module, int options)
               exit(0);
             }
           }
-          fprintf(stderr, "\n%s not stopped yet!\n", get_modstr());
+          fprintf(stderr, "\n%s not yet stopped!\n", get_modstr());
           exit(1);
+        } else if (sig == SIGUSR1 || sig == SIGTERM) {  /* we try twice */
+          sleep(2);
+          kill(kill_pid, sig);
         }
       }
       exit(0);
     } else if (options == 1 || options == 2 || options == 3 || options == 4) {
-      errorp(11, "INIT", "Program not running yet" );
+      errorp(11, "INIT", "Program not yet running." );
       exit(1);
     }
   }
@@ -592,6 +591,24 @@ int hextoi(char *buf)
   int i;
   if (!buf || (1 != sscanf(buf, "%x", &i)))
     i=0;
+  return(i);
+}
+
+int octtoi(char *buf)
+{
+  int i;
+  if (!buf) i=0;
+  else {
+    int m=0;
+    if (*buf == '-') {
+      ++m;
+      ++buf;
+    }
+    if (*buf == 0 || 1 != sscanf(buf, "%o", &i))
+      i=0;
+    else if (m) 
+      i=-i;
+  }
   return(i);
 }
 

@@ -1,4 +1,4 @@
-/* nwconn.c 08-Oct-97       */
+/* nwconn.c 18-Nov-97       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -104,7 +104,7 @@ typedef struct {
 static BURST_W *burst_w=NULL;
 #endif
 
-static void set_program_title(char *s)
+void nwconn_set_program_title(char *s)
 {
   memset(prog_title, 0, 49);
   if (s&&*s)
@@ -112,6 +112,7 @@ static void set_program_title(char *s)
   else
     strcpy(prog_title, "()");
 }
+
 
 static int ncp_response(int sequence, int task,
                 int completition, int data_len)
@@ -1073,10 +1074,9 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
          case 0x19 : /* logout, some of this call is handled in ncpserv. */
                      free_queue_jobs();
                      nw_free_handles(-1);
-                     set_default_guid();
-                     nw_setup_home_vol(-1, NULL);
-                     set_act_obj_id(0);  /* NOT logged in */
-                     set_program_title(NULL);
+                     set_nw_user(-1, -1,
+                                  0, NULL,
+                                 -1, NULL);
                      return(-1); /* nwbind must do a little rest */
                      break;
 
@@ -1874,15 +1874,19 @@ static void handle_after_bind()
            int   fnlen = (int) *(bindresponse + 3 * sizeof(int));
            uint8 objname[48];
            /* ncpserv have changed the structure */
-           set_guid(*((int*)bindresponse), *((int*)(bindresponse+sizeof(int))));
-           set_act_obj_id(*((uint32*)(bindresponse + 2 * sizeof(int))));
-           nw_setup_home_vol(fnlen, bindresponse   + 3 * sizeof(int) +1);
+           
            if (ufunc==0x14) {
              xstrmaxcpy(objname, requestdata+6, (int) *(requestdata+5));
            } else if (ufunc==0x18){
              xstrmaxcpy(objname, requestdata+14, (int) *(requestdata+13));
            } else objname[0]='\0';
-           set_program_title(objname);
+           
+           set_nw_user(*((int*)bindresponse),   /* gid */
+                       *((int*)(bindresponse+sizeof(int))), /* uid */
+                       *((uint32*)(bindresponse + 2 * sizeof(int))), /* id */
+                        objname,           /* login name */
+                        fnlen,             /* unix homepathlen */
+                        bindresponse + 3 * sizeof(int) +1); /* unix homepath */
          }
          break;
 
@@ -2195,7 +2199,7 @@ int main(int argc, char **argv)
 #endif
 
   set_default_guid();
-  set_program_title(NULL);
+  nwconn_set_program_title(NULL);
 
   ud.opt.len       = sizeof(uint8);
   ud.opt.maxlen    = sizeof(uint8);

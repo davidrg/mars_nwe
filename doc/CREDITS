@@ -77,6 +77,7 @@ Andrew Sapozhnikov <sapa@hq.icb.chel.su>
         fixed findfirst/findnext bug,
         fixed directory access bug,
         added extend "Volume is home" feature.
+        fixed "rename wildcard" bug.
 
 Gregory Steuck <greg@nsu.ru>
         testings and errorreports

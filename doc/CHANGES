@@ -380,7 +380,7 @@ Erste 'oeffentliche' Version
 - bei Schalter -k warten auf beenden eingebaut.
   neuer Schalter -q (quick ohne warten)
 - home volume feature erweitert von Andrew Sapozhnikov.
-- Bei Verzeichnissen wird nicht mehr das SHARED flag zuruegesetzt. 
+- Bei Verzeichnissen wird nicht mehr das SHARED flag zuruegesetzt.
   (Andrew Sapozhnikov)
 - Es kann nun mittels SYSCON verhindert werden, dass User sein Passwort
   aendern kann. ( Mr. Charlie Root (alexey) )
@@ -388,4 +388,8 @@ Erste 'oeffentliche' Version
 - MAX_CONNECTIONS (default) auf 50 gesetzt.
 - Logfilepfade von /tmp auf /var/log/. geaendert.
 <----- ^^^^^^^^^^ pl3 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- "wildcard rename bug" patch von Andrew Sapozhnikov eingebaut.
+- Creat mode von Verzeichnissen erweitert.
+- Verzeichnisse werden nicht mehr auf readonly gesetzt.
+<----- ^^^^^^^^^^ pl4 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

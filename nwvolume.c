@@ -1,4 +1,4 @@
-/* nwvolume.c  01-Nov-97 */
+/* nwvolume.c  28-Nov-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -86,10 +86,13 @@ void nw_init_volumes(FILE *f)
     if ( what == 1 && used_nw_volumes < max_nw_vols && strlen((char*)buff) > 3){
       uint8 sysname[256];
       uint8 unixname[256];
-      char  optionstr[256];
-      char  *p;
+      uint8 optionstr[256];
+      uint8 umode_dirstr[256];
+      uint8 umode_filestr[256];
+      uint8 *p;
       int   len;
-      int   founds = sscanf((char*)buff, "%s %s %s",sysname, unixname, optionstr);
+      int   founds = sscanf((char*)buff, "%s %s %s %s %s",
+                 sysname, unixname, optionstr, umode_dirstr, umode_filestr);
       if (founds > 1) {
         NW_VOL *vol=&(nw_volumes[used_nw_volumes]);
         vol->options    = VOL_NAMESPACE_DOS;
@@ -160,6 +163,13 @@ void nw_init_volumes(FILE *f)
             }
           }
         }
+        vol->umode_dir  = 0;
+        vol->umode_file = 0;
+        if (founds > 3) {
+          vol->umode_dir=octtoi(umode_dirstr);
+          if (founds > 4) 
+            vol->umode_file=octtoi(umode_filestr);
+        }
         used_nw_volumes++;
         if (vol->options & VOL_OPTION_ONE_DEV) {
           vol->max_maps_count = 1;
@@ -225,6 +235,69 @@ void nw_setup_home_vol(int len, uint8 *fn)
     }
   }
 }
+
+void nw_setup_vol_opts(int act_gid, int act_uid, 
+                       int act_umode_dir, int act_umode_file,
+                       int homepathlen, uint8 *homepath)
+
+/* set's homevolume and volume's umodes */
+{
+  int k=used_nw_volumes;
+  uint8 unixname[258];
+  uint8 fullname[258];
+  
+  unixname[0] = '\0';
+  xfree(home_dir);
+  home_dir_len=0;
+  if (homepathlen > 0) {
+    strmaxcpy(unixname, homepath, homepathlen);
+    if (unixname[homepathlen-1] != '/') {
+      unixname[homepathlen++] = '/';
+      unixname[homepathlen]   = '\0';
+    }
+    new_str(home_dir, unixname);
+    home_dir_len=homepathlen;
+  }
+  
+  while (k--) { /* now set all HOME volumes */
+    uint8 *fname;
+    int	  flen;
+    if (nw_volumes[k].options & VOL_OPTION_IS_HOME)  {
+      int i = -1;
+      while (++i < nw_volumes[k].maps_count)
+        xfree(nw_volumes[k].dev_namespace_maps[i]);
+      nw_volumes[k].maps_count = 0;
+      fname = unixname;
+      flen = homepathlen;
+      nw_volumes[k].umode_dir  = 0;
+      nw_volumes[k].umode_file = 0;
+      if (homepathlen > 0 && nw_volumes[k].addonlen) {
+        if (homepathlen + nw_volumes[k].addonlen > 256) {
+          flen = 0;
+          fname = "";
+        } else {
+          strcpy(fullname, unixname);
+          /* concatenation $HOME/ and add/on/ */
+          strcpy(fullname + homepathlen, nw_volumes[k].homeaddon);
+          fname = fullname;
+          flen = homepathlen + nw_volumes[k].addonlen;
+        }
+      }
+      nw_volumes[k].unixnamlen =  flen;
+      new_str(nw_volumes[k].unixname, fname);
+      if (flen>0)
+        volume_to_namespace_map(k, &(nw_volumes[k]));
+    }
+    if (!nw_volumes[k].umode_dir)
+      nw_volumes[k].umode_dir=act_umode_dir;
+
+    if (!nw_volumes[k].umode_file)
+      nw_volumes[k].umode_file=act_umode_file;
+  
+  }
+
+}
+
 
 static int look_name_space_map(NW_VOL *v, DEV_NAMESPACE_MAP *dnm,
                                int  do_insert)
@@ -334,6 +407,17 @@ int nw_get_volume_name(int volnr, uint8 *volname)
   return(result);
 }
 
+int get_volume_umode_dir(int volnr)
+{
+  return( (volnr > -1 && volnr < used_nw_volumes) ?     
+                     nw_volumes[volnr].umode_dir  : 0);
+}
+
+int get_volume_umode_file(int volnr)
+{
+  return( (volnr > -1 && volnr < used_nw_volumes) ?     
+                     nw_volumes[volnr].umode_file  : 0);
+}
 
 /* stolen from GNU-fileutils */
 static long adjust_blocks (long blocks, int fromsize, int tosize)

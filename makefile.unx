@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=99
-P_L=3
+P_L=4
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -58,6 +58,9 @@ distrib:  $(DESTMAKEFILE)
 	$(MAKE) -f $(DESTMAKEFILE) n_$@
 
 distrib_bin:  $(DESTMAKEFILE)
+	$(MAKE) -f $(DESTMAKEFILE) n_$@
+
+bintgz: $(DESTMAKEFILE)
 	$(MAKE) -f $(DESTMAKEFILE) n_$@
 
 $(DESTMAKEFILE): $(VPATH)/makefile.unx $(VPATH)/config.h
@@ -217,7 +220,6 @@ cd $(OBJDIR) )
 
 n_reboot: n_install
 	  -nwserv -k
-	  sleep  5
 	  nwserv
 
 clean_d:
@@ -273,6 +275,7 @@ n_distrib: n_diff
 ; rm  $(DISTRIBF).uue \
 ; mv  $(DISTRIBF).tgz /tmp/x/. \
 ; cp -a $(DISTRIB)/doc/$(DISTRIB).lsm /tmp/x/. \
+; mv $(PATCHF).gz /tmp/x/. \
 ; cd $(OBJDIR) )
 	-rm -f /tmp/mars_nwe.tgz
 	ln -s /tmp/x/$(DISTRIBF).tgz /tmp/mars_nwe.tgz
@@ -282,6 +285,11 @@ n_distrib_bin:
  $(PROGS) \
  examples \
  doc \
+; cd $(OBJDIR))
+
+n_bintgz:
+	cd $(VPATH) && (tar cvzf /tmp/mars_nwb.tgz \
+ $(PROGS) \
 ; cd $(OBJDIR))
 
 n_showconf:

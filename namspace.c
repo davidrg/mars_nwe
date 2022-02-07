@@ -710,23 +710,17 @@ static int insert_get_base_entry(N_NW_PATH *nwpath,
   if (!basehandle && creatmode) { /* now creat the entry (file or dir) */
     int result = 0;
     char *unname = nwpath_2_unix(nwpath, 2);
+    
     if (get_volume_options(nwpath->volume) &
             VOL_OPTION_READONLY) return(-0x8a);
-
     if (creatmode & FILE_ATTR_DIR) {
        /* creat dir */
-      if (mkdir(unname, 0777))
+      if (nw_creat_node(nwpath->volume, unname, 1)) 
         result=-0x84;
-      else if (act_umode_dir)
-        chmod(unname, act_umode_dir);
     } else {
        /* creat file */
-      if ((result = creat(unname, 0777)) > -1) {
-        if (act_umode_file)
-          chmod(unname, act_umode_file);
-        close(result);
-        result = 0;
-      } else result=-0x84;
+      if (nw_creat_node(nwpath->volume, unname, 0)) 
+        result=-0x84;
     }
     if (result) return(result);
     basehandle = name_2_base(nwpath, namespace, 0);

@@ -1,0 +1,35 @@
+# example for nwopt file.
+#
+# last changed: 18-Nov-97
+#
+# Syntax similar like nwserv.conf file.
+#
+# This file can be located in
+# - user home dir as '.nwopt'     ( ~/.nwopt )
+# - volume path  as '.nwopt.vol'  ( /u3/SYS/.nwopt.vol ) 
+# - and/or '.nwoptg.gid'  ( /u3/SYS/.nwoptg.50 )
+# - and/or '.nwoptu.uid'  ( /u3/SYS/.nwoptu.100 )
+# the nwopt files are read after logins in order 
+#  ~/.nwopt, .nwopt.vol, .nwoptg.xxx, .nwoptu.xxx
+#
+
+
+# Section 1: special flags.
+# =========================================================================
+#     Flags
+
+#      0x1   when creating dirs, change group to directory group
+#            if possible. ( must be in groups of user )
+#
+#     other flags may follow.
+#     value will be interpreted as hex value.
+#
+#1       0x0
+
+
+# Section 9: Standard creat mode for creating directories and files.
+# =========================================================================
+#9 0755  0664
+
+
+

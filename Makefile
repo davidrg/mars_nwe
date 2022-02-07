@@ -50,6 +50,9 @@ distrib: mk.li nw.ini
 distrib_bin: mk.li nw.ini
 	./mk.li $@
 
+bintgz: 
+	./mk.li $@
+
 diff:
 	./mk.li $@
 
