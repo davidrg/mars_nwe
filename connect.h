@@ -1,4 +1,4 @@
-/* connect.h 04-May-96 */
+/* connect.h 28-Jul-96 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
 typedef struct {
@@ -54,6 +54,57 @@ typedef struct {
   uint8   next_search[2];
 } NW_DIR_INFO;
 
+
+typedef struct {
+  uint8   time[2];
+  uint8   date[2];
+  uint8   id[4];
+} NW_FILE_DATES_INFO;
+
+typedef struct {
+  uint8   subdir[4];
+  uint8   attributes[4]; /* 0x20,0,0,0   File  */
+  uint8   uniqueid;      /* 0    */
+  uint8   flags;         /* 0x18 */
+  uint8   namespace;     /* 0    */
+  uint8   namlen;
+  uint8   name[12];
+  NW_FILE_DATES_INFO created;
+  NW_FILE_DATES_INFO archived;
+  NW_FILE_DATES_INFO updated;
+  uint8              size[4];
+  uint8              reserved_1[44];
+  uint8              inherited_rights_mask[2];
+  uint8              last_access_date[2];
+  uint8              reserved_2[28];
+} NW_DOS_FILE_INFO;
+
+typedef struct {
+  uint8   subdir[4];
+  uint8   attributes[4]; /* 0x10,0,0,0   DIR   */
+  uint8   uniqueid;      /* 0 */
+  uint8   flags;         /* 0x14 or 0x1c */
+  uint8   namespace;     /* 0 */
+  uint8   namlen;
+  uint8   name[12];
+  NW_FILE_DATES_INFO created;
+  NW_FILE_DATES_INFO archived;
+  uint8   modify_time[2];
+  uint8   modify_date[2];
+  uint8   next_trustee[4];
+  uint8   reserved_1[48];
+  uint8   max_space[4];
+  uint8   inherited_rights_mask[2];
+  uint8   reserved_2[26];
+} NW_DOS_DIR_INFO;
+
+typedef struct {
+  uint8   searchsequence[4];
+  union {
+    NW_DOS_DIR_INFO  d;
+    NW_DOS_FILE_INFO f;
+  } u;
+} NW_SCAN_DIR_INFO;
 
 extern int nw_init_connect(void);
 extern void nw_exit_connect(void);
@@ -130,6 +181,15 @@ extern int nw_scan_dir_info(int dir_handle, uint8 *data, int len,
                             uint8 *subdatetime, uint8 *owner);
 
 
+extern void get_dos_file_attrib(NW_DOS_FILE_INFO *f,
+                               struct stat *stb,
+                               uint8        *path);
+
+void get_dos_dir_attrib(NW_DOS_DIR_INFO *f,
+                                struct stat *stb,
+                                uint8 *path);
+
+
 #define MAX_NW_DIRS    255
 extern NW_DIR  dirs[MAX_NW_DIRS];
 extern int     used_dirs;
@@ -154,11 +214,15 @@ extern int nw_scan_a_root_dir(uint8   *rdata,
                               int     dirhandle);
 
 
-extern int fn_match(uint8 *s, uint8 *p, int options);
+extern int fn_dos_match(uint8 *s, uint8 *p, int options);
 
 extern void   un_date_2_nw(time_t time, uint8 *d, int high_low);
 extern time_t nw_2_un_time(uint8 *d, uint8 *t);
 
 extern void   un_time_2_nw(time_t time, uint8 *d, int high_low);
+
+
+extern void mangle_dos_name(NW_VOL *vol, uint8 *unixname, uint8 *pp);
+
 
 #endif

@@ -1,4 +1,4 @@
-/* nwvolume.c  14-Jul-96 */
+/* nwvolume.c  08-Aug-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -64,6 +64,7 @@ void nw_init_volumes(FILE *f)
       if (founds > 1) {
         NW_VOL *vol=&(nw_volumes[used_nw_volumes]);
         vol->options    = VOL_NAMESPACE_DOS;
+        upstr(sysname);
         new_str(vol->sysname, sysname);
         if (1 == (len = strlen((char*)unixname)) && unixname[0] == '~') {
           vol->options  |= VOL_OPTION_IS_HOME;
@@ -78,6 +79,10 @@ void nw_init_volumes(FILE *f)
         if (founds > 2) {
           for (p=optionstr; *p; p++) {
             switch (*p) {
+              case 'i' : vol->options
+                         |= VOL_OPTION_IGNCASE;
+                         break;
+
               case 'k' : vol->options
                          |= VOL_OPTION_DOWNSHIFT;
                          break;
@@ -319,15 +324,16 @@ int get_volume_options(int volnr, int mode)
   return(result);
 }
 
-int get_volume_inode(int volnr)
+int get_volume_inode(int volnr, struct stat *stb)
 /* returns inode if OK, else errocode < 0 */
 {
   int result = -0x98; /* Volume not exist */;
   if (volnr > -1 && volnr < used_nw_volumes) {
     struct stat statb;
-    result = stat(nw_volumes[volnr].unixname, &statb);
+    if (!stb) stb=&statb;
+    result = stat(nw_volumes[volnr].unixname, stb);
     if (result == -1) result=-0x98;
-    else result=statb.st_ino;
+    else result=stb->st_ino;
   }
   XDPRINTF((5,0,"get_volume_inode of VOLNR:%d, result=0x%x", volnr, result));
   return(result);

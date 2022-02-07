@@ -50,7 +50,6 @@ extern char  *get_div_pathes(char *buff, char *name, int what, char *p, ... );
 
 extern int   get_ini_int(int what);
 extern void  get_ini_debug(int what);
-extern void  creat_pidfile(void);
 extern void  init_tools(int module, int options);
 extern void  exit_tools(void);
 

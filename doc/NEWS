@@ -1,4 +1,6 @@
-# in this files are important notes for user of mars_nwe.
+# in this files are some notes for user of mars_nwe.
+------30-Jul-96--- 0.98.pl1 ----------
+- better OS2 name handling (upper/lowercase)
 ------22-Jul-96--- 0.98.pl0 ----------
 - problems with directory handles eliminated.
   (missunderstood 'creat permanent directory handle' call :( )

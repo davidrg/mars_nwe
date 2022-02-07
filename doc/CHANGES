@@ -163,6 +163,8 @@ Erste 'oeffentliche' Version
 - Dummy Routinen fuer OS/2 extended attributes eingebaut.
 - NFS-namespace rudimentaer eingebaut.
 <----- ^^^^^^^^^^ pl0 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
+- bessere OS2 Nameunterstuetzung.
+- 0x17 0x81 als Dummy implementiert fuer Windows Client.
+<----- ^^^^^^^^^^ pl1 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 

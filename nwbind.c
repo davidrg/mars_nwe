@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "12-Jul-96"
+#define REVISION_DATE "14-Aug-96"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -1145,6 +1145,18 @@ static void handle_fxx(int gelen, int func)
                    obj.id =  GET_BE32(rdata);
                    XDPRINTF((1, 0, "TODO:READ QUEUE STATUS NEW of Q=0x%lx", obj.id));
                    completition=0xd5; /* no Queue Job */
+                  }break;
+
+     case 0x81 :  { /* Get Queue Job List */
+                   NETOBJ    obj;
+                   struct XDATA {
+                      uint8 total_jobs[4];
+                      uint8 reply_numbers[4];
+                      uint8 job_list[4]; /* this is repeated */
+                   } *xdata = (struct XDATA*) responsedata;
+                   obj.id =  GET_BE32(rdata);
+                   XDPRINTF((2, 0, "TODO:GET QUEUE JOB List of Q=0x%lx", obj.id));
+                   memset(xdata, 0, sizeof(struct XDATA));
                   }break;
 
      case 0xc8 :  { /* CHECK CONSOLE PRIVILEGES */

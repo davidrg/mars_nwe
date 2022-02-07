@@ -43,7 +43,7 @@
 
 /* <-------------------------------------------------------------------->  */
 #define MAX_NW_VOLS           10     /* max. number of mars_nwe-volumes    */
-#define MAX_FILE_HANDLES_CONN 80     /* max. number of open files per      */
+#define MAX_FILE_HANDLES_CONN 255    /* max. number of open files per      */
                                      /* connection                         */
 /* <---------------  new namespace services call ----------------------->  */
 #define MAX_DIR_BASE_ENTRIES  50     /* max. cached base entries per       */

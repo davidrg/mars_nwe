@@ -324,7 +324,7 @@ int nw_change_obj_security(NETOBJ *o, int newsecurity)
 
 int nw_get_obj(NETOBJ *o)
 {
-  int result = -0xfc; /* no Object */
+  int result = -0xfc;  /* no Object */
   XDPRINTF((2,0, "nw_get_obj von OBJ id = 0x%x", (int)o->id));
   if (!dbminit(FNOBJ)){
     key.dsize = NETOBJ_KEY_SIZE;
@@ -1291,7 +1291,7 @@ static void add_pr_queue(uint32 q_id,
 	             "Q_DIRECTORY",           	 P_FL_ITEM,   0x33,
 	              q_directory,  strlen(q_directory));
 
-  /* this is a own property to handler the print job !!! */
+  /* this is an own property to handle the print job !!! */
   nw_new_obj_prop(q_id ,NULL,              0  ,   0  ,   0   ,
 	             "Q_UNIX_PRINT",    P_FL_ITEM| P_FL_DYNA,   0x33,
 	              q_command,  strlen(q_command));
@@ -1300,7 +1300,6 @@ static void add_pr_queue(uint32 q_id,
   nw_new_obj_prop(q_id , NULL,             0  ,   0  ,   0   ,
 	             "Q_USERS",        	  P_FL_SET,  0x31,
 	              (char*)buff,  4);
-
 #if 0
   nw_new_obj_prop(q_id , NULL,             0  ,   0  ,   0   ,
 	             "Q_SERVERS",             P_FL_SET,  0x31,

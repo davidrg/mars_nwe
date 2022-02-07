@@ -348,15 +348,11 @@ int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
-        if (fh->fh_flags & FH_IS_PIPE_COMMAND)
-          size = fread(data, 1, size, fh->f->fildes[1]);
-        else {
-          size = read(fh->fd, data, size);
-          if (size < 0) {
-            int k=5;
-            while (size < 0 && --k /* && errno == EAGAIN */)
-               size = read(fh->fd, data, size);
-          }
+        size = read(fh->fd, data, size);
+        if (size < 0) {
+          int k=5;
+          while (size < 0 && --k /* && errno == EAGAIN */)
+             size = read(fh->fd, data, size);
         }
       } else {
 #if USE_MMAP
@@ -430,11 +426,7 @@ int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
     if (fh->fd > -1) {
       if (fh->fh_flags & FH_IS_READONLY) return(-0x94);
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
-        if (size) {
-          if (fh->fh_flags & FH_IS_PIPE_COMMAND)
-            return(fwrite(data, 1, size, fh->f->fildes[0]));
-          return(write(fh->fd, data, size));
-        } return(0);
+        return(size ? write(fh->fd, data, size) : 0);
       } else {
         if (fh->offd != (long)offset)
             fh->offd = lseek(fh->fd, offset, SEEK_SET);

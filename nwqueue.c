@@ -1,4 +1,4 @@
-/* nwconn.c 16-Jul-96       */
+/* nwconn.c 10-Aug-96       */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,8 +18,10 @@
 
 #include "net.h"
 #include <dirent.h>
-#include "connect.h"
+
+#include "nwvolume.h"
 #include "nwfile.h"
+#include "connect.h"
 #include "nwqueue.h"
 
 static char **build_argv(char *buf, int bufsize,  char *command)
@@ -135,6 +137,7 @@ static int x_popen(char *command, int uid, int gid, FILE_PIPE *fp)
     int x_ = (j) ? 1 : 0;
     close(piped[j][x_]);
     piped      [j][x_]  = -1;
+
     fp->fildes [j]      = fdopen(piped[j][x], ( (j) ? "r" : "w") );
     if (NULL == fp->fildes[j]){
       err_close_pipe(fp, lpid, j+1, piped);
@@ -150,8 +153,6 @@ int ext_pclose(FILE_PIPE *fp)
   void (*intsave) (int) = signal(SIGINT,  SIG_IGN);
   void (*quitsave)(int) = signal(SIGQUIT, SIG_IGN);
   void (*hupsave) (int) = signal(SIGHUP,  SIG_IGN);
-
-
   int j = 3;
   while (j--) if (fp->fildes[j]) fclose(fp->fildes[j]);
   if (fp->command_pid != waitpid(fp->command_pid, &status, 0)) {
@@ -388,7 +389,10 @@ int nw_close_file_queue(uint8 *queue_id,
           int  k;
           is_ok++;
           while ((k = fread(buff, 1, sizeof(buff), f)) > 0) {
+            /*
             if (1 != fwrite(buff, k, 1, fp->fildes[0])) {
+             */
+            if (k != write(fileno(fp->fildes[0]), buff, k)) {
               XDPRINTF((1,0,"Cannot write to pipe `%s`", printcommand));
               is_ok=0;
             }

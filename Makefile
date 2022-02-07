@@ -21,7 +21,7 @@ all:   rmeflag mk.li config.h nw.ini
 	echo ""; \
 	echo "********************************************************" ; \
 	echo ""; \
-	cat .mk.notes; rm .mk.notes ; \
+	cat .mk.notes; rm -f .mk.notes ; \
 	echo ""; \
 	echo "********************************************************" ; \
 	echo "";  echo "" ; fi ) fi
@@ -41,6 +41,8 @@ install_ini: nw.ini
 
 clean:  mk.li nw.ini
 	./mk.li $@
+	rm -f .mk.notes
+	rm -f .eflag
 
 distrib: mk.li nw.ini
 	./mk.li $@
@@ -84,6 +86,7 @@ rmeflag:
 	@- rm -f .eflag
 
 nw.ini: examples/nw.ini
+	@rm -f .mk.notes
 	@if [ -r $@ ] ; then echo "NOTE:examples/$@ is newer then $@" > .mk.notes ; \
 	echo "please compare examples/$@ with $@" >> .mk.notes; \
 	echo "make the changes you need and touch $@" >> .mk.notes; \

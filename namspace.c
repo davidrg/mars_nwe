@@ -1,4 +1,4 @@
-/* namspace.c 17-Jul-96 : NameSpace Services, mars_nwe */
+/* namspace.c 09-Aug-96 : NameSpace Services, mars_nwe */
 
 /* !!!!!!!!!!!! NOTE !!!!!!!!!! */
 /* Its very dirty till now. */
@@ -33,6 +33,7 @@
 #include "nwfile.h"
 #include "unxfile.h"
 #include "namspace.h"
+#include "nameos2.h"
 
 #if WITH_NAME_SPACE_CALLS
 
@@ -45,13 +46,13 @@ typedef struct {
   int    namespace;         /* which namespace do we use here*/
   struct stat statb;        /* stat buff                     */
   uint8  *fn;               /* points to last entry of path  */
-  uint8  path[512];         /* path + fn                     */
+  uint8  path[512];         /* path + fn, unixfilename       */
 } N_NW_PATH;
 
 typedef struct {
   DIR        *fdir;         /* for dir searches              */
   uint8      *kpath;        /* points one after unixname     */
-  uint8      *unixname;     /* is allocates fullname of path */
+  uint8      *unixname;     /* allocated fullname of path    */
                             /* + 257 Byte for filename.      */
 } DIR_SEARCH_STRUCT;
 
@@ -69,11 +70,12 @@ static int anz_dbe    = 0;
 
 static void init_nwpath(N_NW_PATH *nwpath, int namespace)
 {
-  nwpath->volume    = -1;
-  nwpath->namespace = namespace;
-  nwpath->has_wild  = 0;
-  nwpath->fn        = nwpath->path;
-  *(nwpath->path)   = '\0';
+  nwpath->volume       = -1;
+  nwpath->namespace    = namespace;
+  nwpath->has_wild     = 0;
+  nwpath->fn           = nwpath->path;
+  *(nwpath->path)      = '\0';
+  nwpath->statb.st_ino = -1;
 }
 
 static void norm_nwpath_fn(N_NW_PATH *nwpath)
@@ -122,6 +124,7 @@ static char *xnwpath_2_unix(N_NW_PATH *nwpath, int modus,
       if (p > unixname+1) {
         --p;
         --len;
+        --m;
       } else {
         *p++ = '.';
         ++len;
@@ -136,9 +139,12 @@ static char *xnwpath_2_unix(N_NW_PATH *nwpath, int modus,
       len += len_extra;
     }
     *p = '\0';
-    if (nwpath->namespace == NAME_DOS
-       && nw_volumes[volume].options & VOL_OPTION_DOWNSHIFT)
-       downstr((uint8*)pp);
+#if 0
+    if (nwpath->namespace == NAME_DOS) {
+      if (nw_volumes[volume].options & VOL_OPTION_DOWNSHIFT)
+         downstr((uint8*)pp);
+    }
+#endif
   }
   if (!allocate_extra) {
     xfree(last_unixname);
@@ -212,29 +218,38 @@ static int base_open_seek_dir(DIR_BASE_ENTRY *dbe, uint32 offset)
 static DIR_BASE_ENTRY *allocate_dbe_p(int namespace)
 /* returns new allocated dir_base_entry */
 {
-  int j=-1;
+  int j     =-1;
   int to_use=-1;
   DIR_BASE_ENTRY **pdbe=(DIR_BASE_ENTRY**) NULL;
 
-  /* if (namespace) return(NULL);   /* TODO: more namespaces */
-
   while (++j < anz_dbe && NULL != *(pdbe = &(dir_base[j]))  ){
-    if (to_use < 0 && !(*pdbe)->basehandle && !(*pdbe)->locked) to_use=j;
+    if (!(*pdbe)->basehandle && j > 3 && !(*pdbe)->locked) to_use=j;
+    if ((*pdbe)->slot != j) {
+      XDPRINTF((0,0, "slot %d = %d", j, (*pdbe)->slot));
+    }
   }
 
   if (j == anz_dbe) {
-    if (anz_dbe == MAX_DIR_BASE_ENTRIES) {  /* return(-0xff); */
-      if (to_use > -1) j=to_use;
-      else while (j--) {
+    if (anz_dbe == MAX_DIR_BASE_ENTRIES) {
+      if (to_use > -1) {
+        j    = to_use;
         pdbe = &(dir_base[j]);
-        if (!(*pdbe)->locked) break;  /* remove last not locked from list */
+      } else {
+         while (j--) {
+           pdbe = &(dir_base[j]);
+           if (!(*pdbe)->locked) break;  /* remove last not locked from list */
+         }
       }
       free_dbe_ptr(*pdbe);
     } else pdbe = &(dir_base[anz_dbe++]);
   }
-
+  while (j--) {
+    *pdbe = dir_base[j];
+    if (*pdbe) (*pdbe)->slot=j+1;
+    pdbe--;
+  }
   *pdbe  = (DIR_BASE_ENTRY*)xcmalloc(sizeof(DIR_BASE_ENTRY));
-  (*pdbe)->slot      = j;
+  (*pdbe)->slot  = 0;
   init_nwpath(&((*pdbe)->nwpath), namespace);
   return(*pdbe);
 }
@@ -260,30 +275,29 @@ static int touch_handle_entry_p(DIR_BASE_ENTRY *dbe)
 /* routine touchs this entry and returns the new offset */
 {
   int dbase = (NULL != dbe) ? dbe->slot : -1;
-  XDPRINTF((4, 0, "touch_handle_entry entry dbase=%d", dbase));
-  if (dbase > 2) {
+  XDPRINTF((4, 0, "touch_handle_entry_p entry dbase=%d", dbase));
+  if (dbase > 4) {
     DIR_BASE_ENTRY **dbp=&(dir_base[dbase]);
     DIR_BASE_ENTRY **dbpq=dbp;
     int aktbase=dbase;
+
     while (dbase--) {
       --dbpq;
-      if ( dbase < (MAX_DIR_BASE_ENTRIES/2) || !(*dbpq) || !(*dbpq)->locked) {
+      if (!(*dbpq) || !(*dbpq)->locked) {
         *dbp = *dbpq;
         if (*dbp) (*dbp)->slot = dbase+1;
         dbp=dbpq;
         aktbase=dbase;
       }
     }
+
     dbase           = aktbase;
     dir_base[dbase] = dbe;
     dbe->slot       = dbase;
   }
-  XDPRINTF((4, 0, "touch_handle_entry return dbase=%d", dbase));
+  XDPRINTF((4, 0, "touch_handle_entry_p return dbase=%d", dbase));
   return(dbase);
 }
-
-#define touch_handle_entry(dbase) \
-  touch_handle_entry_p(((dbase) > -1 && (dbase) < anz_dbe) ? dir_base[dbase] : NULL)
 
 char *debug_nwpath_name(N_NW_PATH *p)
 /* only for debugging */
@@ -294,10 +308,11 @@ char *debug_nwpath_name(N_NW_PATH *p)
   int  len;
   if (nw_get_volume_name(p->volume, volname) < 1)
     sprintf(volname, "<%d=NOT-OK>", (int)p->volume);
-  len = strlen(volname) + strlen(p->path) + strlen(p->fn) + 30;
+  len = strlen(volname) + strlen(p->path) + strlen(p->fn) + 40;
   xfree(nwpathname);
   nwpathname=xmalloc(len);
-  sprintf(nwpathname, "`%s:%s`,fn=`%s`", volname, p->path, p->fn);
+  sprintf(nwpathname, "%d `%s:%s`,fn=`%s`",
+      p->namespace, volname, p->path, p->fn);
 #else
   static char nwpathname[2];
   nwpathname[0]='\0';
@@ -322,13 +337,17 @@ static int get_comp_pathes_size(NW_HPATH *nwp, uint8 *pp_pathes)
 
 static int add_hpath_to_nwpath(N_NW_PATH *nwpath,
                                NW_HPATH *nwp, uint8 *pp_pathes)
-/* Routine adds nwp  to  nwpath */
-/* nwpath must be setup correctly before entry */
-/* return > -1 if ok  */
+/*
+ * Routine adds nwp  to  nwpath
+ * nwpath must be filled correctly before entry
+ * return > -1 if ok
+ */
 {
   int     result    =  0;
   int     k         = -1;
-  uint8  *pp        = nwpath->path+strlen(nwpath->path);
+  int     npbeg     = strlen(nwpath->path);
+  uint8  *pp        = nwpath->path+npbeg;
+
   XDPRINTF((2, 0, "entry add_hpath_to_nwpath: %s",
                     debug_nwpath_name(nwpath)));
 
@@ -339,20 +358,23 @@ static int add_hpath_to_nwpath(N_NW_PATH *nwpath,
 
     if (!k && nwpath->volume == -1) { /* first component is volume */
       if ((nwpath->volume=nw_get_volume_number(p, len)) < 0)  {
+        /* something not OK */
         result = nwpath->volume;
         goto leave_build_nwpath;
       }
+      pp    = nwpath->path;
+      *pp   = '\0';
+      npbeg = 0;
     } else {  /* here is path (+ fn ) */
       int i=len;
       if (pp > nwpath->path) {  /* not the first entry */
-        *pp   = '/';
+        *pp   = '/';   /* we must add a slash */
         *++pp = '\0';
       }
+
       while (i--) {
         if (*p == 0xae) *pp++ = '.';
-        else if (*p > 0x60 && *p < 0x7b && nwpath->namespace == NAME_DOS) {
-          *pp++ = *p - 0x20;  /* all is upshift */
-        } else if (*p == 0xaa || *p == '*' ) {
+        else if (*p == 0xaa || *p == '*' ) {
           *pp++ = '*';
           nwpath->has_wild++;
         } else if (*p == 0xbf || *p == '?' ) {
@@ -360,14 +382,15 @@ static int add_hpath_to_nwpath(N_NW_PATH *nwpath,
           nwpath->has_wild++;
         } else if (*p == '/' || *p == '\\') {
           *pp++ = '/';
-        } else if (*p == ':') { /* extract volume */
+        } else if (*p == ':') { /* extract volumename */
           int vlen = (int) (pp - nwpath->path);
           if ((nwpath->volume=nw_get_volume_number(nwpath->path, vlen)) < 0) {
             result = nwpath->volume;
             goto leave_build_nwpath;
           }
-          pp=nwpath->path;
-          *pp='\0';
+          pp    = nwpath->path;
+          *pp   = '\0';
+          npbeg = 0;
         } else *pp++ = *p;
         p++;
       }  /* while */
@@ -376,6 +399,34 @@ static int add_hpath_to_nwpath(N_NW_PATH *nwpath,
   } /* while */
   if (nwpath->volume < 0) result=-0x9c;
 leave_build_nwpath:
+  if (!result) {
+    NW_VOL *v = &nw_volumes[nwpath->volume];
+    if (nwpath->namespace == NAME_DOS || nwpath->namespace == NAME_OS2) {
+      if (v->options & VOL_OPTION_IGNCASE) {
+        int nplen= (int)(pp - nwpath->path) - npbeg;
+        uint8 unixname[1024]; /* should be enough */
+        memcpy(unixname, v->unixname, v->unixnamlen);
+        strcpy(unixname+v->unixnamlen, nwpath->path);
+        pp=unixname+v->unixnamlen+npbeg;
+        if (nwpath->namespace == NAME_OS2) {
+          mangle_os2_name(v, unixname, pp);
+          if (nplen > 0)
+            memcpy(nwpath->path+npbeg, pp, nplen);
+          XDPRINTF((5,0, "Mangle OS/2 unixname='%s'", unixname));
+        } else if (nwpath->namespace == NAME_DOS) {
+          mangle_dos_name(v, unixname, pp);
+          if (nplen > 0)
+            memcpy(nwpath->path+npbeg, pp, nplen);
+          XDPRINTF((5,0, "Mangle DOS unixname='%s'", unixname));
+        }
+      } else {
+        if (v->options & VOL_OPTION_DOWNSHIFT)
+          downstr(nwpath->path);
+        else
+          upstr(nwpath->path);
+      }
+    }
+  }
   XDPRINTF((2, 0, "add_hpath_to_nwpath: result=0x%x, %s",
                   result, debug_nwpath_name(nwpath)));
   return(result);
@@ -391,7 +442,7 @@ static int nwp_stat(N_NW_PATH *nwpath, char *debstr)
       xdebstr[0]='\0';
       debstr = xdebstr;
     }
-    XDPRINTF((4, 0, "nwp_stat:%s:%d,`%s`",
+    XDPRINTF((4, 0, "nwp_stat:%s:%d,%s",
                debstr,
               result,
              debug_nwpath_name(nwpath)));
@@ -417,7 +468,7 @@ static uint32 name_2_base(N_NW_PATH *nwpath, int namespace, int no_stat)
 }
 
 static int add_dbe_entry(int namspace, int volume,
-                         uint32 basehandle, uint8 *path)
+                      uint32 basehandle, uint8 *path, struct stat *stb)
 {
   DIR_BASE_ENTRY *dbe=allocate_dbe_p(namspace);
   if (dbe) {
@@ -427,38 +478,47 @@ static int add_dbe_entry(int namspace, int volume,
       strcpy(dbe->nwpath.path, path);
       norm_nwpath_fn(&(dbe->nwpath));
     }
+    if (stb)
+      memcpy(&(dbe->nwpath.statb), stb, sizeof(struct stat));
+
     return(touch_handle_entry_p(dbe));
-  } else return(-0x9b);
+  }
+  return(-0x9b);
 }
 
 static int find_base_entry(int volume, uint32 basehandle)
 {
   int k=-1;
   DEV_NAMESPACE_MAP dnm;
-  ino_t  ino = nw_vol_handle_to_inode(volume, basehandle, &dnm);
+  ino_t  ino;
+  if (!basehandle) return(-0x9b);
+
+  ino = nw_vol_handle_to_inode(volume, basehandle, &dnm);
+
   while (++k < anz_dbe) {
     DIR_BASE_ENTRY *e=dir_base[k];
     if ( (DIR_BASE_ENTRY*)NULL != e
-      && volume        == e->nwpath.volume
-      && ( (basehandle == e->basehandle)
-        || (ino        == e->nwpath.statb.st_ino)) )
+      && volume  == e->nwpath.volume
+      && ino     == e->nwpath.statb.st_ino
+      && dnm.dev == e->nwpath.statb.st_dev)
         return(k);
   }
+
   /* now we test whether it is the root of volume */
-  if (0 < (ino = nw_vol_handle_to_inode(volume, basehandle, &dnm))
-     && ino == get_volume_inode(volume) ) {
-    /* its the handle of the volumes root */
-    return(add_dbe_entry(dnm.namespace, volume, basehandle, NULL));
+  if (0 < ino) {
+    struct stat statb;
+    if (ino == get_volume_inode(volume, &statb)) {
+      /* its the handle of the volumes root */
+      return(add_dbe_entry(dnm.namespace, volume, basehandle, NULL, &statb));
+    }
   }
   return(-0x9b);
 }
 
-static int insert_get_base_entry(DIR_BASE_ENTRY *dbe,
-                                 int namespace, int creatmode)
+static int insert_get_base_entry(N_NW_PATH *nwpath,
+                           int namespace, int creatmode)
 {
-  N_NW_PATH *nwpath = &(dbe->nwpath);
   uint32 basehandle = name_2_base(nwpath, namespace, 0);
-
   if (!basehandle && creatmode) { /* now creat the entry (file or dir) */
     int result = 0;
     char *unname = nwpath_2_unix(nwpath, 2);
@@ -478,22 +538,18 @@ static int insert_get_base_entry(DIR_BASE_ENTRY *dbe,
     if (result) return(result);
     basehandle = name_2_base(nwpath, namespace, 0);
   }
-
   if (basehandle) {
     int k=-1;
     while (++k < anz_dbe) {
       DIR_BASE_ENTRY *e=dir_base[k];
       if ( (DIR_BASE_ENTRY*)NULL != e
         && basehandle     == e->basehandle
-        && nwpath->volume == e->nwpath.volume) {
-        free_dbe_p(e);
-        dbe->basehandle = basehandle;
-        return(touch_handle_entry_p(dbe));
-      }
+        && nwpath->volume == e->nwpath.volume)
+         return(touch_handle_entry_p(e));
     } /* while */
     /* now i know that it's a new base entry */
-    dbe->basehandle = basehandle;
-    return(touch_handle_entry_p(dbe));
+    return(add_dbe_entry(namespace, nwpath->volume,
+                       basehandle, nwpath->path, &(nwpath->statb)));
   }
   return(-0xff); /* invalid path = -0x9c, -0xff no matching files */
 }
@@ -501,46 +557,52 @@ static int insert_get_base_entry(DIR_BASE_ENTRY *dbe,
 static int build_base(int            namespace,
                       NW_HPATH       *nwp,
                       uint8          *pathes,
-                      DIR_BASE_ENTRY *dbe,
                       int            mode,
                       uint8          *rets)
 
-/* routine returns the actual dbe entry offset or */
-/* < 0 if error */
-/* if mode == 1, then last path element will be ignored and will be put */
-/* into the rets variable */
+/*
+ * routine returns the actual dbe entry offset or
+ * < 0 if error
+ * if mode == 1, then last path element will be ignored
+ * and will be put into the rets variable
+ */
+
 {
-  N_NW_PATH        *nwpath=&(dbe->nwpath);
   int  result=0;
-  if (!nwp->flag) {  /* short handle */
+  N_NW_PATH  loc_nwpath;
+  N_NW_PATH  *nwpath=&loc_nwpath;
+  init_nwpath(nwpath, namespace);
+  if (!nwp->flag) {  /* short directory handle */
     int dir_handle = (int)nwp->base[0];
     NW_DIR *dir    = (dir_handle > 0 && dir_handle <= used_dirs)
                      ? &(dirs[dir_handle-1])
                      : NULL;
     if (dir && dir->inode) {
-      int llen = strlen(dir->path);
-      nwpath->volume =  dir->volume;
+      int llen       = strlen(dir->path);
+      uint8  *p      = nwpath->path+llen;
+      nwpath->volume = dir->volume;
       memcpy(nwpath->path, dir->path, llen+1);
-      if (llen && *(nwpath->path + llen -1) == '/')
-         *(nwpath->path+llen-1) = '\0';
+      if (llen && *(p-1) == '/')
+        *(p-1) = '\0';
       result = (nwpath->volume > -1) ? 0 : -0x98;
     } else result = -0x9b;
-    XDPRINTF((4, 0, "build_base with dir_handle=%d, result=x%x",
+    XDPRINTF((4, 0, "build_base with short_dir_handle=%d, result=0x%x",
                      dir_handle, result));
   } else if (nwp->flag == 1) { /* basehandle */
     if (-1 < (result = find_base_entry(nwp->volume, GET_32(nwp->base)))) {
-      DIR_BASE_ENTRY *e=dir_base[result];
+      DIR_BASE_ENTRY *e = dir_base[result];
       nwpath->volume    = nwp->volume;
       strcpy(nwpath->path, e->nwpath.path);
       result = 0;
     } else if (!GET_32(nwp->base)) {
-      nwpath->volume = nwp->volume;
-      nwpath->path[0]='\0';
+      nwpath->volume    = nwp->volume;
+      nwpath->path[0]   = '\0';
       result = 0;
     }
-    XDPRINTF((4, 0, "build_base with basehandle=%ld, result=x%x",
+    XDPRINTF((4, 0, "build_base with basehandle=%ld, result=0x%x",
                      GET_32(nwp->base), result));
-  } else if (nwp->flag != 0xff) result=-0xff;
+  } else if (nwp->flag != 0xff)
+    result=-0xff;
   if (!result) {
     nwpath->namespace = namespace;
     if ((result = add_hpath_to_nwpath(nwpath, nwp, pathes)) > -1) {
@@ -556,7 +618,7 @@ static int build_base(int            namespace,
         }
       }
       nwpath->fn = (pp) ? (uint8*)pp+1 : nwpath->path;
-      result = insert_get_base_entry(dbe, namespace, 0);
+      result = insert_get_base_entry(nwpath, namespace, 0);
     }
   }
   return(result);
@@ -569,22 +631,19 @@ int nw_generate_dir_path(int      namespace,
 
 /* returns Volume Number >=0  or errcode < 0 if error */
 {
-  DIR_BASE_ENTRY *dbe=allocate_dbe_p(namespace);
-  int result = -0xfb;
-  if (NULL != dbe) {
-    if ((result = build_base(namespace, nwp, nwp->pathes, dbe, 0, NULL)) > -1) {
-      U32_TO_32(dbe->basehandle, ns_dir_base);  /* LOW - HIGH */
-      if (namespace != NAME_DOS) {
-        U32_TO_32(name_2_base(&(dbe->nwpath), NAME_DOS, 1),  dos_dir_base);
-      } else {
-        U32_TO_32(dbe->basehandle, dos_dir_base);
-      }
-      XDPRINTF((3, 0, "nw_generate_dir_path path=%s, result=%d, basehandle=0x%x",
-         debug_nwpath_name(&(dbe->nwpath)), result, dbe->basehandle));
-      result= dbe->nwpath.volume;
-    } else free_dbe_p(dbe);
-  }
-  if (result < 0) {
+  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    U32_TO_32(dbe->basehandle, ns_dir_base);  /* LOW - HIGH */
+    if (namespace != NAME_DOS) {
+      U32_TO_32(name_2_base(&(dbe->nwpath), NAME_DOS, 1),  dos_dir_base);
+    } else {
+      U32_TO_32(dbe->basehandle, dos_dir_base);
+    }
+    XDPRINTF((3, 0, "nw_generate_dir_path path=%s, result=%d, basehandle=0x%x",
+       debug_nwpath_name(&(dbe->nwpath)), result, dbe->basehandle));
+    result= dbe->nwpath.volume;
+  } else {
     XDPRINTF((3, 0, "nw_generate_dir_path NOT OK result=-0x%x", -result));
   }
   return(result);
@@ -600,6 +659,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     U32_TO_32(stb->st_size, p);
   }
   p      += 4;
+
   if (infomask & INFO_MSK_ATTRIBUTE_INFO) {
     uint32 mask=0L;
     if (S_ISDIR(stb->st_mode)) mask |= FILE_ATTR_DIR;
@@ -608,16 +668,19 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     U16_TO_16((uint16)(mask & 0xFFFF), p);
     p      +=2;
   } else p+=6;
+
   if (infomask & INFO_MSK_DATA_STREAM_SIZE) {
     U32_TO_32(stb->st_size, p);
   }
   p      +=4;
+
   if (infomask & INFO_MSK_TOTAL_DATA_STREAM_SIZE) {
     U32_TO_32(stb->st_size, p);
     p      +=4;
     U16_TO_16(0, p);
     p      +=2;
   } else p+=6;
+
   if (infomask & INFO_MSK_CREAT_INFO) {
     un_time_2_nw(stb->st_mtime, p, 0);
     p      +=2;
@@ -626,6 +689,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     U32_TO_32(1, p);
     p      +=4;
   } else  p+=8;
+
   if (infomask & INFO_MSK_MODIFY_INFO) {
     un_time_2_nw(stb->st_mtime, p, 0);
     p      +=2;
@@ -636,6 +700,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     un_date_2_nw(stb->st_atime, p, 0);  /* access date */
     p      +=2;
   } else p+=10;
+
   if (infomask & INFO_MSK_ARCHIVE_INFO) {
     un_time_2_nw(0, p, 0);
     p      +=2;
@@ -644,18 +709,25 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     U32_TO_32(0, p);
     p      +=4;
   } else p+=8;
+
   if (infomask & INFO_MSK_RIGHTS_INFO) {
     U16_TO_16(0, p);
   }
   p      +=2;
+
   if (infomask & INFO_MSK_DIR_ENTRY_INFO) {
     U32_TO_32(dbe->basehandle, p);
     p      +=4;
+#if 0
     U32_TO_32(dbe->basehandle, p);
+#else
+    U32_TO_32(name_2_base(nwpath, NAME_DOS, 1),  p);
+#endif
     p      +=4;
     U32_TO_32(nwpath->volume, p);
     p      +=4;
   } else p+=12;
+
   if (infomask & INFO_MSK_EXT_ATTRIBUTES) {
     U32_TO_32(0, p);  /* Ext Attr Data Size */
     p      +=4;
@@ -664,10 +736,12 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     U32_TO_32(0, p);  /* Ext Attr Key Size */
     p      +=4;
   } else p+=12;
+
   if (infomask & INFO_MSK_NAME_SPACE_INFO){
     U32_TO_32(0, p);  /* Creator of the name space number */
   }
   p      +=4;
+
   /* ---------------------------------------------- */
   if (infomask & INFO_MSK_ENTRY_NAME) {
     *p = (uint8) strlen(nwpath->fn);
@@ -690,16 +764,14 @@ int nw_optain_file_dir_info(int namespace,    NW_HPATH *nwp,
  * But the _valid_ info is.
  */
 {
-  DIR_BASE_ENTRY *dbe = allocate_dbe_p(namespace);
-  int result = -0xfb;
-  if (NULL != dbe) {
-    if ((result = build_base(namespace, nwp, nwp->pathes, dbe, 0, NULL)) > -1) {
-      nwp_stat(&(dbe->nwpath), "nw_optain_file_dir_info");
-      result = build_dir_info(dbe, infomask, responsedata);
-    } else free_dbe_p(dbe);
-  }
-  if (result < 0) {
-    XDPRINTF((3, 0, "nw_optain_file_dir_info NOT OK result=-0x%x", -result));
+  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    nwp_stat(&(dbe->nwpath), "nw_optain_file_dir_info");
+    result = build_dir_info(dbe, infomask, responsedata);
+  } else {
+    XDPRINTF((3, 0, "nw_optain_file_dir_info NOT OK result=-0x%x",
+           -result));
   }
   return(result);
 }
@@ -709,47 +781,40 @@ static int nw_init_search(int       namespace,
                           uint8    *pathes,
                           uint8    *responsedata)
 {
-  DIR_BASE_ENTRY *dbe=allocate_dbe_p(namespace);
-  int result = -0xfb;
-  if (NULL != dbe) {
-    if ((result = build_base(namespace, nwp, pathes, dbe, 0, NULL)) > -1) {
-      result = base_open_seek_dir(dbe, 0L);
-      if (result > -1) {
-        *responsedata++ = dbe->nwpath.volume;
-        U32_TO_32(dbe->basehandle, responsedata);
-        responsedata+=4;
-        U32_TO_32(0L, responsedata); /* searchsequenz */
-        result     = 9;
-      }
-      XDPRINTF((3, 0, "nw_init_search path=%s, result=%d, basehandle=0x%x",
-         debug_nwpath_name(&(dbe->nwpath)), result, dbe->basehandle));
-    } else free_dbe_p(dbe);
-  }
-  if (result < 0) {
+  int result = build_base(namespace, nwp, pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    result = base_open_seek_dir(dbe, 0L);
+    if (result > -1) {
+      *responsedata++ = dbe->nwpath.volume;
+      U32_TO_32(dbe->basehandle, responsedata);
+      responsedata+=4;
+      U32_TO_32(0L, responsedata); /* searchsequenz */
+      result     = 9;
+    }
+    XDPRINTF((3, 0, "nw_init_search path=%s, result=%d, basehandle=0x%x",
+       debug_nwpath_name(&(dbe->nwpath)), result, dbe->basehandle));
+  } else {
     XDPRINTF((3, 0, "nw_init_search NOT OK result=%d", result));
   }
   return(result);
 }
 
-int get_add_new_entry(DIR_BASE_ENTRY *qbe, uint8 *path, int creatmode)
+
+static int get_add_new_entry(DIR_BASE_ENTRY *qbe, int namespace,
+                      uint8 *path, int creatmode)
 {
-  DIR_BASE_ENTRY *dbe=allocate_dbe_p(qbe->nwpath.namespace);
-  if (NULL != dbe) {
-    N_NW_PATH      *nwpath=&(dbe->nwpath);
-    int            result = -0x9c;
-    nwpath->volume     = qbe->nwpath.volume;
-    strcpy(nwpath->path, qbe->nwpath.path);
-    nwpath->fn = nwpath->path+strlen(nwpath->path);
-    if (nwpath->fn > nwpath->path && *(nwpath->fn-1) != '/') {
-      *(nwpath->fn)    = '/';
-      *(++nwpath->fn)  = '\0';
-    }
-    strcpy(nwpath->fn, path);
-    result = insert_get_base_entry(dbe, qbe->nwpath.namespace, creatmode);
-    if (result < 0) free_dbe_p(dbe);
-    return(result);
+  N_NW_PATH      nwpath;
+  nwpath.volume     = qbe->nwpath.volume;
+  nwpath.namespace  = namespace;
+  strcpy(nwpath.path, qbe->nwpath.path);
+  nwpath.fn = nwpath.path+strlen(nwpath.path);
+  if (nwpath.fn > nwpath.path && *(nwpath.fn-1) != '/') {
+    *(nwpath.fn)    = '/';
+    *(++nwpath.fn)  = '\0';
   }
-  return(-1);
+  strcpy(nwpath.fn, path);
+  return(insert_get_base_entry(&nwpath, namespace, creatmode));
 }
 
 static int namespace_fn_match(uint8 *s, uint8 *p, int namespace)
@@ -860,25 +925,41 @@ int nw_search_file_dir(int namespace, int datastream,
       int  vol_options = get_volume_options(volume, 0);
       dbe->locked++;
       strmaxcpy(entry, path, min(255, len));
-      if (namespace == NAME_DOS && (vol_options & VOL_OPTION_DOWNSHIFT))
-        downstr(entry);
-      XDPRINTF((5,0,"nw_search_file_dir searchpath=%s", entry));
+
+      if ( (namespace == NAME_DOS || namespace == NAME_OS2)
+          && !(vol_options & VOL_OPTION_IGNCASE) )  {
+        if (vol_options & VOL_OPTION_DOWNSHIFT) {
+          downstr(entry);
+        } else {
+          upstr(entry);
+        }
+      }
+
+      XDPRINTF((5,0,"nw_search_file_dir namspace=%d, searchpath='%s'",
+                        namespace, entry));
       while ((dirbuff = readdir(ds->fdir)) != (struct dirent*)NULL){
         if (dirbuff->d_ino) {
           uint8 *name=(uint8*)(dirbuff->d_name);
-          XDPRINTF((10,0,"nw_search_file_dir Name=%s",
+          int   flag;
+          XDPRINTF((5,0,"nw_search_file_dir Name='%s'",
                              name));
-          if ( (name[0] != '.' && (
-                          (!strcmp(name, entry))
-                       || (entry[0] == '*' && entry[1] == '\0' && namespace != NAME_DOS)
-                       || (namespace == NAME_DOS)
-                           ? fn_match(name, entry, vol_options)
-                           : namespace_fn_match(name, entry, namespace) ))) {
+
+          if (namespace == NAME_DOS) {
+            flag = (*name != '.' &&  fn_dos_match(name, entry, vol_options));
+          } else if (namespace == NAME_OS2) {
+            flag = (*name != '.' || (*(name+1) != '.' && *(name+1) != '\0' ))
+                   && fn_os2_match(name, entry, vol_options);
+          } else {
+            flag = (!strcmp(name, entry)
+                   || namespace_fn_match(name, entry, namespace));
+          }
+
+          if (flag) {
             strcpy(ds->kpath, name);
             XDPRINTF((5,0,"nw_search_file_dir Name found=%s unixname=%s",
                                                name, ds->unixname));
             if (!stat(ds->unixname, &statb)) {
-              int flag= (searchattrib & W_SEARCH_ATTR_ALL) == W_SEARCH_ATTR_ALL;
+              flag= (searchattrib & W_SEARCH_ATTR_ALL) == W_SEARCH_ATTR_ALL;
               if (!flag) {
                 if (S_ISDIR(statb.st_mode))
                   flag=(searchattrib & FILE_ATTR_DIR);
@@ -887,18 +968,21 @@ int nw_search_file_dir(int namespace, int datastream,
               }
               if (flag) {
                 strcpy(entry, name);
-                if (namespace == NAME_DOS &&
-                  (vol_options & VOL_OPTION_DOWNSHIFT)) upstr(entry);
-                if ((dest_entry = get_add_new_entry(dbe, entry, 0)) > -1)
+                if ((dest_entry = get_add_new_entry(dbe, namespace, entry, 0)) > -1)
                     break;
+              } else {
+               XDPRINTF((10, 0, "type = %s not ok searchattrib=0x%x",
+                 S_ISDIR(statb.st_mode) ? "DIR" :"FILE" ,searchattrib));
               }
             } else {
               XDPRINTF((5,0,"nw_search_file_dir stat error"));
             }
+            *(ds->kpath) = '\0';
           }
         }  /* if */
       } /* while */
       *(ds->kpath) = '\0';
+
       if (dest_entry > -1) {
         DIR_BASE_ENTRY *dest_dbe=dir_base[dest_entry];
         (void) nwp_stat(&(dest_dbe->nwpath), "nw_search_file_dir");
@@ -918,6 +1002,8 @@ int nw_search_file_dir(int namespace, int datastream,
       } else
         result=-0xff; /* no files matching */
       dbe->locked=0;
+      if (get_volume_options(dbe->nwpath.volume,1) & VOL_OPTION_REMOUNT)
+        free_dbe_dir(dbe);
     } /* if result */
   }
   return(result);
@@ -931,59 +1017,54 @@ static int nw_open_creat_file_or_dir(int namespace,
                    NW_HPATH *nwp, uint8 *pathes,
                    uint8    *responsedata)
 {
-  DIR_BASE_ENTRY *dbe=allocate_dbe_p(namespace);
-  int result = -0xfb;
-  if (NULL != dbe) {
-    int    exist=-1;
-    uint8 last_part[258];
-    *last_part='\0';
-    if ((result = build_base(namespace, nwp, pathes, dbe, 0, NULL)) > -1) {
-      exist = result;
-    } else if (opencreatmode & OPC_MODE_CREAT) {
-      result = build_base(namespace, nwp, pathes, dbe, 1, last_part);
-      XDPRINTF((5, 0, "nw_open_c... result=%d, last_part='%s'",
+  int   result = build_base(namespace, nwp, pathes, 0, NULL);
+  int   exist  = result;
+  uint8 last_part[258];
+  *last_part='\0';
+  if (result < 0 && (opencreatmode & OPC_MODE_CREAT)) {  /* do not exist */
+    result = build_base(namespace, nwp, pathes, 1, last_part);
+    XDPRINTF((5, 0, "nw_open_c... result=%d, last_part='%s'",
                 result, last_part));
-      if (result > -1) {
-        result = get_add_new_entry(dbe, last_part,
-             (creatattrib & FILE_ATTR_DIR) ? FILE_ATTR_DIR : 1);
-        if (result > -1)
-           dbe = dir_base[result];
-      }
-    }
-    if (result > -1) {
-      uint32 fhandle=0L;
-      int    actionresult=0;
-      if (exist < 0) actionresult |= OPC_ACTION_CREAT;
-      if (!(creatattrib & FILE_ATTR_DIR)) {
-        int creatmode=0; /* open */
-        int attrib=0;
-        if (opencreatmode & (OPC_MODE_OPEN | OPC_MODE_CREAT) ) {
-          if (opencreatmode & OPC_MODE_CREAT) {
+    if (result > -1)
+      result = get_add_new_entry(dir_base[result], namespace, last_part,
+           (creatattrib & FILE_ATTR_DIR) ? FILE_ATTR_DIR : 1);
+  }
+  if (result > -1) {
+    uint32 fhandle=0L;
+    int    actionresult=0;
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    if (exist < 0) actionresult |= OPC_ACTION_CREAT;
+    if (!(creatattrib & FILE_ATTR_DIR)) {
+      int creatmode=0; /* open */
+      int attrib=0;
+      if (opencreatmode & (OPC_MODE_OPEN | OPC_MODE_CREAT) ) {
+        if (opencreatmode & OPC_MODE_CREAT) {
 #if 0
-            if (exist > -1 && !(opencreatmode & OPC_MODE_REPLACE))
-              creatmode=2;
-            else
+          if (exist > -1 && !(opencreatmode & OPC_MODE_REPLACE))
+            creatmode=2;
+          else
 #endif
-            creatmode = 1;
-          }
-          if ((result = file_creat_open(dbe->nwpath.volume,
-                nwpath_2_unix(&dbe->nwpath, 2), &(dbe->nwpath.statb),
-                attrib, access_rights, creatmode)) > -1) {
-            fhandle = (uint32) result;
-            actionresult |= OPC_ACTION_OPEN;  /* FILE OPEN */
-            if (exist > -1 && (opencreatmode & OPC_MODE_REPLACE))
-                actionresult |= OPC_ACTION_REPLACE;  /* FILE REPLACED */
-          }
-        } else result=-0xff;
-      } else if (exist  > -1) result=-0x84;
-      if (result > -1) {
-        U32_TO_BE32(fhandle,   responsedata);
-        responsedata += 4;
-        *responsedata =(uint8) actionresult;
-        responsedata++ ;
-        result = 5 + build_dir_info(dbe,infomask, responsedata);
-      }
-    } else free_dbe_p(dbe);
+          creatmode = 1;
+        }
+        if ((result = file_creat_open(dbe->nwpath.volume,
+              nwpath_2_unix(&dbe->nwpath, 2), &(dbe->nwpath.statb),
+              attrib, access_rights, creatmode)) > -1) {
+          fhandle = (uint32) result;
+          actionresult |= OPC_ACTION_OPEN;  /* FILE OPEN */
+          if (exist > -1 && (opencreatmode & OPC_MODE_REPLACE))
+              actionresult |= OPC_ACTION_REPLACE;  /* FILE REPLACED */
+        }
+      } else result=-0xff;
+    } else if (exist  > -1) result=-0x84;
+
+    if (result > -1) {
+      U32_TO_BE32(fhandle,   responsedata);
+      responsedata += 4;
+      *responsedata =(uint8) actionresult;
+      /* responsedata++ ; */
+      responsedata+=2;
+      result = 6 + build_dir_info(dbe,infomask, responsedata);
+    }
   }
   XDPRINTF((3, 0, "nw_open_creat mode=0x%x, creatattr=0x%x, access=0x%x, attr=0x%x, result=%d",
        opencreatmode, creatattrib, access_rights, attrib, result));
@@ -993,30 +1074,28 @@ static int nw_open_creat_file_or_dir(int namespace,
 static int nw_delete_file_dir(int namespace, int searchattrib,
                                NW_HPATH *nwp)
 {
-  DIR_BASE_ENTRY *dbe = allocate_dbe_p(namespace);
-  int result          = -0xfb;
-  if (dbe != NULL) {
-    if ((result = build_base(namespace, nwp, nwp->pathes, dbe, 0, NULL)) > -1) {
-      uint8  *unname=(uint8*)nwpath_2_unix(&(dbe->nwpath), 2);
-      if (get_volume_options(dbe->nwpath.volume, 1) &
+  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    uint8  *unname=(uint8*)nwpath_2_unix(&(dbe->nwpath), 2);
+    if (get_volume_options(dbe->nwpath.volume, 1) &
             VOL_OPTION_READONLY) result = -0x8a;
-      else {
-        if (S_ISDIR(dbe->nwpath.statb.st_mode)) {
-          free_dbe_p(dbe);
-          result = rmdir(unname);
-        } else {
-          if (-1 < (result = unlink(unname)))
-             free_dbe_p(dbe);
-        }
-        if (result < 0) {
-          switch (errno) {
-            case EEXIST: result=-0xa0; /* dir not empty */
-            default:     result=-0x8a; /* No privilegs */
-          }
-        } else
-          result = 0;
+    else {
+      if (S_ISDIR(dbe->nwpath.statb.st_mode)) {
+        free_dbe_p(dbe);
+        result = rmdir(unname);
+      } else {
+        if (-1 < (result = unlink(unname)))
+           free_dbe_p(dbe);
       }
-    } else free_dbe_p(dbe);
+      if (result < 0) {
+        switch (errno) {
+          case EEXIST: result=-0xa0; /* dir not empty */
+          default:     result=-0x8a; /* No privilegs */
+        }
+      } else
+        result = 0;
+    }
   }
   return(result);
 }
@@ -1024,16 +1103,14 @@ static int nw_delete_file_dir(int namespace, int searchattrib,
 static int nw_alloc_short_dir_handle(int namespace, int hmode,
                                NW_HPATH *nwp, int task, int *volume)
 {
-  DIR_BASE_ENTRY *dbe=allocate_dbe_p(namespace);
-  int result = -0xfb;
-  if (NULL != dbe) {
-    if ((result = build_base(namespace, nwp, nwp->pathes, dbe, 0, NULL)) > -1) {
-      if (S_ISDIR(dbe->nwpath.statb.st_mode)) {
-        result=xinsert_new_dir(dbe->nwpath.volume, dbe->nwpath.path,
-           dbe->nwpath.statb.st_ino, 300, hmode, task);
-        *volume=dbe->nwpath.volume;
-      } else result=-0xff;
-    } else free_dbe_p(dbe);
+  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    if (S_ISDIR(dbe->nwpath.statb.st_mode)) {
+      result=xinsert_new_dir(dbe->nwpath.volume, dbe->nwpath.path,
+         dbe->nwpath.statb.st_ino, 300, hmode, task);
+      *volume=dbe->nwpath.volume;
+    } else result=-0xff;
   }
   return(result);
 }
@@ -1044,16 +1121,15 @@ static int nw_rename_file_dir(int namespace,
                               int      searchattrib,
                               int      renameflag)
 {
-  DIR_BASE_ENTRY *dbe_s = allocate_dbe_p(namespace);
-  DIR_BASE_ENTRY *dbe_d = (NULL != dbe_s) ? allocate_dbe_p(namespace) : NULL;
-  int result  = -0xfb;
-  if (dbe_d &&
-     (result = build_base(namespace, nwps, pathes_s, dbe_s, 0, NULL)) > -1) {
+  int result = build_base(namespace, nwps, pathes_s, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe_s = dir_base[result];
     uint8  last_part[258];
     uint8  *unname_s=
         (uint8*)nwpath_2_unix1(&(dbe_s->nwpath), 2, 1);
-    if ((result = build_base(namespace, nwpd, pathes_d, dbe_d,
-                                                 1, last_part)) > -1) {
+    result = build_base(namespace, nwpd, pathes_d, 1, last_part);
+    if (result > -1) {
+      DIR_BASE_ENTRY *dbe_d = dir_base[result];
       uint8  *unname_d =
         (uint8*)nwpath_2_unix2(&(dbe_d->nwpath), 0, 1, last_part);
 
@@ -1068,9 +1144,7 @@ static int nw_rename_file_dir(int namespace,
         else
           result = unx_mvfile(unname_s, unname_d);
       }
-
       XDPRINTF((5, 0, "Rename:%d '%s' -> '%s'", result, unname_s, unname_d));
-
       xfree(unname_d);
       switch (result) {
         case   0      : break;
@@ -1081,12 +1155,81 @@ static int nw_rename_file_dir(int namespace,
       }
       if (!result) {
         free_dbe_p(dbe_s);
-        if ((result=get_add_new_entry(dbe_d, last_part, 0)) > -1)
+        if ((result=get_add_new_entry(dbe_d, namespace, last_part, 0)) > -1)
            result = 0;
       }
-    } else free_dbe_p(dbe_d);
+    }
     xfree(unname_s);
-  } else free_dbe_p(dbe_s);
+  }
+  return(result);
+}
+
+static int nw_modify_file_dir(int namespace,
+                              NW_HPATH *nwp, uint8 *path,
+                              int searchattrib,
+                               uint32 infomask, DOS_MODIFY_INFO *dmi)
+{
+  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    uint8 *uname=nwpath_2_unix1(&(dbe->nwpath), 2, 1);
+    struct stat *stb = &(dbe->nwpath.statb);
+    if (-1 != (result=stat(uname, stb))){
+      struct  utimbuf ut;
+      int     do_utime=0;
+      uint8   datetime[4];
+      un_time_2_nw(stb->st_mtime, datetime,   1);
+      un_date_2_nw(stb->st_mtime, datetime+2, 1);
+      ut.actime  = stb->st_atime;
+      ut.modtime = stb->st_mtime;
+
+      XDPRINTF((5, 0, "modify datetime 1=%2x,%2x,%2x,%2x",
+                  (int) *datetime,
+                  (int) *(datetime+1),
+                  (int) *(datetime+2),
+                  (int) *(datetime+3)));
+
+      if (infomask & DOS_MSK_MODIFY_DATE || infomask & DOS_MSK_MODIFY_TIME) {
+#if 1
+        if (infomask & DOS_MSK_MODIFY_TIME){
+           datetime[0] = dmi->modified_time[1];
+           datetime[1] = dmi->modified_time[0];
+        }
+
+        if (infomask & DOS_MSK_MODIFY_DATE) {
+          datetime[2] = dmi->modified_date[1];
+          datetime[3] = dmi->modified_date[0];
+        }
+#endif
+        do_utime++;
+      } else if (infomask & DOS_MSK_CREAT_DATE
+              || infomask & DOS_MSK_CREAT_TIME) {
+#if 1
+        if (infomask & DOS_MSK_CREAT_TIME) {
+           datetime[0] = dmi->created_time[1];
+           datetime[1] = dmi->created_time[0];
+        }
+        if (infomask & DOS_MSK_CREAT_DATE) {
+          datetime[2] = dmi->created_date[1];
+          datetime[3] = dmi->created_date[0];
+        }
+#endif
+        do_utime++;
+      }
+      if (do_utime) {
+      XDPRINTF((5, 0, "modify datetime 2=%2x,%2x,%2x,%2x",
+                  (int) *datetime,
+                  (int) *(datetime+1),
+                  (int) *(datetime+2),
+                  (int) *(datetime+3)));
+
+        ut.modtime = nw_2_un_time(datetime+2, datetime);
+        utime(uname, &ut);
+      }
+      return(0);
+    } else result=-0xff;
+    xfree(uname);
+  }
   return(result);
 }
 
@@ -1167,18 +1310,25 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
         int      searchattrib  = (int) GET_16(p+2); /* LOW-HI */
         uint32   infomask      = GET_32(p+4);       /* LOW-HI */
         NW_HPATH *nwpathstruct = (NW_HPATH *) (p+8);
-        result = nw_optain_file_dir_info(namespace, nwpathstruct,
+        result = nw_optain_file_dir_info(namespace,   nwpathstruct,
                                         destnamspace,
                                         searchattrib, infomask,
                                         responsedata);
       }
       break;
 
-
     case  0x07 :  /* Modify File or Dir Info */
       {
-
-
+        NW_HPATH         nwp;
+        DOS_MODIFY_INFO  dmi;
+        int      searchattrib  = (int) GET_16(p+2);
+        uint32   infomask      = GET_32(p+4);       /* LOW-HI */
+        p+=8;
+        memcpy(&dmi, p, sizeof(DOS_MODIFY_INFO));
+        p+= sizeof(DOS_MODIFY_INFO);
+        memcpy(&nwp, p, 7);
+        result  = nw_modify_file_dir(namespace, &nwp, p+7,
+                                   searchattrib, infomask, &dmi);
       }
       break;
 
@@ -1292,6 +1442,77 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
   return(result);
 }
 
+static void build_dos_name(DIR_BASE_ENTRY *e, uint8 *fname)
+{
+  uint8 *ss=e->nwpath.fn;
+  int   len=0;
+  int   pf=0;
+  int   is_ok=1;
+  int   options=get_volume_options(e->nwpath.volume, 1);
+  for (; *ss; ss++){
+    if (*ss == '.') {
+      if (pf++) {  /* no 2. point */
+        is_ok=0;
+        break;
+      }
+      len=0;
+    } else {
+      ++len;
+      if ((pf && len > 3) || len > 8) {
+        is_ok=0;
+        break;
+      }
+      if (!(options & VOL_OPTION_IGNCASE)){
+        if (options & VOL_OPTION_DOWNSHIFT){   /* only downshift chars */
+          if (*ss >= 'A' && *ss <= 'Z') {
+            is_ok=0;
+            break;
+          }
+        } else {            /* only upshift chars   */
+          if (*ss >= 'a' && *ss <= 'z') {
+            is_ok=0;
+            break;
+          }
+        }
+      }
+    }
+  }
+  if (is_ok)
+    strcpy(fname, e->nwpath.fn);
+  else
+    sprintf(fname, "%ld.___", (long)e->nwpath.statb.st_ino);
+}
+
+int get_namespace_dir_entry(int volume, uint32 basehandle,
+                                   int namspace, uint8 *rdata)
+{
+  int result = find_base_entry(volume, basehandle);
+  XDPRINTF((3, 0, "get_ns_dir_entry: vol=%d, base=0x%lx, namspace=%d",
+                                    volume, basehandle, namspace));
+  if (result > -1) {
+    DIR_BASE_ENTRY  *e = dir_base[result];
+    NW_SCAN_DIR_INFO *scif = (NW_SCAN_DIR_INFO*)rdata;
+    uint8  fname[20];
+    (void) nwp_stat(&(e->nwpath), "get_namespace_dir_entry");
+    memset(rdata, 0, sizeof(NW_SCAN_DIR_INFO));
+#if 0
+    U32_TO_32(basehandle, scif->searchsequence);
+#else
+    U32_TO_32(name_2_base(&(e->nwpath), NAME_DOS, 1), scif->searchsequence);
+#endif
+    build_dos_name(e, fname);
+    if (S_ISDIR(e->nwpath.statb.st_mode)) {
+      get_dos_dir_attrib(&(scif->u.d), &e->nwpath.statb,
+                              fname);
+    } else {
+      get_dos_file_attrib(&(scif->u.f), &e->nwpath.statb,
+                              fname);
+    }
+    return(sizeof(NW_SCAN_DIR_INFO));
+  }
+  return(result);
+}
+
 
 int handle_func_0x56(uint8 *p, uint8 *responsedata, int task)
 /* extended attribute calls */
@@ -1300,10 +1521,13 @@ int handle_func_0x56(uint8 *p, uint8 *responsedata, int task)
   int ufunc     = (int) *p++; /* now p locates at 4 byte boundary */
   XDPRINTF((3, 0, "0x56 call ufunc=0x%x", ufunc));
   switch (ufunc) {
+
 #if 1
     case  0x01 :  /* close extended attribute handle */
       {
+        /*
         uint32 ea_handle=GET_BE32(p+2);
+        */
         result=0; /* dummy */
       }
       break;
@@ -1316,6 +1540,7 @@ int handle_func_0x56(uint8 *p, uint8 *responsedata, int task)
 
     case  0x03 :  /* read extended attribute */
       {
+#if 0
         int flags         =  GET_16(p);  /* LOW-HIGH */
         /* next 2 entries only if flags bits 0-1 = 00 */
         /* (~(flags & 3)) volume   + basehandle  */
@@ -1326,6 +1551,7 @@ int handle_func_0x56(uint8 *p, uint8 *responsedata, int task)
         uint32 readpos    = GET_32(p+10);
         uint32 size       = GET_32(p+14);
         uint16 keylen     = GET_16(p+18);    /* LOW-HIGH */
+#endif
         struct OUTPUT {
           uint8   errorcode[4];     /* LOW-HIGH */
           uint8   ttl_v_length[4];  /* LOW-HIGH */

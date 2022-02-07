@@ -19,6 +19,7 @@
 
 #ifndef _M_NET_H_
 #define _M_NET_H_
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -212,6 +213,10 @@ extern int errno;
 
 #ifndef MAX_DIR_BASE_ENTRIES
 # define MAX_DIR_BASE_ENTRIES   50
+#endif
+
+#if MAX_DIR_BASE_ENTRIES < 10
+# define MAX_DIR_BASE_ENTRIES   10
 #endif
 
 #ifndef MAX_NW_ROUTES

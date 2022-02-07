@@ -683,6 +683,20 @@ static int handle_ncp_serv(void)
 	                 completition   = 0xfb;  /* TODO: !!! */
 	               } else  if (*p == 0x2f){  /* ??????    */
 	                 completition   = 0xfb;  /* TODO: !!! */
+
+#if WITH_NAME_SPACE_CALLS
+	               } else  if (*p == 0x30){
+	                 /* Get Name Space Directory Entry */
+                         int volume          = (int) *(p+1);
+                         uint32 basehandle   =  GET_32(p+2);
+                         int    namespace    = (int) *(p+6);
+                         int    result=get_namespace_dir_entry(
+                                 volume, basehandle, namespace,
+                                 responsedata);
+                         if (result > -1) {
+	                   data_len = result;
+                         } else completition = (uint8) -result;
+#endif
 	               } else completition = 0xfb;  /* unkwown request */
 	             }
 	             break;
@@ -696,7 +710,7 @@ static int handle_ncp_serv(void)
 
 #if FUNC_17_02_IS_DEBUG
              case 0x02 :  {
-                /* I hope this is call isn't used    */
+                /* I hope this call isn't used       */
                 /* now missused as a debug switch :) */
                struct XDATA {
                  uint8  nw_debug;   /* old level */
@@ -730,7 +744,7 @@ static int handle_ncp_serv(void)
                  uint8   data[2];        /* Name        */
                } *input = (struct INPUT *)ncprequest;
 
-               struct OUTPUT {
+               struct XDATA {
                  uint8          sequence[2];      /* next sequence */
                  /* NW_FILE_INFO f; */
                  uint8          f[sizeof(NW_FILE_INFO)];
@@ -738,11 +752,11 @@ static int handle_ncp_serv(void)
                  uint8    	archive_date[2];
                  uint8    	archive_time[2];
                  uint8    	reserved[56];
-               } *xdata = (struct OUTPUT*)responsedata;
+               } *xdata = (struct XDATA*)responsedata;
                int len = input->len;
                int searchsequence;
                NW_FILE_INFO f;
-               memset(xdata, 0, sizeof(struct OUTPUT));
+               memset(xdata, 0, sizeof(struct XDATA));
                searchsequence = nw_search( (uint8*) &f,
                                 (int)input->dir_handle,
                                 (int) GET_BE16(input->sequence),
@@ -752,7 +766,7 @@ static int handle_ncp_serv(void)
                  memcpy(xdata->f, &f, sizeof(NW_FILE_INFO));
                  U16_TO_BE16((uint16) searchsequence, xdata->sequence);
                  U32_TO_BE32(1L, xdata->owner_id);  /* Supervisor */
-                 data_len = sizeof(struct OUTPUT);
+                 data_len = sizeof(struct XDATA);
                } else completition = (uint8) (- searchsequence);
              }
              break;
@@ -844,13 +858,12 @@ static int handle_ncp_serv(void)
 	             break;
 
 	 case 0x21 : { /* Negotiate Buffer Size,  Packetsize  */
-	               int   wantsize = GET_BE16((uint8*)ncprequest);
+	               int   wantsize = GET_BE16((uint8*)requestdata);
 	               uint8 *getsize=responsedata;
-
-#if IPX_DATA_GR_546
-	               wantsize = min(0x400, wantsize);
-#else
+#if !IPX_DATA_GR_546
 	               wantsize = min(0x200, wantsize);
+#else
+	               wantsize = min(0x400, wantsize);
 #endif
 	               U16_TO_BE16(wantsize, getsize);
 	               data_len = 2;
@@ -923,7 +936,7 @@ static int handle_ncp_serv(void)
 	               } *input = (struct INPUT *) ncprequest;
 	                 int     len=input->len  ; /* FN Length */
 
-	               struct OUTPUT {
+	               struct XDATA {
 	                 uint8   searchsequence[2]; /* same as request sequence  */
 	                 uint8   dir_id[2];         /* Direktory ID    */
                        /*  is correct !! */
@@ -931,7 +944,7 @@ static int handle_ncp_serv(void)
 	                   NW_DIR_INFO  d;
 	                   NW_FILE_INFO f;
 	                 } u;
-	               } *xdata = (struct OUTPUT*)responsedata;
+	               } *xdata = (struct XDATA*)responsedata;
 
 	               int searchsequence = nw_dir_search(
 	                                     (uint8*) &(xdata->u),
@@ -942,7 +955,7 @@ static int handle_ncp_serv(void)
 	               if (searchsequence > -1) {
 	                 U16_TO_BE16((uint16) searchsequence, xdata->searchsequence);
                          memcpy(xdata->dir_id, input->dir_id, 2);
-	                 data_len = sizeof(struct OUTPUT);
+	                 data_len = sizeof(struct XDATA);
 	               } else completition = (uint8) (- searchsequence);
 	             }
 	             break;
@@ -957,14 +970,14 @@ static int handle_ncp_serv(void)
 	                 uint8   len;
 	                 uint8   data[2];        /* Name          */
 	               } *input = (struct INPUT *)ncprequest;
-	               struct OUTPUT {
+	               struct XDATA {
 	                 uint8   sequenz[2];    /* answer sequence */
 	                 uint8   reserved[2];   /* z.B  0x0   0x0  */
 	                 union {
 	                   NW_DIR_INFO  d;
 	                   NW_FILE_INFO f;
 	                 } u;
-	               } *xdata = (struct OUTPUT*)responsedata;
+	               } *xdata = (struct XDATA*)responsedata;
 	               int len = input->len;
 	               uint8 my_sequenz[2];
 	               int searchsequence;
@@ -976,7 +989,7 @@ static int handle_ncp_serv(void)
 	                                     input->data, len);
 	               if (searchsequence > -1) {
 	                 U16_TO_BE16((uint16) searchsequence, xdata->sequenz);
-	                 data_len = sizeof(struct OUTPUT);
+	                 data_len = sizeof(struct XDATA);
 	               } else completition = (uint8) (- searchsequence);
 	             }
 	             break;
@@ -990,12 +1003,12 @@ static int handle_ncp_serv(void)
 	                 uint8   len;           /* namelaenge */
 	                 uint8   data[2];       /* Name       */
 	               } *input = (struct INPUT *)ncprequest;
-	               struct OUTPUT {
+	               struct XDATA {
 	                 uint8   ext_fhandle[2]; /* all zero       */
 	                 uint8   fhandle[4];     /* Dateihandle    */
 	                 uint8   reserve2[2];    /* z.B  0x0   0x0 */
 	                 NW_FILE_INFO fileinfo;
-	               } *xdata= (struct OUTPUT*)responsedata;
+	               } *xdata= (struct XDATA*)responsedata;
 	               int  fhandle=nw_creat_open_file((int)input->dirhandle,
 	                       input->data, input->len,
 	                       &(xdata->fileinfo),
@@ -1006,7 +1019,7 @@ static int handle_ncp_serv(void)
 	                 U32_TO_BE32(fhandle, xdata->fhandle);
 	                 U16_TO_BE16(0, xdata->ext_fhandle);
 	                 U16_TO_BE16(0, xdata->reserve2);
-	                 data_len = sizeof(struct OUTPUT);
+	                 data_len = sizeof(struct XDATA);
 	               } else completition = (uint8) (-fhandle);
 	             }
 	             break;
@@ -1038,12 +1051,12 @@ static int handle_ncp_serv(void)
 	                 uint8   len;
 	                 uint8   data[1];       /* Name */
 	               } *input = (struct INPUT *)ncprequest;
-	               struct OUTPUT {
+	               struct XDATA {
 	                 uint8   extfhandle[2];
 	                 uint8   fhandle[4];   /* Filehandle */
 	                 uint8   reserved[2];  /* rese. by NOVELL */
 	                 NW_FILE_INFO fileinfo;
-	               } *xdata= (struct OUTPUT*)responsedata;
+	               } *xdata= (struct XDATA*)responsedata;
 	               int  fhandle=nw_creat_open_file(
 	                         (int)input->dirhandle,
 	                              input->data,
@@ -1053,7 +1066,7 @@ static int handle_ncp_serv(void)
                                       0,
                                       (function==0x43) ? 1 : 2);
 	               if (fhandle > -1){
-	                 data_len = sizeof(struct OUTPUT);
+	                 data_len = sizeof(struct XDATA);
 	                 U32_TO_BE32(fhandle, xdata->fhandle);
 	                 U16_TO_BE16(0,       xdata->extfhandle);
 	                 U16_TO_BE16(0,       xdata->reserved);
@@ -1134,13 +1147,13 @@ static int handle_ncp_serv(void)
 	                 uint8   ext_filehandle[2]; /* all zero */
 	                 uint8   fhandle[4];        /* Dateihandle */
 	               } *input = (struct INPUT *)ncprequest;
-	               struct OUTPUT {
+	               struct XDATA {
 	                 uint8   size[4];    /* Position ??? */
-	               } *xdata=(struct OUTPUT*)responsedata;
+	               } *xdata=(struct XDATA*)responsedata;
 	               int    fhandle  = GET_BE32(input->fhandle);
 	               int    size     = nw_seek_datei(fhandle, 0);
 	               if (size > -1) {
-	                 data_len = sizeof(struct OUTPUT);
+	                 data_len = sizeof(struct XDATA);
 	                 U32_TO_BE32(size, xdata->size);
 	               }
 	               else completition = (uint8) -size;
@@ -1157,10 +1170,10 @@ static int handle_ncp_serv(void)
 	                 uint8   offset[4];
 	                 uint8   max_size[2];    /* byte to readd */
 	               } *input = (struct INPUT *)ncprequest;
-	               struct OUTPUT {
+	               struct XDATA {
 	                 uint8   size[2];        /* read byzes  */
 	                 uint8   data[1072];     /* max data    */
-	               } *xdata=(struct OUTPUT*)responsedata;
+	               } *xdata=(struct XDATA*)responsedata;
 	               int    fhandle  = GET_BE32(input->fhandle);
 	               int    max_size = GET_BE16(input->max_size);
 	               off_t  offset   = GET_BE32(input->offset);
@@ -1226,11 +1239,11 @@ static int handle_ncp_serv(void)
 	                                            input_size);
 	               if (size < 0) completition = (uint8) -size;
 	               else {
-	                 struct OUTPUT {
+	                 struct XDATA {
 	                   uint8   zsize[4];   /* real transfered Bytes */
-	                 } *xdata= (struct OUTPUT*)responsedata;
+	                 } *xdata= (struct XDATA*)responsedata;
 	                 U32_TO_BE32(size, xdata->zsize);
-	                 data_len = sizeof(struct OUTPUT);
+	                 data_len = sizeof(struct XDATA);
 	               }
 	             }
 	             break;
@@ -1266,12 +1279,12 @@ static int handle_ncp_serv(void)
 	                 uint8   len;           /* namelaenge */
 	                 uint8   data[2];       /* Name       */
 	               } *input = (struct INPUT *)ncprequest;
-	               struct OUTPUT {
+	               struct XDATA {
 	                 uint8   ext_fhandle[2]; /* all zero       */
 	                 uint8   fhandle[4];     /* Dateihandle    */
 	                 uint8   reserve2[2];    /* z.B  0x0   0x0 */
 	                 NW_FILE_INFO fileinfo;
-	               } *xdata= (struct OUTPUT*)responsedata;
+	               } *xdata= (struct XDATA*)responsedata;
 	               int  fhandle=nw_creat_open_file((int)input->dirhandle,
 	                       input->data, input->len,
 	                       &(xdata->fileinfo),
@@ -1283,7 +1296,7 @@ static int handle_ncp_serv(void)
 	                 U16_TO_BE16(0, xdata->ext_fhandle);
 	                 U16_TO_BE16(0, xdata->reserve2);
 
-	                 data_len = sizeof(struct OUTPUT);
+	                 data_len = sizeof(struct XDATA);
 #ifdef TEST_FNAME
 	                 input->data[input->len] = '\0';
 	                 if (strstr(input->data, TEST_FNAME)){
@@ -1326,25 +1339,43 @@ static int handle_ncp_serv(void)
 
 #endif
 
-#ifdef  _MAR_TESTS_
+#if 0
 	 case 0x61 : { /* Negotiate Buffer Size,  Packetsize new ?  */
                        /* > 3.11 */
-	               int   wantsize = GET_BE16((uint8*)ncprequest);
+	               int   wantsize = GET_BE16((uint8*)requestdata);
+                       int   flags    = (int)   *(requestdata+2);
                        /* wantsize is here normally 1500 */
-                       /* 1 byte unknown ( zero )   */
-	               struct OUTPUT {
+	               struct XDATA {
 	                 uint8   getsize[2];
-	                 uint8   socket[2];      /* socket for echo ?? */
-                         uint8   unknown;        /* zero               */
-	               } *xdata= (struct OUTPUT*)responsedata;
+	                 uint8   socket[2];      /* echo socket */
+                         uint8   flags;          /* zero        */
+	               } *xdata= (struct XDATA*)responsedata;
                        memset(xdata, 0, sizeof(*xdata));
 	               wantsize = min(1500, wantsize);
 	               U16_TO_BE16(wantsize,  xdata->getsize);
 	               U16_TO_BE16(sock_echo, xdata->socket);
 	               data_len = sizeof(*xdata);
-                       XDPRINTF((5,0, "Negotiate Buffer (new) =0x%04x,(%d)",
-                              (int) wantsize, (int) wantsize));
+                       XDPRINTF((5,0, "Negotiate Buffer (new) =0x%04x,(%d), flags=0x%x",
+                              (int) wantsize, (int) wantsize, flags));
 	             }
+	             break;
+#endif
+
+#if 0
+	 case 0x65 :  /* Packet Burst Connection Request */
+	               struct INPUT {
+	                 uint8   header[7];          /* Requestheader */
+                         uint8   conn_id[4];         /* ??     */
+                         uint8   max_packet_size[4]; /* HI-LOW */
+                         uint8   target_socket[2];
+                         uint8   max_sent_size[4];   /* HI-LOW */
+                         uint8   max_recv_size[4];   /* HI-LOW */
+	               } *input = (struct INPUT *)ncprequest;
+	               struct XDATA {
+	                 uint8   result;
+	                 uint8   target_id[4];
+	                 uint8   max_packet_size[4];
+	               } *xdata= (struct XDATA*) responsedata;
 	             break;
 #endif
 

@@ -1,29 +1,100 @@
 This is Mars_nwe, a free NetWare(tm) emulator for Linux and UnixWare,
 written by Martin Stover, Marburg, Germany.
 
+>>>> Please read THE WHOLE of this file as it gives important
+>>>> information about mars_nwe, how you can get help and so on.
+
+This software is freely distributable under the GNU public license, a
+copy of which you should have received with this software (in a file
+called COPYING).
+
+
+WHAT CAN MARS_NWE DO?
+=====================
+
+Here is a very short list of what mars_nwe can do for you.
+
+- mars_nwe is a very functional clone of a NetWare server that runs
+  under Linux. It works fine with the usual DOS client software that
+  normally comes with your NetWare server.
+
+- mars_nwe offers file, bindery and print services for NetWare client
+  software.
+
+- It was reported that if you patch your Linux kernel with the
+  speed-enhancing patch in examples/, mars_nwe is slower than NetWare
+  3.12, but FASTER THAN NetWare 4.1 on the same hardware.
+
+- mars_nwe does not include any user license restrictions. You can
+  increase mars_nwe's licenses by simply recompiling it, and you can
+  start any number of mars_nwe's on your network!
+
+- mars_nwe includes a RIP/SAP daemon that turns your Linux box into a
+  fine IPX router.
+
+
+Related packages include:
+
+- mars_dosutils: Some utilities that should free you from having to
+  use proprietary utilities when you want to use mars_nwe with DOS
+  clients.
+
+- ncpfs: a linux-only filesystem allowing you to mount volumes
+  exported by NetWare servers on your linux box. This is included as
+  standard with Linux 2.0 and later.
+
+
+FTP SITE
+========
+
+Martin Stover has no online internet site. New versions are always
+sent by uuencoded mail to Volker Lendecke, who puts them on
+ftp.gwdg.de:/pub/linux/misc/ncpfs. sunsite mirrors this directory in
+sunsite.unc.edu:/pub/Linux/system/Filesystems/ncpfs.
+
+
+DOCUMENTATION
+=============
+
 There is not yet too much documentation available, look into the doc/
 subdirectory. As Martin's native tongue is german, the documentation,
 as well as a lot of the code comments are a mixture of english and
-german. This will certainly converge to english in the future.
+german. This will certainly converge to english in the future. Feel
+free to increase the rate of convergence, see above for patches!
+
 
 INSTALLATION
+============
+
 look in doc/INSTALL or doc/INSTALL.ger
 
 
 HELP
+====
 
 To get help you can mail to and/or subscribe to LinWare mailing list:
 
 Topics for the list:
-- discussing LinWare server, its features, installation problems and bugs
+- discussing mars_nwe server, its features, installation problems and bugs
 - using IPX protocol under Linux
 - IPX routing and router daemons under Linux
-- mars_nwe
+- and, last but not least, the LinWare daemon
 
 You can subscribe to the list by sending command "add linware" in mail
 message body to address: "listserv@sh.cvut.cz".
 Your list postings should be sent to address: "linware@sh.cvut.cz".
 
 
+CONTRIBUTIONS
+=============
 
+If you want to contribute to the development of the software then
+please join the mailing list.
+
+Martin accept patches (preferably in "diff -u" format) and is
+always glad to receive feedback or suggestions.
+
+Remember that free software of this kind lives or dies by the response
+we get. If noone tells us they like it then we'll probably move onto
+something else.
 

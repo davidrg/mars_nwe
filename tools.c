@@ -1,4 +1,4 @@
-/* tools.c  13-May-96 */
+/* tools.c  07-Aug-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,7 +26,7 @@ extern char *_sys_errlist[];
 
 
 int  nw_debug=0;
-FILE *logfile=stdout;
+FILE *logfile=stderr;
 
 static int   in_module=0;  /* in which process i am ?   */
 static int   connection=0; /* which connection (nwconn) */
@@ -279,7 +279,7 @@ static char *get_pidfilefn(char *buf)
   return(get_div_pathes(buf, (char*)downstr((uint8*)lbuf), 2, ".pid"));
 }
 
-void creat_pidfile(void)
+static void creat_pidfile(void)
 {
   char buf[300];
   char *pidfn=get_pidfilefn(buf);
@@ -288,7 +288,8 @@ void creat_pidfile(void)
     fprintf(f, "%d\n", getpid());
     fclose(f);
   } else {
-    XDPRINTF((1, 0, "Cannot creat pidfile=%s", pidfn));
+    errorp(1, "INIT", "Cannot creat pidfile=%s", pidfn);
+    exit(1);
   }
 }
 
@@ -301,6 +302,7 @@ void init_tools(int module, int options)
   int   dodaemon=0;
   int   new_log=0;
   in_module  = module;
+  my_pid     = getpid();
   connection = (NWCONN == module) ? options : 0;
   if (NWSERV == module || NWROUTED == module) {
     int kill_pid=-1;
@@ -351,18 +353,19 @@ void init_tools(int module, int options)
     if (NWSERV == module || NWROUTED == module) { /* now make daemon */
       int fd=fork();
       if (fd) exit((fd > 0) ? 0 : 1);
+      my_pid=getpid();
     }
     if (NULL == (logfile = fopen(logfilename,
            (new_log && (NWSERV == module || NWROUTED == module)) ? "w" : "a"))) {
-      char sxx[100];
-      sprintf(sxx, "\n\nOpen logfile `%s`", logfilename);
-      perror(sxx);
-      logfile = stdout;
-      fprintf(stderr, "\n!! ABORTED !!\n");
+      logfile = stderr;
+      errorp(1, "INIT", "Cannot open logfile='%s'",logfilename);
       exit(1);
     }
-    if (NWSERV == module || NWROUTED == module) setsid();
-  }
+    if (NWSERV == module || NWROUTED == module) {
+      creat_pidfile();
+      setsid();
+    }
+  } else logfile=stdout;
   if (  NWCONN != module || nw_debug > 1 ) {
     XDPRINTF((1, 0, "Starting Version: %d.%02dpl%d",
          _VERS_H_, _VERS_L_, _VERS_P_ ));
@@ -371,7 +374,6 @@ void init_tools(int module, int options)
   if (nw_debug < 8)
     sigsegv_func = signal(SIGSEGV, sig_segv);
 #endif
-  my_pid = getpid();
 }
 
 void exit_tools(void)
@@ -380,20 +382,15 @@ void exit_tools(void)
     char buf[300];
     unlink(get_pidfilefn(buf));
   }
-  if (logfile != stdout) {
-    if (logfile != NULL) fclose(logfile);
-    logfile=stdout;
-  }
 }
 
 uint8 down_char(uint8 ch)
 {
   if (ch > 64 && ch < 91) return(ch + 32);
   switch(ch){
-    case 142:  ch =  132; break;
-    case 153:  ch =  148; break;
-    case 154:  ch =  129; break;
-    default :break;
+    case 142:  return(132);
+    case 153:  return(148);
+    case 154:  return(129);
   }
   return(ch);
 }
@@ -402,10 +399,9 @@ uint8 up_char(uint8 ch)
 {
   if (ch > 96 && ch < 123) return(ch - 32);
   switch(ch) {
-    case 132:  ch =  142; break;
-    case 148:  ch =  153; break;
-    case 129:  ch =  154; break;
-    default :  break;
+    case 132:  return(142);
+    case 148:  return(153);
+    case 129:  return(154);
   }
   return(ch);
 }

@@ -17,7 +17,7 @@ Ales Dryak <A.Dryak@sh.cvut.cz>
         his linware gave the kick
 
 Fritz Elfert <fritz@wuemaus.franken.de>
-        gives Bugreport and Patches
+        gives bugreport and patches
 
 Ruedi Kneubuehler <pingu@satu.baboon.ch>
         helping and testing for linux/sparc
@@ -30,6 +30,9 @@ James B. MacLean <macleajb@ednet.ns.ca>
 
 Jiri A. Randus <Jiri.Randus@vslib.cz>
         testing bindery code
+
+Gregory Steuck <greg@nsu.ru>
+        testings and errorreports
 
 Winfried Truemper <truemper@mi.uni-koeln.de>:
         re-wrote `INSTALL' and added explanations to `nw.ini'

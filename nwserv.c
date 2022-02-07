@@ -1205,6 +1205,10 @@ int main(int argc, char **argv)
 {
   int j = 0;
   int init_mode=0;
+  if (seteuid(0) < 0 || setuid(0) < 0) {
+    fprintf(stderr, "You must have root permission !\n");
+    exit(1);
+  }
   tzset();
   while (++j < argc)  {
     char *a=argv[j];
@@ -1252,7 +1256,6 @@ int main(int argc, char **argv)
     time(&broadtime);
 
     set_sigs();
-    creat_pidfile();
 
     polls[NEEDED_SOCKETS].fd = fd_nwbind_in;
 
