@@ -1,18 +1,36 @@
-last updated: 11-Apr-97
-Q: I don't exaclty understand the meaning of some ponits in nw.ini:
+last updated: 14-Jul-97
+
+Q: Which DOS programs from the real Netware do I need?
+A: For a minimal configuration you only need LOGIN.EXE.
+   However, it makes sense to also install the following programs:
+   MAP.EXE       : Drive mapping program.
+   CAPTURE.EXE   : Printer redirection program.
+   SYSCON.EXE    : Administration tool.
+
+   There is also a DOS client program in development, which will allow
+   the use of mars_nwe without the original Novell DOS tools.
+
+Q: I don't exactly understand the meaning of some points in nw.ini:
    12,13
-   What will happen if I will not put PASSWORD here? Will it take it from
+   What will happen if I do not put PASSWORD here? Will it take it from
    /etc/passwd? I want it to be so.
-A: This passwords will be stored (crypted) into bindery to can handle
-   the crypted login call from a standarrd Novell client.
+A: These passwords will be stored (crypted) into bindery to can handle
+   the crypted login call from a standard Novell client.
+
+   If you do not put a password in section 12, the supervisor login will
+   be completely disabled; if you do not put passwords in section 13,
+   the users will be able to login with no password: in neither case
+   will passwords from /etc/passwd be used, except you are working with
+   unencrypted passwords ( see section 7 ).
+
 
 Q: What role plays: 15?
    What if I will no supply passwd here?
-A: This is for automatic inserting UNIX Users as mars_nwe users.
-   All of these automatic inserted users will get the password
+A: This is for automatic inserting UNIX users as mars_nwe users.
+   All of these automatically inserted users will get the password
    as the crypted bindery password.
 
-Q: File write will not work under WIN3.1, WfW
+Q: File write does not work under Win3.1, WfW
 A: Try updating C:\WINDOWS\SYSTEM\STORAGE.DLL. I find that earlier
    versions of this file evince the problem you describe under Windows 3.1
    and 3.11.  Precisely when this problem went away in STORAGE.DLL I don't
@@ -22,10 +40,10 @@ A: Try updating C:\WINDOWS\SYSTEM\STORAGE.DLL. I find that earlier
 Q: I do not have longfilenamesupport.
 A: Give the volume the 'O' flag.
    Set section 6 in nwserv.conf to > 0.
-   Win95, by default, does not use long filenames on a netware 3.11
+   Win95, by default, does not use long filenames on a Netware 3.11
    server.  This is documented in the resource kit help file and
    elsewhere.  You should read that to find out the ramifications, but
-   with real netware I've had good luck using the recommended registry
+   with real Netware I've had good luck using the recommended registry
    settings.  Here is a registry import file:
    REGEDIT4
    [HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\VxD\NWREDIR]
@@ -33,15 +51,15 @@ A: Give the volume the 'O' flag.
 
 Q: I have 2 Eth-devices (one for IP/IPX and one for IPX only)
    and after starting mars_nwe I have strange problems with my IP-net.
-A: Make sure that all Eth-devices have an assigned IP-address, even
+A: Make sure that all Eth-devices have an assigned IP address, even if
    they are only used for IPX.
 
-Q: I have arcnet cards and I dont find the frame-typ TRXNET.
-A: The correct frame typ is handled by the arcnet driver.
-   You should use the 'dummy frametyp' 802.3.
+Q: I have arcnet cards and I don't find the frame type TRXNET.
+A: The correct frame type is handled by the arcnet driver.
+   You should use the 'dummy frame type' 802.3.
 
 Q: The CONFIG_IPX_INTERN kernel option is *not* set but
-   when I start 'nwserv' as root it sais:
+   when I start 'nwserv' as root it says:
    !! NWSERV   0:PANIC !!
    NWSERV   0:!! configuration error !!:
    mars_nwe don't run with kernel 'full internal net'.
@@ -52,10 +70,10 @@ A: Sorry but mars_nwe can recognize this setting only at compile time,
    settings.
 
 Q: What is an easy way to get a 'clean' nwserv.conf file without comments.
-A: do a 'make showconf' in the mars_nwserv directory or do a
+A: Do a 'make showconf' in the mars_nwe directory or do a
    'grep "^[ \t]*[0-9]" /etc/nwserv.conf'
 
-Q: Which frametyp should I use (Ethernet_ii, 802.2, SNAP or 802.3)  ?
+Q: Which frame type should I use (Ethernet_II, 802.2, SNAP or 802.3)  ?
 A: Use Ethernet_II on a new network as it can carry anything and everything
    (AFAIK) and doesn't have any of the potential disadvantages of the rest.
 

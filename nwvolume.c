@@ -1,4 +1,4 @@
-/* nwvolume.c  17-Jun-97 */
+/* nwvolume.c  20-Jul-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -36,6 +36,7 @@ NW_VOL     *nw_volumes=NULL;
 int        used_nw_volumes=0;
 uint8      *home_dir=NULL;
 int        home_dir_len=0;
+char       *path_vol_inodes_cache=NULL;
 
 static int max_nw_vols=MAX_NW_VOLS;
 
@@ -78,6 +79,7 @@ void nw_init_volumes(FILE *f)
   }
   rewind(f);
   used_nw_volumes = 0;
+  new_str(path_vol_inodes_cache, "/var/spool/nwserv/.volcache");
   while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))) {
     if ( what == 1 && used_nw_volumes < max_nw_vols && strlen((char*)buff) > 3){
       uint8 sysname[256];
@@ -93,6 +95,7 @@ void nw_init_volumes(FILE *f)
         new_str(vol->sysname, sysname);
         if (1 == (len = strlen((char*)unixname)) && unixname[0] == '~') {
           vol->options  |= VOL_OPTION_IS_HOME;
+          vol->options  |= VOL_OPTION_REMOUNT;
           unixname[0] = '\0';
           len = 0;
         } else if (unixname[len-1] != '/') {
@@ -151,6 +154,8 @@ void nw_init_volumes(FILE *f)
         if (vol->unixnamlen)
           volume_to_namespace_map(used_nw_volumes-1, vol);
       }
+    } else if (what==40) {  /* path for vol/dev/inode->path cache */
+      new_str(path_vol_inodes_cache, buff);
     }
   } /* while */
 }
@@ -357,11 +362,9 @@ int nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu)
   return(volnr);
 }
 
-int get_volume_options(int volnr, int mode)
-/* returns >= 0 (options) if OK, else errocode < 0 */
-/* if mode > 0 and errcode then errorcode = 0  (nooptions) */
+int get_volume_options(int volnr)
 {
-  int result = (mode) ? 0 : -0x98; /* Volume not exist */;
+  int result = 0;
   if (volnr > -1 && volnr < used_nw_volumes)
     result = nw_volumes[volnr].options;
   XDPRINTF((5,0,"get_volume_options of VOLNR:%d, result=0x%x", volnr, result));

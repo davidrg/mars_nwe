@@ -1,4 +1,4 @@
-/* nwfile.h 02-Jun-97 */
+/* nwfile.h 21-Jul-97 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
 #include "nwqueue.h"
@@ -14,6 +14,8 @@ typedef struct {
   int fh_flags;         /* 2 = PIPE                          */
                         /* 4 = don't reuse after close       */
                         /* 0x20 = readonly                   */
+  int    st_dev;        /* device 			     */ 
+  int    st_ino;        /* inode 			     */ 
   char   fname[256];    /* UNIX filename                     */
 } FILE_HANDLE;
 
@@ -52,5 +54,7 @@ extern int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock);
 extern int fd_2_fname(int fhandle, char *buf, int bufsize);
 extern FILE_HANDLE *fd_2_fh(int fhandle);
 extern int get_nwfd(int fhandle);
+
+extern int nw_unlink(int volume, char *name);
 
 #endif

@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 07-Jul-97
+Aenderungen in mars_nwe bis zum : 14-Jul-97
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -302,14 +302,14 @@ Erste 'oeffentliche' Version
 - Max. moegliche Connections auf > 255 erhoeht.
   Muss aber noch richtig getestet werden.
 - Dateimatchroutine OS/2 namespace wiederum abgeaendert.
-  Es wurde bei Matchcode '0xff * 0xff 0xae 0xff *' keine Datei 
+  Es wurde bei Matchcode '0xff * 0xff 0xae 0xff *' keine Datei
   ohne '.' gefunden.
 - Attribute von 'Pipe Commands' ist nun Shareble.
   Dadurch sollten Client Bufferungen verhindert werden.
 - einige Konstanten aus config.h sind nun auch zur Laufzeit
   aenderbar. ab section 60 in ini/conf file.
-- Konstanten MAX_NW_ROUTES, MAX_NW_SERVERS, MAX_RIP_ENTRIES, 
-  MAX_NET_DEVICES werden nicht mehr benoetigt, da entsprechende 
+- Konstanten MAX_NW_ROUTES, MAX_NW_SERVERS, MAX_RIP_ENTRIES,
+  MAX_NET_DEVICES werden nicht mehr benoetigt, da entsprechende
   Arrays nun bei Bedarf dynamisch wachsen.
 - nw_2_un_time Routine setzt nun auch die Sekunden korrekt.
   Hinweis/Patch von Csoma Csaba.
@@ -317,13 +317,35 @@ Erste 'oeffentliche' Version
   ab Offset gelockt. ( von Peter Gerhard )
 - In connect.c, build_verz_name() Fehlerabfang fuer 'falsche Dateinamen'
   korrigiert. (Victor Khimenko schickte patch)
-  Es war moeglich auf 9 stellige (ohne Punkt) Verzeichnissnamen 
+  Es war moeglich auf 9 stellige (ohne Punkt) Verzeichnissnamen
   zuzugreifen.
 - examples/unxcomm.c korrigiert.
 - es wird nun der Login Name oder '()' fuer attached unter ps
   angezeigt.
 - in routine nw_2_un_time() wird nun tm_isdst korrekterweise
   auf -1 gesetzt.
-- dynamisches Aktivieren/Deaktivieren von Interfaces verbessert. 
+- dynamisches Aktivieren/Deaktivieren von Interfaces verbessert.
 <----- ^^^^^^^^^^ pl11 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
+^^^^^^^^^^ VERSION 0.98 ^^^^^^^^
+- Einfachen Plattencache fuer Inode->Pfad Zuweisungen eingebaut.
+  Nun muesste Client-32 funktionieren.
+- Verwende nun defaultmaessig gdbm.h falls gdbm lib vorhanden.
+  (Ambrose Li)
+- Namespace Routine nw_modify_file_dir korrigiert. !
+- Locking result code abgeaendert von 0xfd auf 0xfe.
+  (Przemyslaw Czerpak)
+- Aus nw_commit_file den flush ausgebaut, da dieser alle
+  Locks aus der Datei entfernte. (Przemyslaw Czerpak)
+- Result Code bei Openfile (lock error) von 0xfe auf 0x80 abgeaendert.
+- Namespace Suchroutine wiederum abgeaendert.
+- nwbind entfernt nun beim Beenden austehende Eintraege in utmp.
+  (Ambrose Li)
+- Bindery Code Security verbessert.
+- Bindery Account Erweiterung von Mark Robson eingebaut.
+- Unterstuetzung 'slow nets' verbessert. (fuer CL/Wolters).
+- 'Home Volumes' werden nun generell als 'remountable' behandelt.
+- Bindery Pfad kann nun in section 45 bestimmt werden.
+- File-sharing abgeaendert.
+- Internen Router Code fuer SAP Anfragen des internen Netzes (slist usw.) 
+  korrigiert.
+<----- ^^^^^^^^^^ pl0 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

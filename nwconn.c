@@ -1,4 +1,4 @@
-/* nwconn.c 22-Jun-97       */
+/* nwconn.c 20-Jul-97       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -77,7 +77,10 @@ typedef struct {
   uint8   *send_buf;        /* we look from servers side
                              * complete data buf of burst reply
                              * file read status + file read buf
+                             * sendbuff must be 8 byte more allocated
+                             * than max_send_size !
                              */
+
   int     max_send_size;    /* send_buf size, complete Burst DATA size */
 
   uint32  packet_sequence;  /* -> packet_sequence
@@ -89,7 +92,11 @@ typedef struct {
   struct t_unitdata ud;
   ipxAddr_t to_addr;
 
-  uint8   *recv_buf;        /* complete data buf for burst read requests */
+  uint8   *recv_buf;        /* complete data buf for burst read requests 
+                             * must be 24 byte more allocated 
+                             * than max_recv_size !
+                             */
+
   int     max_recv_size;    /* allocated size of recv_buf */
 
   int     max_burst_data_size;  /* size of BURSTDATA, max. IPX_DATA - BURSTHEADER */
@@ -270,7 +277,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            U16_TO_BE16(fsp.fsu_bavail/sector_scale, xdata->avail_blocks);
                            U16_TO_BE16(fsp.fsu_files,  xdata->total_dirs);
                            U16_TO_BE16(fsp.fsu_ffree,  xdata->avail_dirs);
-                           if ( get_volume_options(volume, 1) & VOL_OPTION_REMOUNT) {
+                           if ( get_volume_options(volume) & VOL_OPTION_REMOUNT) {
                              U16_TO_BE16(1,  xdata->removable);
                            } else {
                              U16_TO_BE16(0,  xdata->removable);
@@ -522,7 +529,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                                U16_TO_BE16(fsp.fsu_bavail/sector_scale, xdata->avail_blocks);
                                U16_TO_BE16(fsp.fsu_files,  xdata->total_dirs);
                                U16_TO_BE16(fsp.fsu_ffree,  xdata->avail_dirs);
-                               if (get_volume_options(volume, 1) & VOL_OPTION_REMOUNT) {
+                               if (get_volume_options(volume) & VOL_OPTION_REMOUNT) {
                                  U16_TO_BE16(1,  xdata->removable);
                                } else {
                                  U16_TO_BE16(0,  xdata->removable);
@@ -534,19 +541,25 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            }
                          }
                          completition = (uint8)-result;
-                       } else  if (*p == 0x19){ /* Set Directory Information */
+                       } else  if (*p == 0x19){ 
+                        /* Set Directory Information 
+                         * Modifies basic directory information as creation date and
+                         * directory rights mask. DOS namespace.
+                         */
 #if 0
                          struct INPUT {
-                           uint8   header[7];      /* Requestheader */
+                           uint8   header[7];         /* Requestheader */
                            uint8   div[3];            /* 0x0, dlen, ufunc */
-                           uint8   dir_handle;     /* Verzeichnis Handle */
-                           uint8   trustee_id[4];  /* Trustee Object ID  */
-                           uint8   trustee_right_mask;
+                           uint8   dir_handle;        
+                           uint8   creation_date[2];  
+                           uint8   creation_time[2];
+                           uint8   owner_id[4];
+                           uint8   new_max_rights;
                            uint8   pathlen;
                            uint8   path;
                          } *input = (struct INPUT *) (ncprequest);
 #endif
-                         /* No REPLY */
+                         /* No REPLY  */
                          completition = 0xfb;  /* !!!!! TODO !!!! */
                        } else  if (*p == 0x1a){ /* Get Pathname of A Volume Dir Pair */
 #if 0
@@ -620,9 +633,17 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          /* remove Vol restrictions for Obj */
                          XDPRINTF((5, 0, "Remove vol restrictions"));
                          return(-2); /* nwbind must do prehandling */
-                       } else  if (*p == 0x25){ /* setting FILE INFO ??*/
+                       } else  if (*p == 0x25){ 
+                        /* Set Entry, Set Directory File Information 
+                         * sets or changes the file or directory information to the
+                         * values entered in 'Change Bits'.
+                         */
+                         /* NO REPLY */
+                         /* ncopy use this call */
                           /* TODO !!!!!!!!!!!!!!!!!!!!  */
+                         
                          do_druck++;
+                         
                        } else  if (*p == 0x26) { /* Scan file or Dir for ext trustees */
                          int sequenz = (int)*(p+2); /* trustee sequenz  */
                          struct XDATA {
@@ -785,9 +806,9 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          } else completition = (uint8) -result;
                        } else  if (*p == 0x2e){  /* RENAME DATEI */
                          completition   = 0xfb;  /* TODO: !!! */
-                       } else  if (*p == 0x2f){  /* ??????    */
+                       } else  if (*p == 0x2f){  /* Fill namespace buffer */
                          completition   = 0xfb;  /* TODO: !!! */
-
+                         /* ncopy use this call */
 #if WITH_NAME_SPACE_CALLS
                        } else  if (*p == 0x30){
                          /* Get Name Space Directory Entry */
@@ -949,7 +970,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                      {
                        struct INPUT {
                          uint8   header[7];      /* Requestheader */
-                         uint8   reserve;        /* 0x1           */
+                         uint8   reserve;        /* 0x1, lock-flag ? */
                          uint8   ext_fhandle[2]; /* all zero      */
                          uint8   fhandle[4];     /* Filehandle    */
                          uint8   offset[4];
@@ -1466,7 +1487,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
 
          case 0x61 :
 #if ENABLE_BURSTMODE
-                     if (tells_server_version > 1) { /* > 3.11 */
+                     if (server_version_flags&1) { /* enable Burstmode */
                        /* Negotiate Buffer Size,  Packetsize new ?  */
                        int   wantsize = GET_BE16((uint8*)requestdata);
                        /* wantsize is here max.
@@ -1506,7 +1527,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
 
          case 0x65 :  /* Packet Burst Connection Request */
 #if ENABLE_BURSTMODE
-                     if (tells_server_version > 1) { /* > 3.11 */
+                     if (server_version_flags&1) { /* enable burstmode */
                        struct INPUT {
                          uint8   header[7];          /* Requestheader   */
                          uint8   connid[4];          /* RANDOM ID       */
@@ -1562,12 +1583,21 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                        burst_w->max_send_size=
                          min(max_burst_send_size,
                            GET_BE32(input->max_recv_size));
-                       burst_w->send_buf=xcmalloc(burst_w->max_send_size);
+                       
+#if 1  /* MUST BE REMOVED LATER !!! */
+                       /* we don't want fragment send packets */
+                       if (burst_w->max_send_size > 
+                            burst_w->max_burst_data_size-8)
+                          burst_w->max_send_size
+                            =burst_w->max_burst_data_size-8;
+#endif
+                       
+                       burst_w->send_buf=xcmalloc(burst_w->max_send_size+8);
 
                        burst_w->max_recv_size=
                          min(max_burst_recv_size,
                            GET_BE32(input->max_send_size));
-                       burst_w->recv_buf=xcmalloc(burst_w->max_recv_size);
+                       burst_w->recv_buf=xcmalloc(burst_w->max_recv_size+24);
 #if 0
                        U32_TO_BE32(0x1600, burst_w->sendburst->delaytime);
 #endif
@@ -1819,12 +1849,22 @@ static int send_burst(int offset, int datasize, int flags)
   return(0);
 }
 
+#include <sys/time.h>
+static void sleep_mu(int mu)
+{
+  struct timeval t;
+  t.tv_sec  = 0;
+  t.tv_usec = mu;
+  (void) select(1, NULL, NULL, NULL, &t);
+}
+
 static void handle_burst_response(uint32 offset, int size)
 {
   BURSTPACKET *sb=burst_w->sendburst;
   U16_TO_BE16(burst_w->burst_sequence,   sb->burst_seq);
   U16_TO_BE16(burst_w->burst_sequence+1, sb->ack_seq);
   U32_TO_BE32(size,  sb->burstsize);
+  
   while (size) {
     int sendsize=min(size, burst_w->max_burst_data_size);
     int flags=0;
@@ -1832,10 +1872,11 @@ static void handle_burst_response(uint32 offset, int size)
     if (!size) flags|=0x10; /* EndOfBurst */
     send_burst(offset, sendsize, flags);
 #if 0
-    sleep_mu(1);
+    sleep_mu(2);
 #endif
     offset+=sendsize;
   }
+
 }
 
 static void handle_burst(BURSTPACKET *bp, int len)
@@ -1845,10 +1886,18 @@ static void handle_burst(BURSTPACKET *bp, int len)
     int    burstsequence = GET_BE16(bp->burst_seq);
     int    datasize      = GET_BE16(bp->datasize);
 
-    if (datasize && !(bp->flags & 0x80))
+    if (datasize && !(bp->flags & 0x80)) {
+      /* copy if no System Packet */
+      if (datasize+burstoffset > burst_w->max_recv_size+24) {
+        XDPRINTF((1, 0, "recv burstpacket offs=%d+size=%d > max_recv+24=%d",
+         burstoffset, datasize, burst_w->max_recv_size+24));
+        return;
+      }
       memcpy(burst_w->recv_buf+burstoffset, bp+1, datasize);
+    }
 
     if (bp->flags & 0x10) {  /* last packet, now action */
+      /* 0x10 = EOB flag */
       struct REQ {
         uint8 function[4];           /* lo-hi    1=READ, 2=WRITE   */
         uint8 fhandle[4];            /* from open file             */
@@ -1900,7 +1949,7 @@ static void handle_burst(BURSTPACKET *bp, int len)
           handle_burst_response(0, sizeof(struct XDATA));
         }
       }
-    } else if (bp->flags & 0x80) {
+    } else if (bp->flags & 0x80) {  /* System Flag */
       int missing=GET_BE16(bp->missing);
       uint8 *p=(uint8*)(bp+1);
       burst_w->burst_sequence = burstsequence;

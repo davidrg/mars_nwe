@@ -1,3 +1,15 @@
+------31-Jul-97--- 0.99.pl0 ---------
+- Client-32 from Novell should now work. (added vol/dev/inode/path cache)
+  The cache directory '/var/spool/nwserv/.volcache' should/can be controlled
+  or removed time to time when no mars_nwe connection is up.
+- Some bindery code from Mark Robson, important security fixes !!
+  Allows the supervisor to disable accounts with SYSCON
+  Allows the supervisor to put expiry dates on with SYSCON
+- Handling of file-sharing changed. (see also new flag in section 8)
+- first (only test)version with 'Burst-Mode'.
+  config.h -> ENABLE_BURSTMODE
+  Section 6: version-"spoofing" must be set > '1' (3.12).
+  new section 30: Burst mode values.
 ------07-Jul-97--- 0.98.pl11 ---------
 - section 201 enhanced -> syslogd
 - new section 50: filenametranslation by Victor Khimenko.

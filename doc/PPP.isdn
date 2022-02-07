@@ -1,0 +1,144 @@
+/* some notes for using IPPP */
+Mars_nwe works well with ppp and ippp Devices.
+This files describes example for ippp device.
+The file PPP describes example for ppp device.
+
+Simple sample config files for a ppp server using ippp0 as ppp device.
+We configure TCP-IP and IPX ppp connections.
+
+Notes:
+- isdn must be configured to use synchron ppp (ippp).
+- ipppd has to be compiled with IPX support.
+
+
+[nwserv.conf]
+ 4  0x0  ippp0  AUTO  7  # ticks > 6 to filter RIP/SAP.
+                         # 'auto device'
+
+[/etc/isdnrc]
+#!/bin/sh
+# example start script for ippp connections
+
+# set our local ISDN MSM for incoming PPP calls.
+PPP_MSM=93082
+
+ISDNDEV=
+PPPID=
+PPP_NR=
+
+preset_ppp()
+{
+  PPP_NR=$2
+  ISDNDEV="ippp$PPP_NR"
+  PPPID=`ps -xa | fgrep ipppd | fgrep $ISDNDEV | awk '{print $1}'`
+
+  if [ "$1" = 'start' ] ; then
+    if [ "$PPPID" != "" ] ; then
+       preset_ppp stop $PPP_NR
+    fi
+    isdnctrl addif      $ISDNDEV
+    isdnctrl l2_prot    $ISDNDEV hdlc
+    isdnctrl l3_prot    $ISDNDEV trans
+    isdnctrl eaz        $ISDNDEV $PPP_MSM
+    isdnctrl chargehup  $ISDNDEV on
+    # default 19 sec huptimeout
+    isdnctrl huptimeout $ISDNDEV 19
+    # we accept all incoming telnos
+    isdnctrl secure     $ISDNDEV off
+    isdnctrl ihup       $ISDNDEV off
+    isdnctrl callback   $ISDNDEV off
+    isdnctrl encap      $ISDNDEV syncppp
+    ifconfig            $ISDNDEV up
+    ifconfig            $ISDNDEV 1.1.1.1
+  fi
+
+  if [ "$1" = 'stop' ] ; then
+    if [ "$PPPID" != "" ] ; then
+      kill -TERM $PPPID
+      sleep 1
+      kill -9 $PPPID
+    fi
+    PPPID=`ps -xa | fgrep ipppd | fgrep $ISDNDEV | awk '{print $1}'`
+    if [ "$PPPID" != "" ] ; then
+      kill -TERM $PPPID
+      sleep 1
+      kill -9 $PPPID
+    fi
+    ifconfig  $ISDNDEV down
+    isdnctrl  delif $ISDNDEV
+  fi
+}
+
+handle_gast_ppp()
+# gast PPP  -> PPP_MSM
+{
+  preset_ppp $1 0
+  if [ "$1" = 'start' ] ; then
+     /sbin/ipppd    \
+           $ISDNDEV \
+           user gast \
+           name gast \
+           192.168.60.29:192.168.60.231 \
+           +ipx \
+           ipx-network 0xabc02 \
+           ipx-node  fcfcabba0001:fcfcabba0002 \
+           -vjccomp \
+           mru 1524 \
+           mtu 1500 \
+           -bsdcomp \
+           -defaultroute \
+           auth \
+           &
+  fi
+}
+
+case "$1" in
+
+'start'
+        handle_gast_ppp $1
+        ;;
+'stop')
+        handle_gast_ppp $1
+        ;;
+
+*)      usage: $0 start|stop
+        ;;
+esac
+
+[/etc/ppp/ioptions]
+# empty
+
+
+[/etc/ppp/ipx-up]
+#!/bin/sh
+# let nwserv update internal tables
+/sbin/nwserv -u
+
+[/etc/ppp/ipx-down]
+#!/bin/sh
+# let nwserv update internal tables
+/sbin/nwserv -u
+
+[/etc/ppp/ip-up]
+#!/bin/sh
+PPPDEV=$1
+REMOTEADDR=$5
+# set a host route to ppp client
+/sbin/route add $REMOTEADDR dev $PPPDEV
+
+[/etc/ppp/ip-down]
+#!/bin/sh
+PPPDEV=$1
+REMOTEADDR=$5
+# remove host route to ppp client
+/sbin/route del $REMOTEADDR
+
+[/etc/ppp/chap-secrets]
+gast       *           gast
+*         gast         gast
+
+[/etc/ppp/pap-secrets]
+gast       *           gast
+*         gast         gast
+
+

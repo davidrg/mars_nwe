@@ -287,13 +287,24 @@ int get_ini_entry(FILE *f, int entry, uint8 *str, int strsize)
   return(0);
 }
 
+static uint8 *path_bindery=NULL;
+
 char *get_div_pathes(char *buff, char *name, int what, char *p, ... )
 {
   char *wpath;
   int  len;
+  uint8 locbuf[200];
   switch (what) {
     case  0 : wpath = PATHNAME_PROGS;    break;
-    case  1 : wpath = PATHNAME_BINDERY;  break;
+    case  1 : if (path_bindery==NULL) {
+                if (get_ini_entry(NULL, 45, locbuf, sizeof(locbuf)) 
+                      && *locbuf) {
+                  new_str(path_bindery, locbuf);
+                } else
+                  new_str(path_bindery, PATHNAME_BINDERY);
+              }
+              wpath = path_bindery;  
+              break;
     case  2 : wpath = PATHNAME_PIDFILES; break;
     default : buff[0]='\0';
               return(buff);
@@ -317,19 +328,6 @@ int get_ini_int(int what)
   return(-1);
 }
 
-void get_ini_debug(int module)
-/* what:
- * 1 = nwserv
- * 2 = ncpserv
- * 3 = nwconn
- * 4 = nwclient
- * 5 = nwbind
- * 6 = nwrouted
- */
-{
-  int debug = get_ini_int(100+module);
-  if (debug > -1) nw_debug = debug;
-}
 
 static void sig_segv(int isig)
 {
@@ -372,13 +370,28 @@ void get_debug_level(uint8 *buf)
   int i=sscanf((char*)buf, "%s %s", buf1, buf2);
   if (i > 0) {
     nw_debug=atoi((char*)buf1);
+    debug_mask=0;
     if (i > 1) {
       char dummy;
       if (sscanf(buf2, "%ld%c", &debug_mask, &dummy) != 1)
           sscanf(buf2, "%lx",   &debug_mask);
-    } else
-      debug_mask=0;
+    } 
   }
+}
+
+void get_ini_debug(int module)
+/* what:
+ * 1 = nwserv
+ * 2 = ncpserv
+ * 3 = nwconn
+ * 4 = nwclient
+ * 5 = nwbind
+ * 6 = nwrouted
+ */
+{
+  uint8 buff[300];
+  if (get_ini_entry(NULL, 100+module, buff, sizeof(buff))) 
+    get_debug_level(buff);
 }
 
 void init_tools(int module, int options)

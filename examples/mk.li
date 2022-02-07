@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 19-Oct-96
+# mk.li 10-Jul-97
 # please edit this file !
 
 mk()
@@ -22,15 +22,6 @@ mk()
 
 print_error()
 {
-  if [ "$UNX" = 'linux' ]; then
-    if [ ! -f /usr/include/ndbm.h ] ; then
-      echo "-------------------------------------------------------------"
-      echo "probably you have a broken Linux installation because"
-      echo "'/usr/include/ndbm.h' the include file for the Linux database"
-      echo "is missing."
-      echo "-------------------------------------------------------------"
-    fi
-  fi
   echo ""
   echo "The errors are also reported in '$ERRFILE'"
   echo "============================================================="
@@ -92,6 +83,15 @@ fi
    *) echo "mk.li: Unknown or not supported OS, probably you must set \$UNX"
    ;;
 esac
+
+## BEGIN try to pass around what the dbm is to the compiler (acli 19970709)
+case "$NDBMLIB" in
+*gdbm*)
+  HOSTCFLAGS="$HOSTCFLAGS -DUSE_GDBM"
+  ;;
+esac
+## END
+
 
 export CC
 export CPP

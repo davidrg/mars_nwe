@@ -1,4 +1,4 @@
-/* nwserv.c 02-Jun-97 */
+/* nwserv.c 17-Jul-97 */
 /* MAIN Prog for NWSERV + NWROUTED  */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -35,6 +35,9 @@ int        print_route_tac   = 0;    /* every x broadcasts print it   */
 int        print_route_mode  = 0;    /* append                        */
 char       *pr_route_info_fn = NULL; /* filename                      */
 int        wdogs_till_tics   = 0;    /* send wdogs to all             */
+time_t     acttime_stamp     = 0;    /* actual received time (second) */
+
+
 /* <========== DEVICES ==========> */
 int           count_net_devices=0;
 int           max_net_devices=0;
@@ -110,7 +113,6 @@ static int           sock_nwbind    = -1;
 
 static int           fd_nwbind_in   = -1;  /* ctrl-pipe in from nnwbind */
 
-static  time_t       akttime_stamp             =  0;
 static  int          broadmillisecs            =  2000; /* 2 sec */
 static  time_t       server_down_stamp         =  0;
 static  int          server_goes_down_secs     = 10;
@@ -430,7 +432,7 @@ static void insert_wdog_conn(int conn, ipxAddr_t *adr)
       memset(c, 0, sizeof(CONNECTION));
     }
     c=&(connections[conn-1]);
-    c->last_time = akttime_stamp;
+    c->last_time = acttime_stamp;
     c->counter   = 0;
     if (NULL != adr) memcpy(&(c->addr), adr, sizeof(ipxAddr_t));
   }
@@ -452,7 +454,7 @@ static void modify_wdog_conn(int conn, int mode)
                   break;
 
         default : c->counter      =  0;  /* reset */
-                  c->last_time    = akttime_stamp;
+                  c->last_time    = acttime_stamp;
                   break;
       } /* switch */
     } else if (mode == 99) {  /* remove */
@@ -474,7 +476,7 @@ static void send_wdogs()
   while (k--) {
     CONNECTION  *c = &(connections[k]);
     if (c->last_time) {
-      time_t t_diff = akttime_stamp - c->last_time;
+      time_t t_diff = acttime_stamp - c->last_time;
       if (   (c->counter && t_diff > 50)
           || t_diff > WDOG_TRIE_AFTER_SEC) { /* max. 5 minutes */
         if (c->counter > MAX_WDOG_TRIES) {
@@ -483,7 +485,7 @@ static void send_wdogs()
           write_to_ncpserv(0x5555, k+1, NULL, 0);
         } else {
           ipxAddr_t adr;
-          c->last_time = akttime_stamp;
+          c->last_time = acttime_stamp;
           memcpy(&adr, &(c->addr), sizeof(ipxAddr_t));
           U16_TO_BE16(GET_BE16(adr.sock)+1, adr.sock);
           send_wdog_packet(&adr, k+1, '?');
@@ -532,6 +534,7 @@ static void handle_sap(int fd,
 {
   int query_type   = GET_BE16(ipxdata->sqp.query_type);
   int server_type  = GET_BE16(ipxdata->sqp.server_type);
+  int flag=0;
 
   if (query_type == 3) {
     XDPRINTF((2,0,"SAP NEAREST SERVER request typ=%d from %s",
@@ -569,6 +572,7 @@ static void handle_sap(int fd,
      /* if (hops < 16)  hops++; */
       XDPRINTF((2,0, "TYP=%2d,hops=%2d, Addr=%s, Name=%s", type, hops,
           visable_ipx_adr(ad), name));
+      
       if (handle_all_sap_typs || type == 4) {  /* from Fileserver */
         if (16 == hops) {
           /* shutdown */
@@ -577,13 +581,23 @@ static void handle_sap(int fd,
         } else {
           get_server_data((char*)name, ad, from_addr);
           insert_delete_server(name, type, ad, from_addr, hops, 0, 0);
+          if (type == 4) flag=1;
         }
       }
+
       p+=sizeof(SAPS);
     } /* while */
   } else {
     XDPRINTF((1,0, "UNKNOWN SAP query %x, server %x", query_type, server_type));
   }
+
+#if INTERNAL_RIP_SAP
+  if (flag) {
+    uint32 from_net=GET_BE32(from_addr->net);
+    if (activate_slow_net(from_net))
+      send_sap_rip_broadcast(4);
+  }
+#endif
 }
 
 /*
@@ -944,7 +958,7 @@ static void get_ini(int full)
 #if !IN_NWROUTED
            case  60 : if (full) { /* connections */
                         max_connections=atoi(inhalt);
-                        if (max_connections < 5)
+                        if (max_connections < 1)
                           max_connections=MAX_CONNECTIONS;
                       }
                       break;
@@ -1137,7 +1151,7 @@ static void down_server(void)
     sleep(1);
     fprintf(stderr, "\007\n");
     broadmillisecs  =  100;
-    server_down_stamp = akttime_stamp;
+    server_down_stamp = acttime_stamp;
     send_down_broadcast();
   }
 }
@@ -1265,6 +1279,8 @@ int main(int argc, char **argv)
   set_sigs(0);
   get_ini(1);
 #if !IN_NWROUTED
+  if (max_connections < 1)
+    max_connections=1;
   connections=(CONNECTION*)xcmalloc(max_connections*sizeof(CONNECTION));
 #endif
   j=-1;
@@ -1324,8 +1340,8 @@ int main(int argc, char **argv)
       int anz_poll = poll(polls, NEEDED_POLLS, broadmillisecs);
 #if !IN_NWROUTED
       int call_wdog=0;
-#endif      
-      time(&akttime_stamp);
+#endif
+      time(&acttime_stamp);
 #if !IN_NWROUTED
       if (fl_got_sigchld) {
         int stat_loc=-1;
@@ -1447,11 +1463,11 @@ int main(int argc, char **argv)
       }
 
       if (server_down_stamp) {
-        if (akttime_stamp - server_down_stamp > server_goes_down_secs)
+        if (acttime_stamp - server_down_stamp > server_goes_down_secs)
           server_is_down++;
       } else {
         int bsecs    = broadmillisecs / 1000;
-        int difftime = akttime_stamp - broadtime;
+        int difftime = acttime_stamp - broadtime;
         if (difftime > bsecs) {
           send_sap_rip_broadcast((bsecs < 3) ? 1 : 0);  /* firsttime broadcast */
           if (bsecs < server_broadcast_secs) {
@@ -1465,7 +1481,7 @@ int main(int argc, char **argv)
 #if !IN_NWROUTED
           send_wdogs();
 #endif
-          broadtime = akttime_stamp;
+          broadtime = acttime_stamp;
         } else {
 #if !IN_NWROUTED
           if (call_wdog) send_wdogs(1);

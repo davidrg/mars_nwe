@@ -1,4 +1,4 @@
-/* ncpserv.c 02-Jun-97 */
+/* ncpserv.c 29-Jul-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,9 +31,6 @@ static  char       my_nwname[50];
 static  time_t 	   akttime;
 static  int        server_goes_down=0;
 static  int 	   ipx_out_fd=-1;
-#if 0
-static  int        tells_server_version=1;
-#endif
 static  int        sock_nwbind=-1;
 static  int        sock_echo  =-1;
 static  int        highest_fd = 10;
@@ -56,7 +53,7 @@ static int get_ini(int full)
     while (0 != (what =get_ini_entry(f, 0, buff, sizeof(buff)))) {
       if (60 == what && full) {   /* max_connections */
         max_connections=atoi((char*)buff);
-        if (max_connections < 5)
+        if (max_connections < 1)
           max_connections=MAX_CONNECTIONS;
       } else if (400 == what) {   /* station file */
         new_str(station_fn, buff);
@@ -711,6 +708,8 @@ int main(int argc, char *argv[])
     return(1);
   }
   get_ini(1);
+  if (max_connections < 1)
+    max_connections=1;
   connections=(CONNECTION*)xcmalloc(max_connections*sizeof(CONNECTION));
   strncpy(my_nwname, argv[1], 48);
   my_nwname[47] = '\0';

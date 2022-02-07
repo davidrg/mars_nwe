@@ -1,0 +1,64 @@
+/* some notes for using PPP */
+Mars_nwe works well with ppp and ippp Devices.
+This files describes example for ppp device.
+The file PPP.isdn describes example for ippp device.
+
+Simple sample config files for a ppp server using ppp0 as ppp device.
+We configure TCP-IP and IPX ppp connections.
+
+Notes:
+- ppp must be compiled into kernel or must be loaded as module.
+- mgetty has to be compiled with "-DAUTO_PPP" for this to work.
+- pppd has to be compiled with IPX.
+
+
+[nwserv.conf]
+ 4  0x0  ppp0  AUTO  7   # ticks > 6 to filter RIP/SAP.
+                         # 'auto device'
+
+[/usr/etc/mgetty+sendfax/login.config]
+/AutoPPP/ -	ppp	/usr/sbin/pppd auth
+
+[/etc/ppp/options]
+#--- first we configure IPX of course ;-) ---
+#use RIP/SAP routing
+ipx-routing    2
+#ipx-network must be uniq !
+ipx-network    0xabc01
+# IPX-NODE local:remote
+ipx-node       1:2
+#
+#--- TCP/IP is usefull too.  ---
+# IP-address
+#local:remote
+192.168.60.29:192.168.60.230
+#we do not let ppp set defaultroute
+#we set routes in ip-up / ip-down scripts.
+-defaultroute
+
+[/etc/ppp/ipx-up]
+#!/bin/sh
+# let nwserv update internal tables
+/sbin/nwserv -u
+
+[/etc/ppp/ipx-down]
+#!/bin/sh
+# let nwserv update internal tables
+/sbin/nwserv -u
+
+[/etc/ppp/ip-up]
+#!/bin/sh
+PPPDEV=$1
+REMOTEADDR=$5
+# set a host route to ppp client
+/sbin/route add $REMOTEADDR dev $PPPDEV
+
+[/etc/ppp/ip-down]
+#!/bin/sh
+PPPDEV=$1
+REMOTEADDR=$5
+# remove host route to ppp client
+/sbin/route del $REMOTEADDR
+
+
+

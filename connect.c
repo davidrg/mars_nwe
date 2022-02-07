@@ -1,4 +1,4 @@
-/* connect.c  11-Jun-97 */
+/* connect.c  29-Jul-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,7 +26,8 @@
 */
 
 int use_mmap=USE_MMAP;
-int tells_server_version=1;
+int tells_server_version=1;   /* defaults to 3.11 */
+int server_version_flags=0;
 int max_burst_send_size=0x2000;
 int max_burst_recv_size=0x2000;
 
@@ -262,6 +263,12 @@ void set_guid(int gid, int uid)
 void reset_guid(void)
 {
   set_guid(act_gid, act_uid);
+}
+
+void reseteuid(void)
+{
+  if (seteuid(act_uid))
+    reset_guid();
 }
 
 void set_act_obj_id(uint32 obj_id)
@@ -1138,7 +1145,7 @@ int un_nw_rights(struct stat *stb)
 static int get_file_attrib(NW_FILE_INFO *f, struct stat *stb,
                            NW_PATH *nwpath)
 {
-  int voloptions=get_volume_options(nwpath->volume, 1);
+  int voloptions=get_volume_options(nwpath->volume);
   strncpy((char*)f->name, (char*)nwpath->fn, sizeof(f->name));
   f->attrib=0;  /* d->name could be too long */
   up_fn(f->name);
@@ -1185,12 +1192,7 @@ static int do_delete_file(NW_PATH *nwpath, FUNC_SEARCH *fs)
   char           unname[256];
   strcpy(unname, build_unix_name(nwpath, 0));
   XDPRINTF((5,0,"DELETE FILE unname:%s:", unname));
-  if (get_volume_options(nwpath->volume, 1) & VOL_OPTION_IS_PIPE)
-      return(0); /* don't delete 'pipe commands' */
-  else if (get_volume_options(nwpath->volume, 1) & VOL_OPTION_READONLY)
-      return(-0x8a); /* don't delete 'readonly' */
-  if (!unlink(unname)) return(0);
-  return(-0x8a); /* NO Delete Privileges */
+  return(nw_unlink(nwpath->volume, unname));
 }
 
 int nw_delete_datei(int dir_handle, uint8 *data, int len)
@@ -1212,7 +1214,7 @@ static int do_set_file_info(NW_PATH *nwpath, FUNC_SEARCH *fs)
   NW_FILE_INFO *f=(NW_FILE_INFO*)fs->ubuf;
   int voloption;
   strcpy(unname, build_unix_name(nwpath, 0));
-  if ((voloption = get_volume_options(nwpath->volume, 1)) & VOL_OPTION_IS_PIPE){
+  if ((voloption = get_volume_options(nwpath->volume)) & VOL_OPTION_IS_PIPE){
     ;;   /* don't change 'pipe commands' */
   } else if (voloption & VOL_OPTION_READONLY) {
     result=(-0x8c); /* no modify rights */
@@ -1286,7 +1288,7 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
   if (completition > -1) {
     char unname[256];
     strcpy(unname, build_unix_name(&nwpath, 2));
-    if (get_volume_options(nwpath.volume, 1) & VOL_OPTION_READONLY)
+    if (get_volume_options(nwpath.volume) & VOL_OPTION_READONLY)
        return(mode ? -0x84 : -0x8a);
     if (mode) {
       XDPRINTF((5,0,"MKDIR dirname:%s:", unname));
@@ -1336,8 +1338,8 @@ int mv_file(int qdirhandle, uint8 *q, int qlen,
   if (completition > -1) {
     completition=conn_get_kpl_path(&zielpath,    zdirhandle, z, zlen, 0);
     if (completition > -1) {
-      int optq = get_volume_options(quellpath.volume, 1);
-      int optz = get_volume_options(zielpath.volume,  1);
+      int optq = get_volume_options(quellpath.volume);
+      int optz = get_volume_options(zielpath.volume);
       if      ((optq & VOL_OPTION_IS_PIPE) ||
                (optz & VOL_OPTION_IS_PIPE)) completition = -0x8b;
       else if ((optq & VOL_OPTION_READONLY) ||
@@ -1386,8 +1388,8 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
     completition=conn_get_kpl_path(&zielpath, dir_handle, z, zlen, 0);
 #endif
     if (completition > -1) {
-      int optq = get_volume_options(quellpath.volume, 1);
-      int optz = get_volume_options(zielpath.volume,  1);
+      int optq = get_volume_options(quellpath.volume);
+      int optz = get_volume_options(zielpath.volume);
       if      ((optq & VOL_OPTION_IS_PIPE) ||
                (optz & VOL_OPTION_IS_PIPE)) completition = -0x8b;
       else if ((optq & VOL_OPTION_READONLY) ||
@@ -1507,7 +1509,10 @@ int nw_init_connect(void)
 
     while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))) {
       if (what == 6) { /* version */
-        tells_server_version = atoi(buff);
+        if (2 != sscanf((char*)buff, "%d %x", 
+               &tells_server_version,
+               &server_version_flags)) 
+          server_version_flags=0;
       } else if (what == 8) { /* entry8_flags */
         entry8_flags = hextoi((char*)buff);
       } else if (what == 9) { /* GID */
@@ -1543,7 +1548,7 @@ int nw_init_connect(void)
       errorp(1, "No Volumes defined. Look at ini file entry 1, Abort !!", NULL);
       return(-1);
     }
-    if (get_volume_options(0, 1) & VOL_OPTION_DOWNSHIFT)
+    if (get_volume_options(0) & VOL_OPTION_DOWNSHIFT)
       down_fn(nwlogin.path);
     if (stat(build_unix_name(&nwlogin, 0), &stbuff)) {
       errorp(1, "Stat error LOGIN Directory, Abort !!",
@@ -1988,7 +1993,7 @@ void get_dos_file_attrib(NW_DOS_FILE_INFO *f,
 {
   uint8  spath[14];
   uint32 nw_owner=get_file_owner(stb);
-  int voloptions=get_volume_options(volume, 1);
+  int voloptions=get_volume_options(volume);
   f->namlen=min(strlen((char*)path), 12);
   strmaxcpy(spath, path, 12);
   up_fn(spath);

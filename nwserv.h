@@ -1,4 +1,4 @@
-/* nwserv.h 10-Apr-97 */
+/* nwserv.h 17-Jul-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,14 +26,17 @@ extern int       print_route_tac;     /* every x broadcasts print it   */
 extern int       print_route_mode;    /* append                        */
 extern char      *pr_route_info_fn;   /* filename                      */
 extern int       wdogs_till_tics;
+extern time_t    acttime_stamp;
 
 typedef struct {
-  char     *devname;   /* "eth0" or "isdnX"  or ??    */
-  int      frame;      /* frametyp                    */
-  int      ticks;      /* ether:ticks=1, isdn:ticks=7 */
-  uint32   net;        /* NETWORK NUMBER              */
-  int      is_up;      /* Is this device up ?         */
-  int      wildmask;   /* wildmask, 1=name, 2=frame, 4=net */
+  char     *devname;     /* "eth0" or "isdnX"  or ??    */
+  int      frame;        /* frametyp                    */
+  int      ticks;        /* ether:ticks=1, isdn:ticks=7 */
+  uint32   net;          /* NETWORK NUMBER              */
+  int      is_up;        /* Is this device up ?         */
+  int      wildmask;     /* wildmask, 1=name, 2=frame, 4=net */
+  time_t   updated_time;
+  int      needs_update;
 } NW_NET_DEVICE;
 
 /* <========== DEVICES ==========> */
@@ -90,8 +93,9 @@ extern void handle_rip(int fd, int ipx_pack_typ,
                 int data_len, IPX_DATA *ipxdata,
                 ipxAddr_t *from_addr);
 
+extern int activate_slow_net(uint32 net);
 
-extern  void insert_delete_server(uint8  *name,
+extern void insert_delete_server(uint8  *name,
                                  int        styp,
                                  ipxAddr_t *addr,
                                  ipxAddr_t *from_addr,

@@ -1,4 +1,4 @@
-/* unxfile.c:  20-Nov-96*/
+/* unxfile.c:  09-Jul-97*/
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -20,7 +20,6 @@
 #include "net.h"
 #include "unxfile.h"
 
-#if  1
 int unx_mvdir(uint8 *oldname, uint8 *newname)
 {
   struct stat statb;
@@ -47,8 +46,28 @@ int unx_mvfile_or_dir(uint8 *oldname, uint8 *newname)
   return( (rename(oldname, newname) < 0) ? errno : 0);
 }
 
+int unx_xmkdir(char *unixname, int mode)
+{
+  if  (mkdir(unixname, mode)) {
+    char *p=unixname;
+    while (NULL != (p=strchr(p+1, '/'))) {
+      *p = '\0';
+      if (!mkdir(unixname, mode))
+         chmod(unixname, mode);
+      *p='/';
+    }
+    if (!mkdir(unixname, mode)) {
+      chmod(unixname, mode);
+      return(0);
+    }
+  } else {
+    chmod(unixname, mode);
+    return(0);
+  }
+  return(-1);
+}
 
-#else
+#if  0
 int unx_mvdir(uint8 *oldname, uint8 *newname)
 {
   uint8 command[500];

@@ -1,4 +1,4 @@
-/* connect.h 02-Jun-97 */
+/* connect.h 29-Jul-97 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
 
@@ -108,6 +108,7 @@ typedef struct {
 
 extern int use_mmap;
 extern int tells_server_version;
+extern int server_version_flags;
 extern int max_burst_send_size;
 extern int max_burst_recv_size;
 
@@ -219,6 +220,7 @@ extern int conn_get_kpl_unxname(char *unixname,
 extern void   set_default_guid(void);
 extern void   set_guid(int gid, int uid);
 extern void   reset_guid(void);
+extern void   reseteuid(void);
 extern void   set_act_obj_id(uint32 obj_id);
 extern int    in_act_groups(gid_t gid);
 extern int    get_real_access(struct stat *stb);

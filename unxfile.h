@@ -1,4 +1,4 @@
-/* unxfile.h:  18-Jun-97*/
+/* unxfile.h:  09-Jul-97*/
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -20,5 +20,6 @@
 extern int unx_mvdir(uint8  *oldname, uint8 *newname);
 extern int unx_mvfile(uint8 *oldname, uint8 *newname);
 extern int unx_mvfile_or_dir(uint8 *oldname, uint8 *newname);
+extern int unx_xmkdir(char *unixname, int mode);
 #endif
 

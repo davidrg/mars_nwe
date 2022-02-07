@@ -101,9 +101,6 @@ extern int nw_change_obj_security(NETOBJ *o, int newsecurity);
 extern int nw_get_obj(NETOBJ *o);
 
 
-extern int prop_find_member(uint32 obj_id, int prop_id, uint32 member_id);
-extern int prop_add_member(uint32 obj_id, int prop_id, uint32 member_id);
-
 extern int nw_get_prop_val_by_obj_id(uint32 obj_id,
                               int   segment_nr,
 	        	      uint8 *prop_name, int prop_namlen,

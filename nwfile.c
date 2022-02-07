@@ -1,4 +1,4 @@
-/* nwfile.c  02-Jun-97 */
+/* nwfile.c  25-Jul-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -24,6 +24,7 @@
 #include <sys/errno.h>
 
 #include "nwvolume.h"
+#include "nwshare.h"
 #include "nwfile.h"
 #include "connect.h"
 #include "nwconn.h"
@@ -40,13 +41,13 @@ void sig_bus_mmap(int rsig)
 
 static FILE_HANDLE  file_handles[MAX_FILE_HANDLES_CONN];
 #define    HOFFS        0
-static int anz_fhandles=0;
+static int count_fhandles=0;
 
 static int new_file_handle(uint8 *unixname, int task)
 {
   int fhandle = HOFFS -1;
   FILE_HANDLE  *fh=NULL;
-  while (++fhandle < anz_fhandles) {
+  while (++fhandle < count_fhandles) {
     fh=&(file_handles[fhandle]);
     if (fh->fd == -1 && !(fh->fh_flags & FH_DO_NOT_REUSE)) { /* empty slot */
       fhandle++;
@@ -54,9 +55,9 @@ static int new_file_handle(uint8 *unixname, int task)
     } else fh=NULL;
   }
   if (fh == NULL) {
-    if (anz_fhandles < MAX_FILE_HANDLES_CONN) {
-      fh=&(file_handles[anz_fhandles]);
-      fhandle = ++anz_fhandles;
+    if (count_fhandles < MAX_FILE_HANDLES_CONN) {
+      fh=&(file_handles[count_fhandles]);
+      fhandle = ++count_fhandles;
     } else {
       XDPRINTF((1, 0, "No more free file handles"));
       return(0); /* no free handle anymore */
@@ -67,11 +68,12 @@ static int new_file_handle(uint8 *unixname, int task)
   fh->fd      = -2;
   fh->offd    = 0L;
   fh->tmodi   = 0L;
+  fh->st_ino  = 0;
   strcpy((char*)fh->fname, (char*)unixname);
   fh->fh_flags   = 0;
   fh->f       = NULL;
-  XDPRINTF((5, 0, "new_file_handle=%d, anz_fhandles=%d, fn=%s",
-       fhandle, anz_fhandles, unixname));
+  XDPRINTF((5, 0, "new_file_handle=%d, count_fhandles=%d, fn=%s",
+       fhandle, count_fhandles, unixname));
 
   if (fhandle == ipx_io.fh_r){
     ipx_io.fh_r= 0;
@@ -97,7 +99,7 @@ static int free_file_handle(int fhandle)
     ipx_io.fd_w=-1;
   }
 
-  if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
+  if (fhandle > HOFFS && (fhandle <= count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
       if (fh->fh_flags & FH_IS_PIPE_COMMAND) {
@@ -110,6 +112,8 @@ static int free_file_handle(int fhandle)
           fh->size_mmap = 0;
         }
         close(fh->fd);
+        if (fh->st_ino)
+          share_file(fh->st_dev, fh->st_ino, 0);
       }
       if (fh->tmodi > 0L && !(FH_IS_PIPE_COMMAND & fh->fh_flags)
                          && !(FH_IS_READONLY     & fh->fh_flags) ) {
@@ -121,17 +125,15 @@ static int free_file_handle(int fhandle)
       }
     }
     fh->fd = -1;
-    if (fhandle == anz_fhandles && !(fh->fh_flags & FH_DO_NOT_REUSE)) {
-      /* was last */
-      anz_fhandles--;
-      while (anz_fhandles > HOFFS && file_handles[anz_fhandles-1].fd == -1
-        && !(file_handles[anz_fhandles-1].fh_flags & FH_DO_NOT_REUSE) )
-          anz_fhandles--;
+    while (count_fhandles > fhandle
+          && file_handles[count_fhandles-1].fd == -1
+          && !(file_handles[count_fhandles-1].fh_flags & FH_DO_NOT_REUSE) ) {
+      count_fhandles--;
     }
     result=0;
   }
-  XDPRINTF((5, 0, "free_file_handle=%d, anz_fhandles=%d, result=%d",
-          fhandle, anz_fhandles, result));
+  XDPRINTF((5, 0, "free_file_handle=%d, count_fhandles=%d, result=%d",
+          fhandle, count_fhandles, result));
   return(result); /* wrong filehandle */
 }
 
@@ -143,12 +145,12 @@ void init_file_module(int task)
 {
   int k = HOFFS;
   if (task < 0) {
-    while (k++ < anz_fhandles)
+    while (k++ < count_fhandles)
       free_file_handle(k);
-    anz_fhandles = HOFFS;
+    count_fhandles = HOFFS;
   } else {
     /* I hope next is ok, added 20-Oct-96 ( 0.98.pl5 ) */
-    while (k++ < anz_fhandles) {
+    while (k++ < count_fhandles) {
       FILE_HANDLE  *fh=&(file_handles[k-1]);
       if (fh->task == task) {
         free_file_handle(k);
@@ -212,7 +214,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
    if (fhandle > HOFFS){
      FILE_HANDLE *fh=&(file_handles[fhandle-1]);
      int completition = 0;  /* first ok */
-     int voloptions   = get_volume_options(volume, 1);
+     int voloptions   = get_volume_options(volume);
      int acc          = (!stat(fh->fname, stbuff))
                            ? get_real_access(stbuff) : -1;
 
@@ -241,6 +243,13 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
               completition = (creatmode) ? -0x84 : -0x94;
            } else if (!(acc & R_OK) && !(creatmode & 0x8) )
              completition = -0x93;
+
+           if ((!completition) && !S_ISFIFO(stbuff->st_mode) && dowrite){
+             /* is this file already opened write deny by other process */
+             if (-1 == share_file(stbuff->st_dev, stbuff->st_ino, 0x12|0x8))
+               completition=-0x80;
+           }
+
          } else if (acc & X_OK) {
            /* special Handling for PIPE commands */
            if (!(acc & W_OK)) {
@@ -367,38 +376,35 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          }
 
          if (fh->fd > -1) {
+           if (did_grpchange) {
+             xsetegid(act_gid);
+             did_grpchange=0;
+           }
            if (!(fh->fh_flags & FH_IS_PIPE)) {
              /* Not a PIPE */
-             if ((access & 0x4) || (access & 0x8)) {
-               /* we use file sharing */
-               struct flock flockd;
-               int result = (access & 0x4) ? 1 : 0;  /* here for writelock */
-#if 0
-               if (result != dowrite) {
-                 XDPRINTF((1,0, "OpenFile:Share(access)=0x%x clashes openmode=%s, file=%s",
-                    access, (dowrite) ? "W" : "R", fh->fname));
-                 result = dowrite;
-               }
-#else
-               if ((!dowrite) && result) {
-                 XDPRINTF((1,0, "OpenFile:Share(access)=0x%x clashes R-open file=%s",
-                    access, fh->fname));
-                 result = dowrite;
-               }
-#endif
-               flockd.l_type   = (result) ? F_WRLCK : F_RDLCK;
-               flockd.l_whence = SEEK_SET;
-               flockd.l_start  = 0;
-               flockd.l_len    = 0;
-               result = fcntl(fh->fd, F_SETLK, &flockd);
+             int result=0;
+             fh->st_dev=stbuff->st_dev;
+             fh->st_ino=stbuff->st_ino;
+             if ( (!result) && ((access & 0x4) || (access & 0x8)) ) {
+               if (access & 0x4) /* deny read */
+                 result=share_file(stbuff->st_dev, stbuff->st_ino, 0x5);
+               if ((access & 0x8) && !result)
+                 result=share_file(stbuff->st_dev, stbuff->st_ino, 0x2);
                XDPRINTF(((result==-1)?2:5, 0,  "open shared lock:result=%d,fn='%s'",
                          result, fh->fname));
-               if (result == -1) {
-                 close(fh->fd);
-                 fh->fd = -1;
-                 completition=-0xfe;
+             } else {
+               result=share_file(stbuff->st_dev, stbuff->st_ino, 1);
+               if (result==-1) {
+                 XDPRINTF((2, 0, "open share failed,fn='%s'", fh->fname));
                }
              }
+             if (result==-1) {
+               close(fh->fd);
+               fh->fd       = -1;
+               completition = -0x80;
+               /* 0.99.pl0 changed -0xfe -> -0x80 */
+             }
+
              if (use_mmap && fh->fd > -1 && !dowrite) {
                fh->size_mmap = fh->offd=lseek(fh->fd, 0L, SEEK_END);
                if (fh->size_mmap > 0) {
@@ -416,14 +422,14 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
            }
          }
          if (fh->fd > -1) {
+           if (did_grpchange)
+             xsetegid(act_gid);
            if (!dowrite)
               fh->fh_flags |= FH_OPENED_RO;
            if (voloptions & VOL_OPTION_READONLY)
               fh->fh_flags |= FH_IS_READONLY;
            if (creatmode & 4)
              fh->fh_flags |= FH_DO_NOT_REUSE;
-           if (did_grpchange)
-             xsetegid(act_gid);
            goto file_creat_open_ret;
          }
        } /* else (note pipecommand) */
@@ -450,22 +456,33 @@ file_creat_open_ret:
 
 int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
 {
-  if (fhandle > HOFFS && (--fhandle < anz_fhandles) ) {
+  if (fhandle > HOFFS && (--fhandle < count_fhandles) ) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
-    if (fh->fd > -1) {
-      if (!(fh->fh_flags & FH_IS_READONLY)) {
-        fh->tmodi = nw_2_un_time(datum, zeit);
-        return(0);
-      } else return(-0x8c);
-    } else if (fh->fd == -3) return(0);
+    if (fh->fd == -3 || (fh->fh_flags & FH_IS_PIPE)) return(0);
+    if (!(fh->fh_flags & FH_IS_READONLY)) {
+      fh->tmodi = nw_2_un_time(datum, zeit);
+      if (fh->fd == -1) { /* already closed */
+#if 0
+      /* don't know whether we should do it in this way */
+        struct utimbuf ut;
+        if (!*(fh->fname))
+          return(-0x88); /* wrong filehandle */
+        ut.actime = ut.modtime = fh->tmodi;
+        utime(fh->fname, &ut);
+#else
+        return(-0x88); /* wrong filehandle */
+#endif
+      }
+      return(0);
+    } else return(-0x8c); /* no modify privileges */
   }
   return(-0x88); /* wrong filehandle */
 }
 
 int nw_close_file(int fhandle, int reset_reuse)
 {
-  XDPRINTF((5, 0, "nw_close_file handle=%d, anz_fhandles",
-     fhandle, anz_fhandles));
+  XDPRINTF((5, 0, "nw_close_file handle=%d, count_fhandles",
+     fhandle, count_fhandles));
 
   MDEBUG(D_FH_OPEN, {
     char fname[200];
@@ -473,7 +490,7 @@ int nw_close_file(int fhandle, int reset_reuse)
     xdprintf(1,0,"nw_close_file: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
   })
 
-  if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
+  if (fhandle > HOFFS && (fhandle <= count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (reset_reuse) fh->fh_flags &= (~FH_DO_NOT_REUSE);
     if (fh->fd > -1 || (fh->fd == -3 && fh->fh_flags & FH_IS_PIPE_COMMAND)) {
@@ -492,6 +509,8 @@ int nw_close_file(int fhandle, int reset_reuse)
           fh->size_mmap = 0;
         }
         result=close(fh->fd);
+        if (fh->st_ino)
+          share_file(fh->st_dev, fh->st_ino, 0);
       }
       fh->fd = -1;
       if (fh->tmodi > 0L && !(fh->fh_flags & FH_IS_PIPE)
@@ -522,12 +541,17 @@ int nw_commit_file(int fhandle)
     int r=fd_2_fname(fhandle, fname, sizeof(fname));
     xdprintf(1,0,"nw_commit_file: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
   })
-  if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
+  if (fhandle > HOFFS && (fhandle <= count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1 || (fh->fd == -3 && fh->fh_flags & FH_IS_PIPE_COMMAND)) {
       if (!(fh->fh_flags & FH_IS_READONLY)) {
         int result=0;
         if (!(fh->fh_flags & FH_IS_PIPE) && fh->fd > -1) {
+#if 0
+          /* 0.99.pl0
+           * this is not allowed because lockings will be removed
+           * hint from: Przemyslaw Czerpak
+           */
           int fd=dup(fh->fd);
           if (fd > -1) {
             if (!close(fh->fd)) {
@@ -542,6 +566,13 @@ int nw_commit_file(int fhandle)
               result=-0x8c;
             close(fd);
           }
+#else
+          if (fh->tmodi > 0L) {
+            struct utimbuf ut;
+            ut.actime = ut.modtime = fh->tmodi;
+            utime(fh->fname, &ut);
+          }
+#endif
         }
         return(result);
       } else
@@ -554,7 +585,7 @@ int nw_commit_file(int fhandle)
 
 uint8 *file_get_unix_name(int fhandle)
 {
-  if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
+  if (fhandle > HOFFS && (--fhandle < count_fhandles)) {
     return((uint8*)file_handles[fhandle].fname);
   }
   return(NULL);
@@ -575,7 +606,7 @@ static void open_pipe_command(FILE_HANDLE *fh, int dowrite)
 
 int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
 {
-  if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
+  if (fhandle > HOFFS && (--fhandle < count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fh_flags & FH_IS_PIPE_COMMAND)
         open_pipe_command(fh, 0);
@@ -637,7 +668,7 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
 
 int nw_seek_file(int fhandle, int modus)
 {
-  if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
+  if (fhandle > HOFFS && (--fhandle < count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
@@ -659,7 +690,7 @@ int nw_seek_file(int fhandle, int modus)
 
 int nw_write_file(int fhandle, uint8 *data, int size, uint32 offset)
 {
-  if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
+  if (fhandle > HOFFS && (--fhandle < count_fhandles)) {
     FILE_HANDLE *fh=&(file_handles[fhandle]);
     if (fh->fh_flags & FH_IS_PIPE_COMMAND)
         open_pipe_command(fh, 1);
@@ -706,8 +737,8 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
                    int zfhandle, uint32 zoffset,
                    uint32 size)
 {
-  if (qfhandle > HOFFS && (--qfhandle < anz_fhandles)
-    && zfhandle > HOFFS && (--zfhandle < anz_fhandles) ) {
+  if (qfhandle > HOFFS && (--qfhandle < count_fhandles)
+    && zfhandle > HOFFS && (--zfhandle < count_fhandles) ) {
     FILE_HANDLE *fhq=&(file_handles[qfhandle]);
     FILE_HANDLE *fhz=&(file_handles[zfhandle]);
     int retsize = -1;
@@ -745,7 +776,7 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
 int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock)
 {
   int result=-0x88;  /* wrong filehandle */
-  if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
+  if (fhandle > HOFFS && (fhandle <= count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
       struct flock flockd;
@@ -767,7 +798,7 @@ int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock)
        */
       flockd.l_start  = (offset & 0x7fffffff);
 #endif
-      
+
       if (size == MAX_U32) {
        /*  This is only a guess, but a size of 0xffffffff means to lock
         *  the rest of the file, starting from the offset, to do this with
@@ -778,12 +809,13 @@ int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock)
         flockd.l_len  = 0;
       } else
         flockd.l_len  = (size & 0x7fffffff);
-      
+
       result = fcntl(fh->fd, F_SETLK, &flockd);
       XDPRINTF((2, 0,  "nw_%s_datei result=%d, fh=%d, offset=%d, size=%d",
         (do_lock) ? "lock" : "unlock", result, fhandle, offset, size));
       if (result)
-         result= (do_lock) ? -0xfd : -0xff;
+         result= (do_lock) ? -0xfe : -0xff;
+       /* 0.99.pl0: changed -0xfd -> -0xfe, hint from Przemyslaw Czerpak */
     } else if (fh->fd == -3) result=0;
   }
 leave:
@@ -800,7 +832,7 @@ leave:
 
 int fd_2_fname(int fhandle, char *buf, int bufsize)
 {
-  if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
+  if (fhandle > HOFFS && (--fhandle < count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     strmaxcpy(buf, fh->fname, bufsize-1);
     return(0);
@@ -812,18 +844,37 @@ int fd_2_fname(int fhandle, char *buf, int bufsize)
 
 FILE_HANDLE *fd_2_fh(int fhandle)
 {
-  if (fhandle > HOFFS && (--fhandle < anz_fhandles))
+  if (fhandle > HOFFS && (--fhandle < count_fhandles))
     return(&(file_handles[fhandle]));
   return(NULL);
 }
 
 int get_nwfd(int fhandle)
 {
-  if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
+  if (fhandle > HOFFS && (--fhandle < count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     return(fh ? fh->fd : -1);
   }
   return(-1);
+}
+
+int nw_unlink(int volume, char *name)
+{
+  struct stat stbuff;
+  if (get_volume_options(volume) & VOL_OPTION_IS_PIPE)
+    return(0); /* don't delete 'pipe commands' */
+  else if (get_volume_options(volume) & VOL_OPTION_READONLY)
+    return(-0x8a); /* don't delete 'readonly' */
+  if (stat(name, &stbuff))
+    return(-0x9c); /* wrong path */
+
+  if (  -1 == share_file(stbuff.st_dev, stbuff.st_ino, 0x12|0x8)
+     || ( !(entry8_flags&0x10) &&
+       -1 == share_file(stbuff.st_dev, stbuff.st_ino, 0x11|0x4)) )
+    return(-0x8a); /* NO Delete Privileges */
+  if (!unlink(name))
+    return(0);
+  return(-0x8a); /* NO Delete Privileges */
 }
 
 

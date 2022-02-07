@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "07-Jul-97"
+#define REVISION_DATE "22-Jul-97"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -138,7 +138,7 @@ int b_acc(uint32 obj_id, int security, int forwrite)
 
     default   : errcode = -0xff; break;
   }
-  XDPRINTF((1, 0, "b_acc no rights for 0x%x to %s %s",
+  XDPRINTF((2, 0, "b_acc no rights for 0x%x to %s %s",
                   act_c->object_id, acc_what, acc_typ));
   return(errcode);
 }
@@ -195,6 +195,8 @@ static int build_login_response(uint8 *responsedata, uint32 obj_id)
   int result;
   act_c->object_id = obj_id;     /* actuell Object ID  */
   act_c->t_login   = akttime;    /* and login Time     */
+  
+  internal_act=1;
   get_guid((int*) responsedata,
            (int*) (responsedata+sizeof(int)),
            obj_id, pw_name);
@@ -205,6 +207,7 @@ static int build_login_response(uint8 *responsedata, uint32 obj_id)
   result = 3 * sizeof(int) + 1 + (int) *(responsedata+ 3 * sizeof(int));
   write_utmp(1, act_connection, act_c->pid_nwconn,
                  &(act_c->client_adr), pw_name);
+  internal_act=0;
   return(result);
 }
 
@@ -465,6 +468,7 @@ static void handle_fxx(int gelen, int func)
                     xstrmaxcpy(obj.name, p+3, (int) *(p+2));
                     upstr(obj.name);
                     xstrmaxcpy(password, p1+1, (int) *p1);
+                    if (*p1) memset(p1+1, 0, *p1);
                     XDPRINTF((10, 0, "LOGIN unencrypted PW NAME='%s', PASSW='%s'",
                              obj.name, password));
                     if (0 == (result = find_obj_id(&obj))) {
@@ -490,6 +494,7 @@ static void handle_fxx(int gelen, int func)
                       result = nw_test_adr_time_access(obj.id, &(act_c->client_adr));
                       internal_act = 0;
                     }
+                    memset(password, 0, 50);
                     if (!result)
                       data_len = build_login_response(responsedata, obj.id);
                     else
@@ -857,10 +862,15 @@ static void handle_fxx(int gelen, int func)
                       p+=2;
                       xstrmaxcpy(obj.name,     p+1, (int) *p);
                       upstr(obj.name);
+                      
                       p +=   ((*p)+1);
                       xstrmaxcpy(oldpassword,  p+1, (int) *p);
+                      if (*p) memset(p+1, 0, *p);
+                      
                       p +=   ((*p)+1);
                       xstrmaxcpy(newpassword,  p+1, (int) *p);
+                      if (*p) memset(p+1, 0, *p);
+                      
                       if (0 == (result = find_obj_id(&obj))) {
                         XDPRINTF((6, 0, "CHPW: OLD=`%s`, NEW=`%s`", oldpassword,
                                          newpassword));
@@ -879,6 +889,8 @@ static void handle_fxx(int gelen, int func)
                         internal_act = 0;
                       }
                       if (result < 0) completition = (uint8) -result;
+                      memset(oldpassword, 0, 50);
+                      memset(newpassword, 0, 50);
                     } else {
                       XDPRINTF((1, 0, "Change object password unencryted not enabled"));
                       completition=0xff;
@@ -1136,7 +1148,16 @@ static void handle_fxx(int gelen, int func)
                     if (result > -1) {
                       *(dir_name-1)  = result;
                       data_len       = result+1;
-                    } else completition = (uint8) -result;
+                    } else {
+                    /*
+                       static int re=0x96;
+                      */
+                      completition = (uint8) 0xd3; /* err no queue rights */
+                      /*
+                      if (re == 0x96) re=0xd0;
+                      else if (re < 0xff) ++re;
+                      */
+                    }
                   }
                   break;
 
@@ -1148,7 +1169,7 @@ static void handle_fxx(int gelen, int func)
                     if (result > -1) {
                       *(prc-1)       = result;
                       data_len       = result+1;
-                    } else completition = (uint8) -result;
+                    } else completition = (uint8) 0xff; 
                   }
                   break;
 
@@ -1452,8 +1473,10 @@ int main(int argc, char *argv[])
   }
   internal_act = 0;
   max_connections=get_ini_int(60); /* max_connections */
-  if (max_connections < 5)
+  if (max_connections < 1)
     max_connections=MAX_CONNECTIONS;
+  if (max_connections < 1)
+    max_connections=1;
   connections=(CONNECTION*)xcmalloc(max_connections*sizeof(CONNECTION));
   max_nw_vols=get_ini_int(61); /* max. volumes */
   if (max_nw_vols < 1)
@@ -1524,10 +1547,15 @@ int main(int argc, char *argv[])
       got_sig = 0;
     }
   }
+  
+  /* perhaps some connections need clearing (utmp), hint from Ambrose Li */
+  got_sig=max_connections+1;
+  while (--got_sig)
+    open_clear_connection(got_sig, 0, NULL);
+
   if (ncp_fd > -1) {
     t_unbind(ncp_fd);
     t_close(ncp_fd);
-    XDPRINTF((2,0, "LEAVE nwbind"));
     if (ipx_out_fd > -1) {
       t_unbind(ipx_out_fd);
       t_close(ipx_out_fd);
@@ -1535,5 +1563,6 @@ int main(int argc, char *argv[])
   }
   sync_dbm();
   xfree(connections);
+  XDPRINTF((2,0, "LEAVE nwbind"));
   return(0);
 }

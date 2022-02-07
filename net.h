@@ -179,7 +179,7 @@ extern int errno;
 #endif
 
 #ifndef PATHNAME_BINDERY
-# define PATHNAME_BINDERY "."  /* location of bindery files */
+# define PATHNAME_BINDERY "/etc"  /* location of bindery files */
 #endif
 
 #ifndef PATHNAME_PIDFILES

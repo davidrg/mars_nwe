@@ -1,4 +1,4 @@
-/* nwroute1.c 02-Jun-97 */
+/* nwroute1.c 17-Jul-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,6 +30,11 @@ typedef struct {
 static int        anz_servers=0;
 static int        max_nw_servers=0;
 static NW_SERVERS **nw_servers=NULL;
+
+int activate_slow_net(uint32 net)
+{
+ ;; /* dummy */
+}
 
 void insert_delete_server(uint8  *name,                 /* Server Name */
                                  int        styp,       /* Server Typ  */
@@ -95,7 +100,7 @@ void insert_delete_server(uint8  *name,                 /* Server Name */
 
 void rip_for_net(uint32 net)
 {
-;
+ ;; /* dummy */
 }
 
 void handle_rip(int fd,       int ipx_pack_typ,
