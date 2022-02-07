@@ -67,15 +67,19 @@ extern uint8  *station_fn;
 extern int find_station_match(int entry, ipxAddr_t *addr);
 
 
-extern int nw_debug;
+extern int    nw_debug;
+extern uint32 debug_mask;
+#include "debmask.h"
 #if DO_DEBUG
 #  define DPRINTF(x)  dprintf x
 #  define XDPRINTF(x) xdprintf x
 #  define D() XDPRINTF((3, 0, "Z: %d" , __LINE__));
+#  define MDEBUG(mask, x) if (mask & debug_mask) x
 #else
 #  define DPRINTF(x)  /* */
 #  define XDPRINTF(x) /* */
 #  define D()         /* */
+#  define MDEBUG(mask, x)    /* */
 #endif
 
 #endif /* _TOOLS_H_ */

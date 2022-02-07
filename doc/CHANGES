@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 09-Nov-96
+Aenderungen in mars_nwe bis zum : 15-Dec-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -244,6 +244,26 @@ Erste 'oeffentliche' Version
 - IPX_MAX_DATA vergroessert. IPX_DATA_GR_546 abgeaendert.
 - kleinen patch ( upper/lowercase Handling ) von
   Sven Norinder <snorinder@sgens.ericsson.se>
-  in nwconn,mv_dir eingebaut.
+  in connect.c,mv_dir eingebaut.
 <----- ^^^^^^^^^^ pl5 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- nwrouted wieder zum Laufen gebracht. Es waren einige
+  defines falsch gesetzt.
+<----- ^^^^^^^^^^ pl6 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- die 'rename file' Routine erlaubt nun auch das Umbenennen von
+  Verzeichnissen, falls section 8 flag=0x4  gesetzt ist.
+- Beim file locking wird nun durch Ignorieren des Vorzeichenbits
+  verhindert, dass offsets > MAX_INT nicht funktionieren.
+  wird z.B. fuer dBase benoetigt.
+  ( Hint from:Morio Taneda <morio@sozio.geist-soz.uni-karlsruhe.de> )
+- ini Datei wird nun bei Bedarf mit uid=0 gelesen, so dass sie
+  ab jetzt fuer Anwender versteckt sein darf.
+- Das 'hidden File' handling (Dateien wurden auf -R -W gesetzt) ausgebaut.
+- 0x4b (set date of file) funktioniert nun auch bei RO geoeffneten Dateien.
+- Index in der Bindery ueber die Objektnamen eingebaut.
+  Dadurch muessten Bindery Zugriffe ueber die Objektnamen bechleunigt
+  werden, z.B. beim Einloggen.
+- Fehler bei der Allocierung von Filehandles beseitigt.
+  Es konnten nicht alle freigegebenen Filehandles wiederverwendet
+  werden. -> "No more free file handles"
+<----- ^^^^^^^^^^ pl7 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

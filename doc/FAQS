@@ -1,3 +1,4 @@
+last updated: 05-Dec-96
 Q: I don't exaclty understand the meaning of some ponits in nw.ini:
    12,13
    What will happen if I will not put PASSWORD here? Will it take it from
@@ -30,4 +31,16 @@ A: Give the volume the 'O' flag.
    REGEDIT4
    [HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\VxD\NWREDIR]
    "SupportLFN"=hex:02
+
+Q: I have 2 Eth-devices (one for IP/IPX and one for IPX only)
+   and after starting mars_nwe I have strange problems with my IP-net.
+A: Make sure that all Eth-devices have an assigned IP-address, even
+   they are only used for IPX.
+
+Q: I have arcnet cards and I dont find the frame-typ TRXNET.
+A: The correct frame typ is handled by the arcnet driver.
+   You should use the 'dummy frametyp' 802.3.
+
+
+
 

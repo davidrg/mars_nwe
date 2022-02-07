@@ -1,4 +1,4 @@
-/* nwroute.c 28-Oct-96 */
+/* nwroute.c 12-Nov-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -221,7 +221,9 @@ void insert_delete_server(uint8  *name,                 /* Server Name */
 #endif
 
     {
+#if !IN_NWROUTED
       ins_del_bind_net_addr(nr->name, nr->typ, NULL);
+#endif
       xfree(nr->name);
       memset(nr, 0, sizeof(NW_SERVERS));
     }
@@ -230,9 +232,9 @@ void insert_delete_server(uint8  *name,                 /* Server Name */
 
   /* here now i perhaps must change the entry */
   if (nr->hops > 16 || memcmp(&(nr->addr), addr, sizeof(ipxAddr_t))) {
-    ins_del_bind_net_addr(nr->name, nr->typ, addr);
     memcpy(&(nr->addr), addr, sizeof(ipxAddr_t));
 #if !IN_NWROUTED
+    ins_del_bind_net_addr(nr->name, nr->typ, addr);
     if (IPXCMPNODE(from_addr->node, my_server_adr.node) &&
         IPXCMPNET (from_addr->net,  my_server_adr.net)
         && GET_BE16(from_addr->sock) == SOCK_SAP) {
@@ -326,7 +328,7 @@ static void send_rip_buff(ipxAddr_t *from_addr)
       memset(to_addr.node, 0xFF, IPX_NODE_SIZE);
       U16_TO_BE16(SOCK_RIP, to_addr.sock);
     }
-
+#if DO_DEBUG
     if (nw_debug) {
       uint8    *p   = rip_buff;
       int operation = GET_BE16(p);
@@ -344,6 +346,7 @@ static void send_rip_buff(ipxAddr_t *from_addr)
         p+=8;
       }
     }
+#endif
     send_ipx_data(sockfd[RIP_SLOT], 1,
                     datasize,
                     (char *)rip_buff,

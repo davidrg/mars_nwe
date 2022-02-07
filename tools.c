@@ -1,4 +1,4 @@
-/* tools.c  29-Sep-96 */
+/* tools.c  30-Dec-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,7 +25,9 @@ extern char *_sys_errlist[];
 #endif
 
 
-int  nw_debug=0;
+int    nw_debug=0;
+uint32 debug_mask=0; /* special debug masks */
+
 FILE *logfile=stderr;
 
 static int   in_module=0;  /* in which process i am ?   */
@@ -73,6 +75,7 @@ void x_x_xfree(char **p)
 }
 
 int strmaxcpy(uint8 *dest, uint8 *source, int len)
+/* dest must be 1 byte larger than len */
 {
   int slen = (source != (uint8 *)NULL) ? min(len, strlen((char*)source)) : 0;
   if (slen)
@@ -171,7 +174,17 @@ FILE *open_nw_ini(void)
 {
   char *fname=FILENAME_NW_INI;
   FILE *f=fopen(fname, "r");
-  if (f == (FILE*)NULL) fprintf(logfile, "Cannot open ini file `%s`\n", fname);
+  int uid=geteuid();
+  if (f == (FILE*)NULL && uid > 0) {
+    seteuid(0);
+    f=fopen(fname, "r");
+    if (seteuid(uid)) {
+      errorp(1, "seteuid", "uid=%d", uid);
+      exit(1);
+    }
+  }
+  if (f == (FILE*)NULL)
+    fprintf(logfile, "Cannot open ini file `%s`\n", fname);
   return(f);
 }
 
@@ -362,7 +375,18 @@ void init_tools(int module, int options)
         withlog++;
       } else if (202 == what) {
         new_log = atoi((char*)buf);
-      } else if (100+module == what) nw_debug=atoi((char*)buf);
+      } else if (100+module == what) {
+        char buf1[300], buf2[300];
+        int i=sscanf((char*)buf, "%s %s", buf1, buf2);
+        if (i > 0) {
+          nw_debug=atoi((char*)buf1);
+          if (i > 1) {
+            char dummy;
+            if (sscanf(buf2, "%ld%c", &debug_mask, &dummy) != 1)
+                sscanf(buf2, "%lx",   &debug_mask);
+          }
+        }
+      }
     }
     fclose(f);
   }

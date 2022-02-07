@@ -1,4 +1,4 @@
-/* nwdbm.c  04-Oct-96  data base for mars_nwe */
+/* nwdbm.c  19-Dec-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -52,10 +52,24 @@ static DBM   *my_dbm=NULL;
 #define FNVAL   1
 #define FNOBJ   2
 
-static char  *dbm_fn[3]  = { "nwprop", "nwval", "nwobj" };
+#define FNIOBJ  3     /* Index for  Object Names */
+
+#define COUNT_DBM_FILES  4
+
+static char  *dbm_fn[COUNT_DBM_FILES]  = {
+ "nwprop", "nwval", "nwobj"
+#if COUNT_DBM_FILES > 3
+ ,"nwiobj"
+#endif
+ };
 
 #if DBM_REMAINS_OPEN
-static DBM   *my_dbms[3] = { NULL, NULL, NULL };
+static DBM   *my_dbms[COUNT_DBM_FILES] = {
+  NULL, NULL, NULL
+#if COUNT_DBM_FILES > 3
+, NULL
+#endif
+};
 #endif
 
 static int x_dbminit(char *s)
@@ -94,7 +108,7 @@ static int dbmclose()
 void sync_dbm()
 {
 #if DBM_REMAINS_OPEN
-  int k = 3;
+  int k = COUNT_DBM_FILES;
   while (k--) {
     if (NULL != my_dbms[k]) {
       dbm_close(my_dbms[k]);
@@ -112,14 +126,105 @@ void sync_dbm()
 #define store(key, content) dbm_store(my_dbm,  key, content, DBM_REPLACE)
 
 
-int find_obj_id(NETOBJ *o, uint32 last_obj_id)
+static int handle_iobj(int mode, NETOBJ *o)
+/* modes:
+ * 0  = search/read
+ * 1  = rewrite  ( not needed yet )
+ * 2  = rewrite/creat
+ * 3  = delete
+ */
+{
+  int result=-0xff;
+  if (!dbminit(FNIOBJ)){
+    NETIOBJ  iobj;
+    strncpy(iobj.name, o->name, sizeof(iobj.name));
+    iobj.type = o->type;
+    key.dsize = NETIOBJ_KEY_SIZE;
+    key.dptr  = (char*)&iobj;
+    result    = -0xfc; /* no Object */
+    if (mode == 3) {
+      if (!delete(key)) result=0;
+    } else  {
+      data = fetch(key);
+      if (data.dptr != NULL) {
+        NETIOBJ *piobj=(NETIOBJ*)data.dptr;
+        XDPRINTF((3,0, "got index of OBJ name=%s, type=0x%x, id = 0x%x",
+               piobj->name, (int)piobj->type, piobj->id));
+        if (!mode) {
+          o->id  = piobj->id;
+          result = 0;
+        } else {  /* write back */
+          piobj->id    = o->id;
+          result=(store(key, data)) ? -0xff : 0;
+        }
+      } else if (mode == 2) { /* creat */
+        data.dsize = sizeof(NETIOBJ);
+        data.dptr  = (char*)&iobj;
+        iobj.id    = o->id;
+        result= (store(key, data)) ? -0xff : 0;
+      }
+    }
+  }
+  dbmclose();
+  XDPRINTF((3, 0,"handle_iobj mode=%d, result=0x%x, OBJ=%s, type=0x%x",
+      mode, -result,
+      o->name,(int)o->type));
+  return(result);
+}
+
+int find_obj_id(NETOBJ *o)
+/* no wildcards allowed */
+{
+  int result;
+  XDPRINTF((2, 0,"findobj_id OBJ=%s, type=0x%x", o->name,(int)o->type));
+  if ((result=handle_iobj(0, o)) == 0) {
+    if (!dbminit(FNOBJ)){
+      key.dsize = NETOBJ_KEY_SIZE;
+      key.dptr  = (char*)o;
+      data      = fetch(key);
+      result    = -0xff;
+      if (data.dptr != NULL){
+        NETOBJ *obj=(NETOBJ*)data.dptr;
+        XDPRINTF((3,0, "got OBJ name=%s, id = 0x%x", obj->name, (int)obj->id));
+        if ( (!strncmp(obj->name, o->name, sizeof(obj->name)))
+            && obj->type == o->type) {
+          memcpy(o, data.dptr, sizeof(NETOBJ));
+          result=0;
+        } else {
+          XDPRINTF((1,0, "OBJ Index '%s',0x%x, clashes OBJ data '%s', 0x%x",
+                       o->name,   (int)o->type,
+                       obj->name, (int)obj->type));
+        }
+      } else {
+        XDPRINTF((1,0, "OBJ Index '%s',0x%x, id=0x%x not found in OBJ data",
+                       o->name, (int)o->type, o->id));
+      }
+    } else result = -0xff;
+    dbmclose();
+    if (!result)
+      return(0);
+  }
+  result=scan_for_obj(o, 0);
+  if (!result) { /* was ok, we will rewrite/creat iobj record */
+    XDPRINTF((1, 0,"findobj_id OBJ='%s', type=0x%x, id=0x%x not in Index File",
+       o->name,(int)o->type,o->id));
+    handle_iobj(2, o);
+  }
+  return(result);
+}
+
+int scan_for_obj(NETOBJ *o, uint32 last_obj_id)
+/*
+ * scans for object,
+ * wildcards in objectname allowed
+ * wildcard (MAX_U16) in  objecttype allowed
+ */
 {
   int result = -0xfc; /* no Object */
-  XDPRINTF((2, 0,"findobj_id OBJ=%s, type=0x%x, lastid=0x%x",
+  XDPRINTF((2, 0,"scan_for_obj OBJ=%s, type=0x%x, lastid=0x%x",
 	      o->name, (int)o->type, (int)last_obj_id));
 
   if (!dbminit(FNOBJ)){
-
     key = firstkey();
     if (last_obj_id && (last_obj_id != MAX_U32)){
       int  flag = 0;
@@ -128,7 +233,6 @@ int find_obj_id(NETOBJ *o, uint32 last_obj_id)
 	key = nextkey(key);
       }
     }
-
     while (key.dptr != NULL && result) {
       data = fetch(key);
       if (data.dptr != NULL){
@@ -145,7 +249,6 @@ int find_obj_id(NETOBJ *o, uint32 last_obj_id)
       }
       if (result) key = nextkey(key);
     } /* while */
-
   } else result = -0xff;
   dbmclose();
   return(result);
@@ -298,32 +401,43 @@ static int loc_delete_obj(uint32 objid, int security)
     result=-0xff;
   dbmclose();
   if (!result) {
+    NETOBJ obj;
+    int filled=0;
     if (!dbminit(FNOBJ)){
       key.dptr  = (char*)&objid;
       key.dsize = NETOBJ_KEY_SIZE;
+      data=fetch(key);
+      if (data.dptr) {
+        filled++;
+        memcpy(&obj, data.dptr, sizeof(NETOBJ));
+      }
       if (delete(key)) result = -0xff;
     } else result = -0xff;
     dbmclose();
+    if (filled)
+      handle_iobj(3, &obj); /* now delete iobj */;
   }
   return(result);
 }
 
 int nw_delete_obj(NETOBJ *obj)
 {
-  int result = find_obj_id(obj, 0);
+  int result = find_obj_id(obj);
   XDPRINTF((2,0, "nw_delete_obj obj_id=%d, obj_name=%s", obj->id, obj->name));
-  if (!result) result=loc_delete_obj(obj->id, obj->security);
+  if (!result)
+    result=loc_delete_obj(obj->id, obj->security);
   return(result);
 }
 
 int nw_rename_obj(NETOBJ *o, uint8 *newname)
 /* rename object */
 {
-  int result = find_obj_id(o, 0);
+  int result = find_obj_id(o);
   if (!result) {
     result = b_acc(0, 0x33, 0x04); /* only supervisor */
     if (result) return(result); /* no obj rename priv */
     else result=-0xff;
+    handle_iobj(3, o); /* delete old iobj */
     if (!dbminit(FNOBJ)){
       key.dsize = NETOBJ_KEY_SIZE;
       key.dptr  = (char*)o;
@@ -332,11 +446,14 @@ int nw_rename_obj(NETOBJ *o, uint8 *newname)
         NETOBJ *obj=(NETOBJ*)data.dptr;
         XDPRINTF((2,0, "rename_obj:got OBJ name=%s, id = 0x%x", obj->name, (int)obj->id));
         strncpy(obj->name, newname, 48);
-        if (!store(key, data)) result=0;
+        if (!store(key, data)) {
+          memcpy(o, obj, sizeof(NETOBJ));  /* for handle_iobj */
+          result=0;
+        }
       }
     }
     dbmclose();
-
+    handle_iobj(2, o); /* creat new iobj */
   }
   return(result);
 }
@@ -344,7 +461,7 @@ int nw_rename_obj(NETOBJ *o, uint8 *newname)
 int nw_change_obj_security(NETOBJ *o, int newsecurity)
 /* change Security of Object */
 {
-  int result = find_obj_id(o, 0);
+  int result = find_obj_id(o);
   if (!result) {
     result = b_acc(o->id, o->security, 0x05);
     if (result) return(result);
@@ -621,7 +738,7 @@ int nw_get_prop_val(int object_type,
   int result=-0xff;
   strmaxcpy((char*)obj.name,  (char*)object_name, object_namlen);
   obj.type    = (uint16) object_type;
-  if ((result = find_obj_id(&obj, 0)) == 0){
+  if ((result = find_obj_id(&obj)) == 0){
     result = nw_get_prop_val_by_obj_id(obj.id,
                               segment_nr,
 	        	      prop_name, prop_namlen,
@@ -644,7 +761,7 @@ int nw_delete_property(int object_type,
   XDPRINTF((2,0, "nw_delete_property obj=%s, prop=%s, type=0x%x",
       obj.name, prop_name_x, object_type));
   obj.type    = (uint16) object_type;
-  if ((result = find_obj_id(&obj, 0)) == 0){
+  if ((result = find_obj_id(&obj)) == 0){
     result = loc_delete_property(obj.id, prop_name_x, 0, 0);
   }
   return(result);
@@ -667,10 +784,10 @@ int nw_is_obj_in_set(int object_type,
       obj.name, object_type, mobj.name, member_type, prop.name));
   obj.type    = (uint16) object_type;
   mobj.type   = (uint16) member_type;
-  if ((result = find_obj_id(&obj, 0)) == 0){
+  if ((result = find_obj_id(&obj)) == 0){
     result=find_first_prop_id(&prop, obj.id);
     if (!result)
-      result = find_obj_id(&mobj, 0);
+      result = find_obj_id(&mobj);
     if (!result)
       result = prop_find_member(obj.id, (int)prop.id,  mobj.id);
   }
@@ -694,10 +811,10 @@ int nw_add_obj_to_set(int object_type,
       obj.name, object_type, mobj.name, member_type, prop.name));
   obj.type    = (uint16) object_type;
   mobj.type   = (uint16) member_type;
-  if ((result = find_obj_id(&obj, 0)) == 0){
+  if ((result = find_obj_id(&obj)) == 0){
     result=find_first_prop_id(&prop, obj.id);
     if (!result)
-      result = find_obj_id(&mobj, 0);
+      result = find_obj_id(&mobj);
     if (!result)
       result = prop_add_member(obj.id, (int)prop.id,  mobj.id);
   }
@@ -721,10 +838,10 @@ int nw_delete_obj_from_set(int object_type,
       obj.name, object_type, mobj.name, member_type, prop.name));
   obj.type    = (uint16) object_type;
   mobj.type   = (uint16) member_type;
-  if ((result = find_obj_id(&obj, 0)) == 0){
+  if ((result = find_obj_id(&obj)) == 0){
     result=find_first_prop_id(&prop, obj.id);
     if (!result)
-      result = find_obj_id(&mobj, 0);
+      result = find_obj_id(&mobj);
     if (!result)
       result = prop_delete_member(obj.id, (int)prop.id,  mobj.id);
   }
@@ -747,7 +864,7 @@ int nw_write_prop_value(int object_type,
       obj.name, prop.name, object_type, segment_nr));
   obj.type    = (uint16) object_type;
 
-  if ((result = find_obj_id(&obj, 0)) == 0){
+  if ((result = find_obj_id(&obj)) == 0){
     if ((result=find_first_prop_id(&prop, obj.id))==0){
        result=ins_prop_val(obj.id, &prop, segment_nr,
 	    property_value, erase_segments);
@@ -772,7 +889,7 @@ int nw_change_prop_security(int object_type,
   XDPRINTF((2,0, "nw_change_prop_security obj=%s,0x%x, prop=%s",
       obj.name, object_type, prop.name));
   obj.type    = (uint16) object_type;
-  if ((result = find_obj_id(&obj, 0)) == 0)
+  if ((result = find_obj_id(&obj)) == 0)
     return(loc_change_prop_security(&prop, obj.id));
   return(-0xff);
 }
@@ -793,7 +910,7 @@ int nw_scan_property(NETPROP *prop,
       obj.name, prop->name, object_type, (int)*last_scan));
   obj.type    = (uint16) object_type;
 
-  if ((result = find_obj_id(&obj, 0)) == 0){
+  if ((result = find_obj_id(&obj)) == 0){
     int last_prop_id;
     if (*last_scan == MAX_U32) *last_scan = 0;
     last_prop_id =  *last_scan;
@@ -865,6 +982,8 @@ int nw_create_obj(NETOBJ *obj, uint32 wanted_id)
     }
   } else result = -0xff;
   dbmclose();
+  if (!result)
+    handle_iobj(2, obj);
   return(result);
 }
 
@@ -935,7 +1054,7 @@ int nw_create_prop(int object_type,
   strmaxcpy((char*)obj.name,  (char*)object_name, object_namlen);
   strmaxcpy((char*)prop.name, (char*)prop_name,   prop_namlen);
   obj.type    = (uint16) object_type;
-  if (   0 == (result = find_obj_id(&obj, 0))
+  if (   0 == (result = find_obj_id(&obj))
      &&  0 == (result = b_acc(obj.id, obj.security, 0x12)) ) {
     prop.flags    = (uint8)prop_flags;
     prop.security = (uint8)prop_security;
@@ -1722,6 +1841,8 @@ int nw_init_dbm(char *servername, ipxAddr_t *adr)
   create_nw_db(dbm_fn[FNOBJ],  0);
   create_nw_db(dbm_fn[FNPROP], 0);
   create_nw_db(dbm_fn[FNVAL],  0);
+
+  create_nw_db(dbm_fn[FNIOBJ], 0);
 
   if (!dbminit(FNOBJ)){
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {

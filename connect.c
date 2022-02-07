@@ -1047,9 +1047,12 @@ int un_nw_attrib(struct stat *stb, int attrib, int mode)
   } else {
     /* NW access -> UNIX access */
     int mode = S_IRUSR | S_IRGRP;
+#if 0
+    /* this is sometimes very BAD */
     if (attrib & FILE_ATTR_H)   /* hidden */
       stb->st_mode &= ~mode;
     else
+#endif
       stb->st_mode |= mode;
 
     mode = S_IWUSR | S_IWGRP;
@@ -1284,7 +1287,7 @@ int mv_file(int qdirhandle, uint8 *q, int qlen,
   NW_PATH quellpath;
   NW_PATH zielpath;
   int completition=conn_get_kpl_path(&quellpath, qdirhandle, q, qlen, 0);
-  if (!completition > -1) {
+  if (completition > -1) {
     completition=conn_get_kpl_path(&zielpath,    zdirhandle, z, zlen, 0);
     if (completition > -1) {
       int optq = get_volume_options(quellpath.volume, 1);
@@ -1299,7 +1302,10 @@ int mv_file(int qdirhandle, uint8 *q, int qlen,
       char unziel[256];
       strcpy(unquelle, build_unix_name(&quellpath,0));
       strcpy(unziel,   build_unix_name(&zielpath,0));
-      completition = unx_mvfile(unquelle, unziel);
+      if (entry8_flags & 0x4)  /* new: 20-Nov-96 */
+        completition = unx_mvfile_or_dir(unquelle, unziel);
+      else
+        completition = unx_mvfile(unquelle, unziel);
       switch (completition) {
         case   0      : break;
         case   EEXIST : completition = -0x92; break; /* allready exist */
@@ -1318,11 +1324,17 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
   NW_PATH quellpath;
   NW_PATH zielpath;
   int completition=conn_get_kpl_path(&quellpath, dir_handle, q, qlen, 0);
-  if (!completition > -1){
+  if (completition > -1){
 #if 1
     /* I do not know anymore why I did these ??? */
     memcpy(&zielpath, &quellpath, sizeof(NW_PATH));
     strmaxcpy(zielpath.fn, z, zlen);
+
+    /* ----------- now I know again why I did these ----- */
+    /* for example the novell rendir.exe does something like this
+     * 0x0,0xd,0xf,0x0,0x7,'T','M','P',':','\','I','I',0x2,'K','K'
+     * no dirhandle, qpath = fullpath, zpath = only name
+     */
 #else
     /* and NOT these, perhaps this will also be ok ?! -- TODO -- */
     completition=conn_get_kpl_path(&zielpath, dir_handle, z, zlen, 0);
@@ -2018,8 +2030,8 @@ static int get_match(uint8 *unixname, uint8 *p)
   uint8     *pp;
 #if 0
   uint8     *p1;
-#endif
   int       inode=0;
+#endif
   if (!p || !*p)   return(1);
   *p        = '\0';
   pp=p+1;
@@ -2044,7 +2056,11 @@ static int get_match(uint8 *unixname, uint8 *p)
       int len;
       if (dirbuff->d_ino) {
         XDPRINTF((10, 0, "get match found d_name='%s'", dirbuff->d_name));
-        if ((dirbuff->d_ino ==inode) || 0 != (len=my_match(dirbuff->d_name, pp))) {
+        if (
+#if 0
+        (dirbuff->d_ino ==inode) ||
+#endif
+        0 != (len=my_match(dirbuff->d_name, pp))) {
           memcpy(pp, dirbuff->d_name, len);
           XDPRINTF((10, 0, "get match, match OK"));
           closedir(d);

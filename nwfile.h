@@ -23,7 +23,8 @@ typedef struct {
 #define FH_IS_PIPE           0x01
 #define FH_IS_PIPE_COMMAND   0x02
 #define FH_DO_NOT_REUSE      0x04
-#define FH_IS_READONLY       0x20
+#define FH_IS_READONLY       0x20  /* filesystem is readonly */
+#define FH_OPENED_RO         0x40  /* is opened RO */
 
 extern void sig_bus_mmap(int rsig);
 
@@ -49,5 +50,6 @@ extern int nw_server_copy(int qfhandle, uint32 qoffset,
 
 extern int nw_lock_datei(int fhandle, int offset, int size, int do_lock);
 
+extern int fd_2_fname(int fhandle, char *buf, int bufsize);
 
 #endif

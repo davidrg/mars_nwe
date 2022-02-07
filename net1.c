@@ -73,6 +73,7 @@ void print_ipx_addr(ipxAddr_t *p)
 
 void print_ud_data(struct t_unitdata *ud)
 {
+#if DO_DEBUG
   int packet_typ = *(int*)(ud->opt.buf);
   int data_len   = ud->udata.len;
   IPX_DATA *ipxdata = (IPX_DATA *)(ud->udata.buf);
@@ -86,8 +87,7 @@ void print_ud_data(struct t_unitdata *ud)
   } else  if (data_len > sizeof(SIP)){
     SAP   *sap      = &(ipxdata->sap);
     SAPS  *saps     = &(ipxdata->sap.saps);
-    int sap_operation = GET_BE16(sap->sap_operation);
-    XDPRINTF((2,0, "SAP-OPERATION %d", sap_operation));
+    XDPRINTF((2,0, "SAP-OPERATION %d", (int) GET_BE16(sap->sap_operation) ));
     while (data_len >= sizeof(SAPS)){
       XDPRINTF((2,0, "Name:%s:, typ:0x%x",saps->server_name,
 	   GET_BE16(saps->server_type)));
@@ -96,6 +96,7 @@ void print_ud_data(struct t_unitdata *ud)
       data_len  -= sizeof(SAPS);
     }
   } else print_ipx_data(ipxdata);
+#endif
 }
 
 void print_ipx_data(IPX_DATA *p)

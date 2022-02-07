@@ -533,25 +533,27 @@ static int handle_ncp_serv(void)
 	                   data_len = (8 * xdata->entries) + 1;
                          } else completition = (uint8) (-result);
 	               } else  if (*p == 0x21) {
+#if DO_DEBUG
 	                 /* change Vol restrictions for Obj */
 	                 uint8  volnr = *(p+1);
 	                 uint32 id     = GET_BE32(p+2);
                          uint32 blocks = GET_BE32(p+6);
                          XDPRINTF((2,0,"TODO:Change vol restriction vol=%d, id=0x%lx, Blocks=0x%lx",
-                                   (int)volnr, id, blocks));
+                                   (int)volnr, id, blocks))
+#endif
+                         ;
 	               } else  if (*p == 0x22) {
+#if DO_DEBUG
 	                 /* remove Vol restrictions for Obj */
                           uint8  volnr = *(p+1);
                           uint32 id    = GET_BE32(p+2);
                           XDPRINTF((2,0, "TODO:Remove vol restriction vol=%d, id=0x%lx",
-                                   (int)volnr, id));
-
+                                   (int)volnr, id))
+#endif
+                          ;
 	               } else  if (*p == 0x25){ /* setting FILE INFO ??*/
 	                  /* TODO !!!!!!!!!!!!!!!!!!!!  */
-
-
 	                 do_druck++;
-
 	               } else  if (*p == 0x26) { /* Scan file or Dir for ext trustees */
                          int sequenz = (int)*(p+2); /* trustee sequenz  */
 	                 struct XDATA {
@@ -594,14 +596,18 @@ static int handle_ncp_serv(void)
 	                 do_druck++;
 	               } else  if (*p == 0x29){
 	                /* read  volume restrictions for an object */
+#if DO_DEBUG
                           uint8  volnr = *(p+1);
                           uint32 id    = GET_BE32(p+2);
+#endif
 	                  struct XDATA {
                             uint8 restriction[4];
                             uint8 inuse[4];
 	                  } *xdata = (struct XDATA*) responsedata;
+
                           XDPRINTF((5,0, "Get vol restriction vol=%d, id=0x%lx",
                                    (int)volnr, id));
+
                           U32_TO_32(0x40000000, xdata->restriction);
                           U32_TO_32(0x0,        xdata->inuse);
                           data_len=sizeof(struct XDATA);
@@ -705,14 +711,13 @@ static int handle_ncp_serv(void)
 	               } else completition = 0xfb;  /* unkwown request */
 	             }
 	             break;
-
 	 case 0x17 : {  /* FILE SERVER ENVIRONMENT */
 	   /* uint8 len   = *(requestdata+1); */
 	   uint8 ufunc    = *(requestdata+2);
+#if DO_DEBUG
            uint8 *rdata   = requestdata+3;
-
+#endif
            switch (ufunc) {
-
 #if FUNC_17_02_IS_DEBUG
              case 0x02 :  {
                 /* I hope this call isn't used       */
@@ -872,7 +877,7 @@ static int handle_ncp_serv(void)
                                         (int) (GET_BE16((uint8*)requestdata)));
 	               U16_TO_BE16(rw_buffer_size, getsize);
 	               data_len = 2;
-                       XDPRINTF((5,0, "Negotiate Buffer size = 0x%04x,(%d)",
+                       XDPRINTF((2,0, "Negotiate Buffer size = 0x%04x,(%d)",
                               (int) rw_buffer_size, (int) rw_buffer_size));
 	             }
 	             break;
@@ -887,7 +892,30 @@ static int handle_ncp_serv(void)
 	 case 0x3d : {  /* commit file, flush file buffers  */
          0x3d seems to be no valid/used NCP call.
 #endif
-	 case 0x3b : {  /* commit file, flush file buffers  */
+	 case 0x3d :  /* looks also like commit file */
+                      /* I make no errorresult here */
+                      {
+#if 0
+	              XDPRINTF((2,0, "don't know function: 0x3d"));
+#else
+	               struct INPUT {
+	                 uint8   header[7];     /* Requestheader */
+	                 uint8   reserve;
+	                 uint8   ext_fhandle[2]; /* all zero   */
+	                 uint8   fhandle[4];     /* filehandle */
+	               } *input = (struct INPUT *)ncprequest;
+                       char fname[200];
+	               int fd = (int) GET_BE32(input->fhandle);
+                       int result=fd_2_fname(fd, fname, sizeof(fname));
+	               XDPRINTF((1,0, "0x3d, fd=%d, fn=`%s`, r=%d",
+	                        fd, fname, result));
+#endif
+                      }
+                      break;
+
+	 case 0x3b :
+#if DO_DEBUG
+	             {  /* commit file, flush file buffers  */
 	               struct INPUT {
 	                 uint8   header[7];     /* Requestheader */
 	                 uint8   reserve;
@@ -896,7 +924,9 @@ static int handle_ncp_serv(void)
 	               } *input = (struct INPUT *)ncprequest;
 	               uint32 fhandle = GET_BE32(input->fhandle);
                        XDPRINTF((5,0, "should be done some time: COMMIT FILE:fhandle=%ld", fhandle));
-                     } break;
+                     }
+#endif
+                     break;
 
 
 	 case 0x3e : { /* FILE SEARCH INIT  */
@@ -1373,6 +1403,13 @@ static int handle_ncp_serv(void)
                               (int) wantsize, (int) wantsize, flags));
 	             }
 	             break;
+
+#else
+	 case 0x61 : /* Negotiate Buffer Size,  Packetsize new ?  */
+	           XDPRINTF((2,0, "Function '0x61' not supportet"));
+	           completition = 0xfb; /* unknown request */
+                   nw_debug=0;
+                   break;
 #endif
 
 #if 0
@@ -1391,14 +1428,22 @@ static int handle_ncp_serv(void)
 	                 uint8   max_packet_size[4];
 	               } *xdata= (struct XDATA*) responsedata;
 	             break;
+#else
+	 case 0x65 :
+	           XDPRINTF((2,0, "Packet Burst Connection Request not yet supportet"));
+                   nw_debug=0;
+	           completition = 0xfb; /* unknown request */
+	           break;
 #endif
 
-#if 0
 	 case 0x68 :  /* NDS NCP,  NDS Fragger Protokoll ??  */
-#endif
+	           XDPRINTF((2,0, "NDS Fragger Protokoll not supportet"));
+                   nw_debug=0;
+	           completition = 0xfb; /* unknown request */
+	           break;
 
 	 default : completition = 0xfb; /* unknown request */
-	             break;
+	           break;
 
     } /* switch function */
   } else if (ncp_type == 0x1111) {

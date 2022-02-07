@@ -1,4 +1,4 @@
-/* nwdbm.h 04-Oct-96 */
+/* nwdbm.h 18-Dec-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -28,6 +28,14 @@ typedef struct {
   uint8   flags;               /* statisch, dynamisch */
   uint8   security;
 } NETOBJ;
+
+#define NETIOBJ_KEY_SIZE 50
+typedef struct {
+  uint8   name[48];
+  uint16  type;
+  /* --------------- */
+  uint32  id;           /* Objekt ID           */
+} NETIOBJ;
 
 #define NETPROP_KEY_SIZE  5
 typedef struct {
@@ -82,8 +90,8 @@ extern int nw_get_prop(int object_type,
 	        uint8 *property_flags);
 
 
-
-extern int find_obj_id(NETOBJ *o, uint32 last_obj_id);
+extern int find_obj_id(NETOBJ *o);
+extern int scan_for_obj(NETOBJ *o, uint32 last_obj_id);
 
 extern int nw_delete_obj(NETOBJ *obj);
 extern int nw_rename_obj(NETOBJ *o, uint8 *newname);
@@ -191,6 +199,9 @@ extern int nw_get_q_prcommand(uint32 q_id, uint8 *buff);
 
 extern void test_ins_unx_user(uint32 id);
 
-extern int  nw_fill_standard(char *servername, ipxAddr_t *adr);
-extern int  nw_init_dbm(char *servername, ipxAddr_t *adr);
+extern int nw_fill_standard(char *servername, ipxAddr_t *adr);
+extern int nw_init_dbm(char *servername, ipxAddr_t *adr);
+extern int do_export_dbm(char *path);
+extern int do_import_dbm(char *path);
+
 #endif

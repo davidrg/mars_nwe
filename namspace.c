@@ -1048,8 +1048,9 @@ int nw_search_file_dir(int namespace, int datastream,
 
 {
 static uint32 saved_sequence=0L;
-
+#if 0
   int max_counts = *count;
+#endif
   int found      = 0;
   int result     = find_base_entry(volume, basehandle);
   *perhaps_more  = 0;
@@ -1575,7 +1576,9 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
           uint8   reserved;
         } *xdata= (struct OUTPUT*)responsedata;
         /* NW PATH STRUC */
+#if 0
         int      datastream    = (int) *(p+1);
+#endif
         int      searchattrib  = (int) GET_16(p+2); /* LOW-HI */
         uint32   infomask      = GET_32(p+4);       /* LOW-HI */
         int      volume        = *(p+8);
@@ -1709,7 +1712,9 @@ static int code = 0;
           uint8   more_entries;  /* NW4.1 (UNIX) says 0xff here */
           uint8   count[2];      /* count of entries */
         } *xdata= (struct OUTPUT*)responsedata;
+#if 0
         int      datastream    = (int) *(p+1);
+#endif
         int      searchattrib  = (int) GET_16(p+2); /* LOW-HI */
         uint32   infomask      = GET_32(p+4);       /* LOW-HI */
         int      count         = (int)GET_16(p+8);

@@ -1,4 +1,4 @@
-/* unxfile.c:  29-Apr-96*/
+/* unxfile.c:  20-Nov-96*/
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -38,6 +38,15 @@ int unx_mvfile(uint8 *oldname, uint8 *newname)
   else if (S_ISDIR(statb.st_mode)) return(-1);
   return( (rename(oldname, newname) < 0) ? errno : 0);
 }
+
+int unx_mvfile_or_dir(uint8 *oldname, uint8 *newname)
+{
+  struct stat statb;
+  if (!stat(newname, &statb)) return(EEXIST);
+  if (stat(oldname,  &statb)) return(-1);
+  return( (rename(oldname, newname) < 0) ? errno : 0);
+}
+
 
 #else
 int unx_mvdir(uint8 *oldname, uint8 *newname)

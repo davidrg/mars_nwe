@@ -1,4 +1,4 @@
-/* nwfile.c  04-Nov-96 */
+/* nwfile.c  31-Dec-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -47,7 +47,7 @@ static int new_file_handle(uint8 *unixname, int task)
   int rethandle = HOFFS -1;
   FILE_HANDLE  *fh=NULL;
   while (++rethandle < anz_fhandles) {
-    FILE_HANDLE  *fh=&(file_handles[rethandle]);
+    fh=&(file_handles[rethandle]);
     if (fh->fd == -1 && !(fh->fh_flags & FH_DO_NOT_REUSE)) { /* empty slot */
       rethandle++;
       break;
@@ -279,7 +279,6 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          if (S_ISFIFO(stbuff->st_mode)){
            fh->fd = open(fh->fname,
                O_NONBLOCK | dowrite ? O_RDWR : O_RDONLY);
-
          } else {
            fh->fh_flags |= FH_IS_PIPE_COMMAND;
            fh->fd=-3;
@@ -293,7 +292,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
              fh->fh_flags |= FH_DO_NOT_REUSE;
            if (did_grpchange)
              xsetegid(act_gid);
-           return(fhandle);
+           goto file_creat_open_ret;
          }
        } else {
          /* <========= this is NOT a PIPE Volume ====================> */
@@ -371,7 +370,8 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                flockd.l_start  = 0;
                flockd.l_len    = 0;
                result = fcntl(fh->fd, F_SETLK, &flockd);
-               XDPRINTF((5, 0,  "open shared lock:result=%d", result));
+               XDPRINTF(((result==-1)?2:5, 0,  "open shared lock:result=%d,fn='%s'",
+                         result, fh->fname));
                if (result == -1) {
                  close(fh->fd);
                  fh->fd = -1;
@@ -397,21 +397,34 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
            }
          }
          if (fh->fd > -1) {
-           if (!dowrite)      fh->fh_flags |= FH_IS_READONLY;
-           if (creatmode & 4) fh->fh_flags |= FH_DO_NOT_REUSE;
+           if (!dowrite)
+              fh->fh_flags |= FH_OPENED_RO;
+           if (voloptions & VOL_OPTION_READONLY)
+              fh->fh_flags |= FH_IS_READONLY;
+           if (creatmode & 4)
+             fh->fh_flags |= FH_DO_NOT_REUSE;
            if (did_grpchange)
              xsetegid(act_gid);
-           return(fhandle);
+           goto file_creat_open_ret;
          }
-       } /* else (NOT DEVICE) */
+       } /* else (note pipecommand) */
      } /* if !completition */
      if (did_grpchange)
         xsetegid(act_gid);
      XDPRINTF((5,0,"OPEN FILE not OK (-0x%x), fh->name:%s: fhandle=%d",
          -completition, fh->fname, fhandle));
      free_file_handle(fhandle);
-     return(completition);
-   } else return(-0x81); /* no more File Handles */
+     fhandle=completition;
+   } else fhandle=-0x81; /* no more File Handles */
+
+file_creat_open_ret:
+   MDEBUG(D_FH_OPEN, {
+     char fname[200];
+     if (!fd_2_fname(fhandle, fname, sizeof(fname))){
+       dprintf("Open/creat fd=%d, fn=`%s`", fhandle, fname);
+     }
+   })
+   return(fhandle);
 }
 
 int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
@@ -432,6 +445,13 @@ int nw_close_datei(int fhandle, int reset_reuse)
 {
   XDPRINTF((5, 0, "nw_close_datei handle=%d, anz_fhandles",
      fhandle, anz_fhandles));
+
+  MDEBUG(D_FH_OPEN, {
+    char fname[200];
+    int r=fd_2_fname(fhandle, fname, sizeof(fname));
+    dprintf("nw_close_datei: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
+  })
+
   if (fhandle > HOFFS && (fhandle <= anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (reset_reuse) fh->fh_flags &= (~FH_DO_NOT_REUSE);
@@ -589,7 +609,7 @@ int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
     if (fh->fh_flags & FH_IS_PIPE_COMMAND)
         open_pipe_command(fh, 1);
     if (fh->fd > -1) {
-      if (fh->fh_flags & FH_IS_READONLY) return(-0x94);
+      if (fh->fh_flags & FH_OPENED_RO) return(-0x94);
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
         return(size ? write(fh->fd, data, size) : 0);
       } else {
@@ -635,7 +655,7 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
     if (fhq->fd > -1 && fhz->fd > -1) {
       char buff[4096];
       int  wsize;
-      if (fhz->fh_flags & FH_IS_READONLY) return(-0x94);
+      if (fhz->fh_flags & FH_OPENED_RO) return(-0x94);
       if (lseek(fhq->fd, qoffset, SEEK_SET) > -1L &&
           lseek(fhz->fd, zoffset, SEEK_SET) > -1L) {
         retsize = 0;
@@ -673,11 +693,19 @@ int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
       int result;
       if (fh->fh_flags & FH_IS_PIPE) return(0);
       flockd.l_type   = (do_lock)
-                         ? ((fh->fh_flags & FH_IS_READONLY) ?  F_RDLCK
-                                                            :  F_WRLCK)
+                         ? ((fh->fh_flags & FH_OPENED_RO) ?  F_RDLCK
+                                                          :  F_WRLCK)
                          : F_UNLCK;
       flockd.l_whence = SEEK_SET;
+#if 0
       flockd.l_start  = offset;
+#else
+      /* Hint from:Morio Taneda <morio@sozio.geist-soz.uni-karlsruhe.de>
+       * dBase needs it
+       * 03-Dec-96
+       */
+      flockd.l_start  = (offset & 0x7fffffff);
+#endif
       flockd.l_len    = size;
       result = fcntl(fh->fd, F_SETLK, &flockd);
       XDPRINTF((2, 0,  "nw_%s_datei result=%d, fh=%d, offset=%d, size=%d",
@@ -689,6 +717,16 @@ int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
   return(-0x88); /* wrong filehandle */
 }
 
-
+int fd_2_fname(int fhandle, char *buf, int bufsize)
+{
+  if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
+    FILE_HANDLE  *fh=&(file_handles[fhandle]);
+    strmaxcpy(buf, fh->fname, bufsize-1);
+    return(0);
+  }
+  if (bufsize)
+    *buf='\0';
+  return(-0x88);
+}
 
 

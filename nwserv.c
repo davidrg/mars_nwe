@@ -1,4 +1,4 @@
-/* nwserv.c 09-Nov-96 */
+/* nwserv.c 12-Nov-96 */
 /* MAIN Prog for NWSERV + NWROUTED  */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -92,9 +92,11 @@ static struct        pollfd  polls[NEEDED_POLLS];
 #if 0
 static uint16        spx_diag_socket;    /* SPX DIAGNOSE SOCKET       */
 #endif
+#if !IN_NWROUTED
 static ipxAddr_t     nw386_adr;          /* Address of NW-TEST Server */
 static int           nw386_found    =  0;
 static int           client_mode    =  0;
+#endif
 static int           ipxdebug       =  0;
 static int           pid_ncpserv    = -1;
 static int           fd_ncpserv_in  = -1;  /* ctrl-pipe in from ncpserv */
@@ -124,7 +126,6 @@ static  char         *prog_name_typ="SERVER";
 static  int        ipx_out_fd=-1;
 /* next should be '1', is for testing only */
 #define USE_PERMANENT_OUT_SOCKET  1
-
 
 static void add_wdata(IPX_DATA *d, char *data, int size)
 {
@@ -224,6 +225,12 @@ void ins_del_bind_net_addr(uint8 *name, int styp, ipxAddr_t *adr)
   write_to_nwbind(0x3333, 0, (char *)buf, len);
 }
 
+#else
+# define USE_PERMANENT_OUT_SOCKET  0
+# define write_to_ncpserv(what, connection, data, data_size) /* */
+# define write_to_nwbind(what, connection, data, data_size) /* */
+#endif
+
 static int loc_open_ipx_socket(int sock_nr, int nr)
 {
   int ipx_fd=open_ipx_socket(&my_server_adr, sock_nr);
@@ -235,11 +242,6 @@ static int loc_open_ipx_socket(int sock_nr, int nr)
     errorp(0, "loc_open_ipx_socket", "nr=%d", sock_nr);
   return(ipx_fd);
 }
-#else
-# define USE_PERMANENT_OUT_SOCKET  0
-# define write_to_ncpserv(what, connection, data, data_size) /* */
-# define write_to_nwbind(what, connection, data, data_size) /* */
-#endif
 
 
 static int start_ncpserv(char *nwname, ipxAddr_t *addr)
@@ -784,7 +786,9 @@ static void handle_event(int fd, uint16 socknr, int slot)
     case DIAG_SLOT     : handle_diag(fd, (int) ipx_pack_typ, ud.udata.len, &ipx_data_buff, &source_adr); break;
 #endif
 
-    default : {
+    default :
+#if DO_DEBUG
+              {
                 uint8 *p = (uint8*)&ipx_data_buff;
                 int    k = 0;
                 XDPRINTF((1, 2, "UNKNOWN"));
@@ -796,6 +800,7 @@ static void handle_event(int fd, uint16 socknr, int slot)
                 print_ud_data(&ud);
                 */
               }
+#endif
               break;
   }
 }
@@ -952,7 +957,9 @@ static void get_ini(int full)
     } /* while */
     fclose(f);
   }
+#if !IN_NWROUTED
   if (client_mode < 2) client_mode=0;
+#endif
   if (print_route_tac && !pr_route_info_fn && !*pr_route_info_fn)
     print_route_tac = 0;
   if (!print_route_tac) xfree(pr_route_info_fn);
@@ -993,8 +1000,10 @@ static void get_ini(int full)
 
     if (!get_ipx_addr(&my_server_adr)) {
       internal_net = GET_BE32(my_server_adr.net);
-    } else exit(1);
-
+    } else {
+      errorp(1, "No ipx-router running !", NULL);
+      exit(1);
+    }
 #if INTERNAL_RIP_SAP
     if (no_internal) {
       errorp(10, "WARNING:No use of internal net", NULL);
@@ -1141,10 +1150,11 @@ static int server_is_down=0;
 static int usage(char *prog)
 {
 #if !IN_NWROUTED
-  fprintf(stderr, "usage:\t%s [-h|-k|y]\n", prog);
+  fprintf(stderr, "usage:\t%s [-v|-h|-k|y]\n", prog);
 #else
-  fprintf(stderr, "usage:\t%s [-h]|-k]\n", prog);
+  fprintf(stderr, "usage:\t%s [-v|-h]|-k]\n", prog);
 #endif
+  fprintf(stderr, "\t-v: print version\n");
   fprintf(stderr, "\t-h: send HUP to main process\n");
   fprintf(stderr, "\t-k: stop main process\n");
 #if !IN_NWROUTED
@@ -1169,12 +1179,18 @@ int main(int argc, char **argv)
         switch (*a)  {
           case 'h' : init_mode = 1; break;
           case 'k' : init_mode = 2; break;
+          case 'v' : fprintf(stderr, "\n%s:Version %d.%d.pl%d\n",
+                     argv[0], _VERS_H_, _VERS_L_, _VERS_P_ );
+                     return(0);
           default  : return(usage(argv[0]));
         }
       }
-    } else if (*a == 'y')
+    }
+#if !IN_NWROUTED
+    else if (*a == 'y')
       client_mode=1;
      /* in client mode the testprog 'nwclient' will be startet. */
+#endif
     else
       return(usage(argv[0]));
   }
@@ -1379,8 +1395,8 @@ int main(int argc, char **argv)
         } else {
 #if !IN_NWROUTED
           if (call_wdog) send_wdogs(1);
-#endif
           if (client_mode && difftime > 5) get_servers();  /* Here more often */
+#endif
         }
       }
     } /* while */

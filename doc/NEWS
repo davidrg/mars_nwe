@@ -1,4 +1,6 @@
 # in this files are some notes for user of mars_nwe.
+------09-Nov-96--- 0.98.pl7 ----------
+- section   8: new flag 0x4 added. (see examples/nw.ini).
 ------09-Nov-96--- 0.98.pl5 ----------
 - now Novell Client32 should works.
 - new config.h flag. 'HANDLE_ALL_SAP_TYPS'

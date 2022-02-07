@@ -35,6 +35,8 @@
 #define IPX_DATA_GR_546        1     /* 0 = max. IPX Packets = 546  +30 Byte ( 512 Byte RWBuff) */
                                      /* 1 = max. IPX packets = 1058 +30 Byte (1024 Byte RWBuff) */
                                      /* 2 = max. IPX packets = 1470 +30 Byte (1444 Byte RWBuff) */
+                                     /* 3 = max. IPX packets = 4130 +30 Byte (4096 Byte RWBuff) */
+
 
 #define USE_MMAP               1     /* use mmap systen call               */
 

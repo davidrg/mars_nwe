@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "01-Nov-96"
+#define REVISION_DATE "02-Jan-97"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -432,7 +432,7 @@ static void handle_fxx(int gelen, int func)
                     xstrmaxcpy(password, p1+1, (int) *p1);
                     XDPRINTF((10, 0, "LOGIN unencrypted PW NAME='%s', PASSW='%s'",
                              obj.name, password));
-                    if (0 == (result = find_obj_id(&obj, 0))) {
+                    if (0 == (result = find_obj_id(&obj))) {
                       if (password_scheme & PW_SCHEME_LOGIN) {
 #if 0
                         if (obj.id == 1) {
@@ -469,7 +469,7 @@ static void handle_fxx(int gelen, int func)
                     p+=2;
                     strmaxcpy((char*)obj.name,  (char*)(p+1), (int) *(p));
                     upstr(obj.name);
-                    result = find_obj_id(&obj, 0);
+                    result = find_obj_id(&obj);
                     if (!result){
                       int k=-1;
                       int anz  = 0;
@@ -542,7 +542,7 @@ static void handle_fxx(int gelen, int func)
                     upstr(obj.name);
                     XDPRINTF((2, 0, "LOGIN CRYPTED PW NAME='%s'",obj.name));
 
-                    if (0 == (result = find_obj_id(&obj, 0))) {
+                    if (0 == (result = find_obj_id(&obj))) {
                       internal_act = 1;
                       result=nw_test_passwd(obj.id, act_c->crypt_key, rdata);
                       internal_act = 0;
@@ -643,7 +643,7 @@ static void handle_fxx(int gelen, int func)
                     obj.type            =  GET_BE16(p);
                     strmaxcpy((char*)obj.name,  (char*)(p+3), (int) *(p+2));
                     upstr(obj.name);
-                    result = find_obj_id(&obj, 0);
+                    result = find_obj_id(&obj);
                     if (!result){
                       U32_TO_BE32(obj.id,   xdata->object_id);
                       U16_TO_BE16(obj.type, xdata->object_type);
@@ -687,7 +687,7 @@ static void handle_fxx(int gelen, int func)
                     obj.type            =  GET_BE16(p);
                     strmaxcpy((char*)obj.name, (char*)(p+3),(int) *(p+2));
                     upstr(obj.name);
-                    result = find_obj_id(&obj, last_obj_id);
+                    result = scan_for_obj(&obj, last_obj_id);
                     if (!result){
                       U32_TO_BE32(obj.id,    xdata->object_id);
                       U16_TO_BE16(obj.type,  xdata->object_type);
@@ -849,7 +849,7 @@ static void handle_fxx(int gelen, int func)
                       xstrmaxcpy(oldpassword,  p+1, (int) *p);
                       p +=   ((*p)+1);
                       xstrmaxcpy(newpassword,  p+1, (int) *p);
-                      if (0 == (result = find_obj_id(&obj, 0))) {
+                      if (0 == (result = find_obj_id(&obj))) {
                         XDPRINTF((6, 0, "CHPW: OLD=`%s`, NEW=`%s`", oldpassword,
                                          newpassword));
 
@@ -1007,7 +1007,7 @@ static void handle_fxx(int gelen, int func)
                     obj.type     =  GET_BE16(p);
                     strmaxcpy((char*)obj.name, (char*)(p+3), *(p+2));
                     upstr(obj.name);
-                    if (0 == (result = find_obj_id(&obj, 0)))  {
+                    if (0 == (result = find_obj_id(&obj)))  {
                       internal_act = 1;
                       result=nw_test_passwd(obj.id, act_c->crypt_key, rdata);
                       internal_act = 0;
@@ -1029,7 +1029,7 @@ static void handle_fxx(int gelen, int func)
 
                     /* from Guntram Blohm  */
                     p += (*p+1); /* here is crypted password length */
-                    if (0 == (result = find_obj_id(&obj, 0)))  {
+                    if (0 == (result = find_obj_id(&obj)))  {
 		      internal_act=1;
 		      result=nw_keychange_passwd(obj.id, act_c->crypt_key,
 				rdata, (int)*p, p+1, act_c->object_id);
@@ -1093,7 +1093,11 @@ static void handle_fxx(int gelen, int func)
                    NETOBJ    obj;
                    obj.id =  GET_BE32(rdata);
                    XDPRINTF((1, 0, "TODO:GET QUEUE JOB LIST,old of Q=0x%lx", obj.id));
+                   memset(responsedata, 0, 2);
+                   data_len = 2;
+#if 0
                    completition=0xd5; /* no Queue Job */
+#endif
                   }
                   break;
 
@@ -1102,6 +1106,7 @@ static void handle_fxx(int gelen, int func)
                    NETOBJ    obj;
                    obj.id =  GET_BE32(rdata);
                    XDPRINTF((1, 0, "TODO: GET QUEUE JOB ENTRY of Q=0x%lx", obj.id));
+
                    completition=0xd5; /* no Queue Job */
                   }
                   break;
@@ -1148,6 +1153,7 @@ static void handle_fxx(int gelen, int func)
                    obj.id =  GET_BE32(rdata);
                    XDPRINTF((2, 0, "TODO:GET QUEUE JOB List of Q=0x%lx", obj.id));
                    memset(xdata, 0, sizeof(struct XDATA));
+                   data_len=sizeof(struct XDATA);
                   }break;
 
      case 0xc8 :  { /* CHECK CONSOLE PRIVILEGES */

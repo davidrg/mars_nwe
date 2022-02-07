@@ -162,7 +162,8 @@ void nw_setup_home_vol(int len, uint8 *fn)
       nw_volumes[k].maps_count = 0;
       nw_volumes[k].unixnamlen = len;
       new_str(nw_volumes[k].unixname, unixname);
-      volume_to_namespace_map(k, &(nw_volumes[k]));
+      if (len)
+        volume_to_namespace_map(k, &(nw_volumes[k]));
     }
   }
 }

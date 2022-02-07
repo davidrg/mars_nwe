@@ -239,7 +239,10 @@ extern int errno;
 #endif
 
 #if IPX_DATA_GR_546
-#  if IPX_DATA_GR_546 == 2
+#  if IPX_DATA_GR_546 == 3
+#    define IPX_MAX_DATA      4130
+#    define RW_BUFFERSIZE     4096
+#  elif IPX_DATA_GR_546 == 2
 #    define IPX_MAX_DATA      1470
 #    define RW_BUFFERSIZE     1444
 #  else
