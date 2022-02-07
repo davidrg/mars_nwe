@@ -1,4 +1,4 @@
-/* nwvolume.h  20-Jul-97 */
+/* nwvolume.h  02-Aug-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -69,6 +69,7 @@ struct fs_usage {
 
 extern NW_VOL    *nw_volumes;
 extern int       used_nw_volumes;
+extern int       loaded_namespaces;
 extern uint8     *home_dir;
 extern int       home_dir_len;
 extern char      *path_vol_inodes_cache;  /* for namespace routines */

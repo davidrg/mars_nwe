@@ -15,5 +15,9 @@
 #define D_FN_NAMES     		8   
 #define D_FN_SEARCH 	     0x10   /* file search */  
 
+
+/* NWBIND */
+#define D_BIND_REQ 	   0x8000   /* all Requests */  
+
 #endif
 

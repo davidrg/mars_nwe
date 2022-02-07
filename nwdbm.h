@@ -1,4 +1,4 @@
-/* nwdbm.h 17-Apr-97 */
+/* nwdbm.h 24-Aug-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -120,6 +120,8 @@ extern int nw_delete_property(int object_type,
 	        uint8 *object_name, int object_namlen,
 	        uint8 *prop_name, int prop_namlen);
 
+extern int nw_is_member_in_set(uint32 obj_id, char *propname, 
+                uint32 member_id);
 
 extern int nw_is_obj_in_set(int object_type,
 	        uint8 *object_name, int object_namlen,
@@ -162,6 +164,8 @@ extern int nw_scan_property(NETPROP *prop,
     		     int      prop_namlen,
     		     uint32   *last_scan);
 
+extern int nw_get_prop_val_str(uint32 q_id, char *propname, uint8 *buff);
+
 extern int nw_create_obj(NETOBJ *obj, uint32 wanted_id);
 
 
@@ -193,15 +197,17 @@ extern int nw_keychange_passwd(uint32 obj_id,
 
 extern int nw_test_adr_time_access(uint32 obj_id, ipxAddr_t *client_adr);
 
-extern int nw_get_q_dirname(uint32 q_id, uint8 *buff);
-extern int nw_get_q_prcommand(uint32 q_id, uint8 *buff);
 
+extern int nwdbm_mkdir(char *unixname, int mode, int flags);
 extern void test_ins_unx_user(uint32 id);
 extern int  test_allow_password_change(uint32 id);
 
 extern int nw_fill_standard(char *servername, ipxAddr_t *adr);
 extern int nw_init_dbm(char *servername, ipxAddr_t *adr);
+extern void nw_exit_dbm(void);
+
 extern int do_export_dbm(char *path);
 extern int do_import_dbm(char *path);
+
 
 #endif

@@ -1,4 +1,4 @@
-/* nwfile.c  25-Jul-97 */
+/* nwfile.c  26-Aug-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -41,11 +41,20 @@ void sig_bus_mmap(int rsig)
 
 static FILE_HANDLE  file_handles[MAX_FILE_HANDLES_CONN];
 #define    HOFFS        0
+#define    USE_NEW_FD   1
 static int count_fhandles=0;
+
+#if USE_NEW_FD
+static int last_fhandle=HOFFS;
+#endif
 
 static int new_file_handle(uint8 *unixname, int task)
 {
-  int fhandle = HOFFS -1;
+#if USE_NEW_FD  
+  int fhandle= -1 + last_fhandle++;
+#else
+  int fhandle=HOFFS-1;
+#endif  
   FILE_HANDLE  *fh=NULL;
   while (++fhandle < count_fhandles) {
     fh=&(file_handles[fhandle]);
@@ -54,13 +63,27 @@ static int new_file_handle(uint8 *unixname, int task)
       break;
     } else fh=NULL;
   }
+
   if (fh == NULL) {
     if (count_fhandles < MAX_FILE_HANDLES_CONN) {
       fh=&(file_handles[count_fhandles]);
       fhandle = ++count_fhandles;
     } else {
-      XDPRINTF((1, 0, "No more free file handles"));
-      return(0); /* no free handle anymore */
+#if USE_NEW_FD  
+      last_fhandle=HOFFS+1;
+      fhandle=HOFFS-1;
+      while (++fhandle < count_fhandles) {
+        fh=&(file_handles[fhandle]);
+        if (fh->fd == -1 && !(fh->fh_flags & FH_DO_NOT_REUSE)) { /* empty slot */
+          fhandle++;
+          break;
+        } else fh=NULL;
+      }
+#endif
+      if (fh == NULL) {
+        XDPRINTF((1, 0, "No more free file handles"));
+        return(0); /* no free handle anymore */
+      }
     }
   }
   /* init handle  */
@@ -74,31 +97,12 @@ static int new_file_handle(uint8 *unixname, int task)
   fh->f       = NULL;
   XDPRINTF((5, 0, "new_file_handle=%d, count_fhandles=%d, fn=%s",
        fhandle, count_fhandles, unixname));
-
-  if (fhandle == ipx_io.fh_r){
-    ipx_io.fh_r= 0;
-    ipx_io.fd_r=-1;
-  }
-  if (fhandle == ipx_io.fh_w){
-    ipx_io.fh_w= 0;
-    ipx_io.fd_w=-1;
-  }
   return(fhandle);
 }
 
 static int free_file_handle(int fhandle)
 {
   int result=-0x88;
-
-  if (fhandle == ipx_io.fh_r){
-    ipx_io.fh_r= 0;
-    ipx_io.fd_r=-1;
-  }
-  if (fhandle == ipx_io.fh_w){
-    ipx_io.fh_w= 0;
-    ipx_io.fd_w=-1;
-  }
-
   if (fhandle > HOFFS && (fhandle <= count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
@@ -125,11 +129,13 @@ static int free_file_handle(int fhandle)
       }
     }
     fh->fd = -1;
+#if !USE_NEW_FD    
     while (count_fhandles > fhandle
           && file_handles[count_fhandles-1].fd == -1
           && !(file_handles[count_fhandles-1].fh_flags & FH_DO_NOT_REUSE) ) {
       count_fhandles--;
     }
+#endif
     result=0;
   }
   XDPRINTF((5, 0, "free_file_handle=%d, count_fhandles=%d, result=%d",
@@ -148,6 +154,9 @@ void init_file_module(int task)
     while (k++ < count_fhandles)
       free_file_handle(k);
     count_fhandles = HOFFS;
+#if USE_NEW_FD    
+    last_fhandle   = HOFFS;
+#endif
   } else {
     /* I hope next is ok, added 20-Oct-96 ( 0.98.pl5 ) */
     while (k++ < count_fhandles) {
@@ -157,10 +166,6 @@ void init_file_module(int task)
       }
     }
   }
-  ipx_io.fh_r= 0;
-  ipx_io.fd_r=-1;
-  ipx_io.fh_w= 0;
-  ipx_io.fd_w=-1;
 }
 
 static int xsetegid(gid_t gid)
@@ -185,8 +190,9 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
  * creatmode: 0 = open
  *          | 1 = creat (ever)
  *          | 2 = creatnew ( creat if not exist )
- *          & 4 == save handle    (creat)
- *          & 8 == ignore rights  (create ever)
+ *          ---------
+ *          & 4 == save handle    (not reuse)
+ *          & 8 == ignore rights  (try to open as root)
  * attrib ??
  *
  * access: 0x1=read,
@@ -210,7 +216,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
  */
 {
    int fhandle  = new_file_handle(unixname, task);
-   int dowrite  = ((access & 2) || creatmode) ? 1 : 0;
+   int dowrite  = ((access & 2) || (creatmode & 3) ) ? 1 : 0;
    if (fhandle > HOFFS){
      FILE_HANDLE *fh=&(file_handles[fhandle-1]);
      int completition = 0;  /* first ok */
@@ -220,7 +226,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
 
      int did_grpchange = 0;
      if (dowrite && (voloptions & VOL_OPTION_READONLY)) {
-       completition = (creatmode) ? -0x84 : -0x94;
+       completition = (creatmode&3) ? -0x84 : -0x94;
      } else if (acc > -1) {
        /* do exist */
        if (!S_ISDIR(stbuff->st_mode)) {
@@ -238,9 +244,9 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                  XDPRINTF((1, 0, "Uses strange open comp. mode for file `%s`",
                      fh->fname));
                } else
-                 completition = (creatmode) ? -0x84 : -0x94;
+                 completition = (creatmode&3) ? -0x84 : -0x94;
              } else
-              completition = (creatmode) ? -0x84 : -0x94;
+              completition = (creatmode&3) ? -0x84 : -0x94;
            } else if (!(acc & R_OK) && !(creatmode & 0x8) )
              completition = -0x93;
 
@@ -267,7 +273,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          }
        } else
          completition= -0xff;
-     } else if ( (voloptions & VOL_OPTION_IS_PIPE) || !creatmode) {
+     } else if ( (voloptions & VOL_OPTION_IS_PIPE) || !(creatmode&3) ) {
        /* must exist, but don't */
        completition=-0xff;
      } else {
@@ -326,7 +332,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          }
        } else {
          /* <========= this is NOT a PIPE Volume ====================> */
-         if (creatmode) {  /* creat File  */
+         if (creatmode&0x3) {  /* creat File  */
            if (creatmode & 0x2) { /* creatnew */
              XDPRINTF((5,0,"CREAT FILE:%s: Handle=%d", fh->fname, fhandle));
              fh->fd       = creat(fh->fname, 0777);
@@ -369,6 +375,15 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
              stbuff->st_atime = stbuff->st_mtime;
            }
            fh->fd = open(fh->fname, acm);
+           if (fh->fd < 0 && (creatmode&8)) {
+             if (did_grpchange) {
+               xsetegid(act_gid);
+               did_grpchange=0;
+             }
+             seteuid(0);
+             fh->fd = open(fh->fname, acm);
+             reset_guid();
+           }
            XDPRINTF((5,0, "OPEN FILE:fd=%d, attrib:0x%x, access:0x%x, fh->fname:%s:fhandle=%d",
                  fh->fd, attrib, access, fh->fname, fhandle));
            if (fh->fd < 0)
@@ -601,7 +616,7 @@ static void open_pipe_command(FILE_HANDLE *fh, int dowrite)
                         act_connection, act_pid);
     fh->f  = ext_popen(pipecommand, geteuid(), getegid());
   }
-  fh->fd = (fh->f) ? fileno(fh->f->fildes[dowrite ? 0 : 1]) : -3;
+  fh->fd = (fh->f) ? fh->f->fds[dowrite ? 0 : 1] : -3;
 }
 
 int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
@@ -613,6 +628,7 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
     if (fh->fd > -1) {
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
         int readsize=size;
+#if 1        
         if (-1 == (size = read(fh->fd, data, readsize)) )  {
           int k=2;
           do {
@@ -620,10 +636,24 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
           } while(k-- &&  -1 == (size = read(fh->fd, data, readsize)));
           if (size == -1) size=0;
         }
+#else
+        int offset=0;
+        int k=2;
+        while ((size = read(fh->fd, data+offset, readsize)) < readsize) {
+          if (size>0) {
+            readsize-=size;
+            offset+=size;
+          } else if (!k-- || ((!size)&&readsize)) break;
+          else sleep(1);
+        }
+        size=offset;
+#endif
+#if 1
         if (!size) {
           if (fh->f->flags & 1) return(-0x57);
           fh->f->flags |= 1;
         }
+#endif
       } else if (use_mmap && fh->p_mmap) {
         while (1) {
           if (offset < fh->size_mmap) {
@@ -641,7 +671,7 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
           }
         } /* while */
       } else {
-        if (use_ipx_io || fh->offd != (long)offset) {
+        if (fh->offd != (long)offset) {
           fh->offd=lseek(fh->fd, offset, SEEK_SET);
           if (fh->offd < 0) {
             XDPRINTF((5,0,"read-file failed in lseek"));
@@ -650,10 +680,6 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
         if (fh->offd > -1L) {
           if ((size = read(fh->fd, data, size)) > -1) {
             fh->offd+=(long)size;
-            if (use_ipx_io) {
-              ipx_io.fh_r=fhandle+1;
-              ipx_io.fd_r=fh->fd;
-            }
           } else {
             XDPRINTF((5,0,"read-file failed in read"));
           }
@@ -699,16 +725,12 @@ int nw_write_file(int fhandle, uint8 *data, int size, uint32 offset)
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
         return(size ? write(fh->fd, data, size) : 0);
       } else {
-        if (use_ipx_io || fh->offd != (long)offset)
+        if (fh->offd != (long)offset)
             fh->offd = lseek(fh->fd, offset, SEEK_SET);
         if (size) {
           if (fh->offd > -1L) {
             size = write(fh->fd, data, size);
             fh->offd+=(long)size;
-            if (use_ipx_io&&size>0) {
-              ipx_io.fh_w=fhandle+1;
-              ipx_io.fd_w=fh->fd;
-            }
           } else size = -1;
           return(size);
         } else {  /* truncate FILE */

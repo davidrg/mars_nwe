@@ -1,3 +1,7 @@
+------16-Aug-97--- 0.99.pl1 ---------
+- print queue handling changed. (please look into examples/nw.ini)
+- simple semaphore calls added.
+- in mail directory subdirectory 'user' added with symlinks to mail/user-id's.
 ------31-Jul-97--- 0.99.pl0 ---------
 - Client-32 from Novell should now work. (added vol/dev/inode/path cache)
   The cache directory '/var/spool/nwserv/.volcache' should/can be controlled

@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "22-Jul-97"
+#define REVISION_DATE "26-Aug-97"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -22,6 +22,9 @@
 #include "net.h"
 #include "nwdbm.h"
 #include "unxlog.h"
+#include "nwbind.h"
+#include "nwqueue.h"
+#include "sema.h"
 
 /* next should be '1', is for testing only */
 #define USE_PERMANENT_OUT_SOCKET  1
@@ -64,17 +67,6 @@ static void write_to_nwserv(int what, int connection, int mode,
 #define nwserv_down_server() \
    write_to_nwserv(0xffff, 0, 0, NULL, 0)
 
-typedef struct {
-   ipxAddr_t  client_adr;      /* address remote client */
-   uint32     object_id;       /* logged object         */
-                               /* 0 = not logged in     */
-   uint8      crypt_key[8];    /* password generation   */
-   time_t     t_login;         /* login time            */
-   uint8      message[60];     /* saved BCastmessage    */
-   int        active;          /* 0=closed, 1= active   */
-   int        send_to_sock;    /* this is the receiving sock */
-   int        pid_nwconn;      /* pid of user process nwconn */
-} CONNECTION;
 
 static int        max_nw_vols=MAX_NW_VOLS;
 static int        max_connections=MAX_CONNECTIONS;
@@ -163,13 +155,17 @@ static void open_clear_connection(int conn, int activate, uint8 *addr)
     c->active     = activate;
     c->message[0] = '\0';
     c->t_login    = 0;
+    
     if (activate && addr) {
       memcpy(&(c->client_adr), addr, sizeof(ipxAddr_t));
       c->send_to_sock = GET_BE16(addr+sizeof(ipxAddr_t));
       c->pid_nwconn   = GET_BE32(addr+sizeof(ipxAddr_t)+sizeof(uint16));
-    } else {
+    } else { /* down connection */
       if (c->object_id)
         write_utmp(0, conn+1, c->pid_nwconn,  &(c->client_adr), NULL);
+      if (c->count_semas) {
+        clear_conn_semas(c);
+      }
     }
     c->object_id  = 0;
   }
@@ -221,29 +217,38 @@ static void handle_fxx(int gelen, int func)
   uint8        len           = *(requestdata+1);
 #endif
 
-  uint8        ufunc         = *(requestdata+2);
-  uint8        *rdata        = requestdata+3;
+  uint8        ufunc; 
+  uint8        *rdata;
   uint8        completition  = 0;
   uint8        connect_status= 0;
   int          data_len      = 0;
 
-  if (nw_debug > 1){
-    int j = gelen - sizeof(NCPREQUEST);
-    if (nw_debug){
-      if (func == 0x19) ufunc=0;
-      XDPRINTF((1, 0, "NCP 0x%x REQUEST:ufunc:0x%x", func, ufunc));
-      if (j > 0){
-        uint8  *p=requestdata;
-        XDPRINTF((1, 2, "len %d, DATA:", j));
-        while (j--) {
-          int c = *p++;
-          if (c > 32 && c < 127)  XDPRINTF((1, 3, ",\'%c\'", (char) c));
-          else XDPRINTF((1, 3, ",0x%x", c));
-        }
-        XDPRINTF((1, 1, NULL));
-      }
-    }
+  if (func==0x19) {
+    ufunc   = 0;
+    rdata   = requestdata;
+  } else if (func==0x20) {
+    ufunc   = *requestdata;
+    rdata   = requestdata+1;
+  } else {
+    ufunc   = *(requestdata+2);
+    rdata   = requestdata+3;
   }
+
+  MDEBUG(D_BIND_REQ, {
+    int j = gelen - sizeof(NCPREQUEST);
+    XDPRINTF((1, 0, "NCP 0x%x REQUEST:ufunc:0x%x", func, ufunc));
+    if (j > 0){
+      uint8  *p=requestdata;
+      XDPRINTF((1, 2, "len %d, DATA:", j));
+      while (j--) {
+        int c = *p++;
+        if (c > 32 && c < 127)  XDPRINTF((1, 3, ",\'%c\'", (char) c));
+        else XDPRINTF((1, 3, ",0x%x", c));
+      }
+      XDPRINTF((1, 1, NULL));
+    }
+  })
+
   if (0x15 == func) {
     switch (ufunc) {  /* Messages */
       case 0x0 :  {   /* Send Broadcast Message (old) */
@@ -307,11 +312,13 @@ static void handle_fxx(int gelen, int func)
       case 0x29 : {  /* Read volume restrictions */
         /* Returns 3 integers, uid, gid, 0=OK/1=Permission denied */
         uint32 id = GET_BE32(rdata+1);
+        internal_act=1;
         if (get_guid((int*) responsedata, (int*)(responsedata+sizeof(int)),
 		     id, (char *) NULL) != 0) {
 	  completition = 0xff;
           XDPRINTF((2, 0, "quota id-uid mapping failure %d 0x%x", ufunc, id));
         }
+        internal_act=0;
         /* OK if supervisor or trying to read (0x29) own limits */
         if (act_c->object_id == 1 ||
 	    (act_c->object_id == id && ufunc == 0x29))
@@ -446,16 +453,20 @@ static void handle_fxx(int gelen, int func)
                               ? (int) *rdata
                               : act_connection)
                           : GET_32(rdata);
-                    if (conn && --conn < max_connections
-                      && connections[conn].active ) {
-                      CONNECTION *cx=&(connections[conn]);
+                    if (conn >0 && conn <= max_connections
+                      && connections[conn-1].active ) {
+                      CONNECTION *cx=&(connections[conn-1]);
                       data_len = sizeof(ipxAddr_t);
                       memcpy(responsedata, (char*)&(cx->client_adr), data_len);
                       if (ufunc==0x1a) {
                         *(responsedata+data_len)=0x02; /* NCP connection */
                         data_len++;
                       }
-                    } else completition = 0xff;
+                    } else {
+                      XDPRINTF((1, 0, "Get Connection Internet Adress, Conn:%d of %d failed",
+                               conn, max_connections));
+                      completition = 0xff;
+                    }
                   } break;
 
      case 0x14 :  { /* Login Objekt, unencrypted passwords */
@@ -1087,94 +1098,178 @@ static void handle_fxx(int gelen, int func)
                    completition=0xfb;
                   } break;
 
-
-     case 0x66 :   { /* Read Queue Current Status,old */
-                   /*  !!!!!! TO DO */
-                   NETOBJ    obj;
+     case 0x66 :  { /* Read Queue Current Status,old */
                    struct XDATA {
-                      uint8 queue_id[4];
+                      uint8 id[4];
                       uint8 status;
                       uint8 entries;
                       uint8 servers;
-                      uint8 data[1];  /* server_id + server_station list */
+                      uint8 data[1];
                    } *xdata = (struct XDATA*) responsedata;
-                   obj.id =  GET_BE32(rdata);
-                   memset(xdata, 0, sizeof(struct XDATA));
-                   U32_TO_BE32(obj.id, xdata->queue_id);
-                   data_len = sizeof(struct XDATA);
-                   XDPRINTF((1, 0, "TODO:READ QUEUE STATUS,old of Q=0x%lx", obj.id));
+                   uint32 q_id =  GET_BE32(rdata);
+                   int status;
+                   int entries;
+                   int servers;
+                   int server_ids[25];
+                   int server_conns[25];
+                   int result=nw_get_queue_status(q_id, &status, &entries, 
+                                  &servers, server_ids, server_conns);
+                   if (result>-1) {
+                     int k;
+                     uint8 *p=&(xdata->data[0]);
+                     U32_TO_BE32(q_id, xdata->id);
+                     xdata->status=status;
+                     xdata->entries=entries;
+                     xdata->servers=servers;
+                     k=-1;
+                     while (++k < servers) {
+                       U32_TO_BE32(server_ids[k], p);
+                       p+=4;
+                     }
+                     k=-1;
+                     while (++k < servers) {
+                       *p=(uint8) server_conns[k];
+                       ++p;
+                     }
+                     data_len=sizeof(struct XDATA)-1+5*servers;
+                   } else
+                     completition=(uint8)-result;
                   }
                   break;
 
      case 0x6A :    /* Remove Job from Queue OLD */
      case 0x80 :  { /* Remove Job from Queue NEW */
-                   NETOBJ      obj;
-                   uint32 jobnr  = (ufunc == 0x6A)
+                   uint32 q_id   = GET_BE32(rdata);
+                   uint32 job_id = (ufunc == 0x6A)
                                       ? GET_BE16(rdata+4)
                                       : GET_BE32(rdata+4);
-                   obj.id        = GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO:Remove Job=%ld from Queue Q=0x%lx", jobnr, obj.id));
-                   completition=0xd5; /* no Queue Job */
-                  }break;
-
-     case 0x6B :  {   /* Get Queue Job List, old */
-                   /*  !!!!!! TO DO */
-                   NETOBJ    obj;
-                   obj.id =  GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO:GET QUEUE JOB LIST,old of Q=0x%lx", obj.id));
-                   memset(responsedata, 0, 2);
-                   data_len = 2;
-#if 0
-                   completition=0xd5; /* no Queue Job */
-#endif
+                   int result=nw_remove_job_from_queue(
+                                           act_c->object_id,
+                                           q_id, job_id);
+                   if (result < 0)
+                     completition=(uint8)-result;
                   }
                   break;
 
-     case 0x6C :  {   /* Get Queue Job Entry */
-                   /*  !!!!!! TODO */
-                   NETOBJ    obj;
-                   obj.id =  GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO: GET QUEUE JOB ENTRY of Q=0x%lx", obj.id));
+     case 0x6B :  {  /* Get Queue Job List, old */
+                   uint32 q_id=GET_BE32(rdata);
+                   int result=nw_get_queue_job_list_old(q_id, responsedata);
+                   if (result > -1) 
+                     data_len=result;
+                   else
+                     completition=(uint8)-result;
+                  }
+                  break;
 
-                   completition=0xd5; /* no Queue Job */
+     case 0x6C :  {   /* Get Queue Job Entry old */
+                    uint32 q_id = GET_BE32(rdata);
+                    int job_id  = GET_BE16(rdata+4);
+                    int result=nw_get_q_job_entry(q_id, job_id, 
+                                   responsedata, 1);
+                    if (result > -1) 
+                      data_len=result;
+                    else completition=(uint8)-result;
                   }
                   break;
 
      case 0x68:     /* creat queue job and file old */
      case 0x79:   { /* creat queue job and file new */
-                    uint32 q_id      = GET_BE32(rdata);
-                    uint8  *dir_name = responsedata+1;
-                    int result       = nw_get_q_dirname(q_id, dir_name);
-                    if (result > -1) {
-                      *(dir_name-1)  = result;
-                      data_len       = result+1;
-                    } else {
-                    /*
-                       static int re=0x96;
-                      */
-                      completition = (uint8) 0xd3; /* err no queue rights */
-                      /*
-                      if (re == 0x96) re=0xd0;
-                      else if (re < 0xff) ++re;
-                      */
-                    }
+                    uint32 q_id    = GET_BE32(rdata);
+                    uint8 *q_job   = rdata+4; /* jobsize = 256(old) or 280 */ 
+                    int result     =  nw_creat_queue_job(
+                                      act_connection, ncprequest->task,  
+                                      act_c->object_id,
+                                      q_id, q_job, 
+                                      responsedata,
+                                      ufunc==0x68);
+                    if (result > -1) 
+                      data_len=result;
+                    else
+                      completition = (uint8) -result; 
+                      /*0xd3  err no queue rights */
                   }
                   break;
 
      case 0x69:      /* close file and start queue old ?? */
      case 0x7f:   {  /* close file and start queue */
                     uint32 q_id      = GET_BE32(rdata);
-                    uint8  *prc      = responsedata+1;
-                    int result       = nw_get_q_prcommand(q_id, prc);
-                    if (result > -1) {
-                      *(prc-1)       = result;
-                      data_len       = result+1;
-                    } else completition = (uint8) 0xff; 
+     		    uint32 job_id    = (ufunc==0x69) 
+     		                         ? GET_BE16(rdata+4)
+     		                         : GET_BE32(rdata+4);
+                    int result       = nw_close_queue_job(q_id, job_id, 
+                                                         responsedata);
+                    if (result > -1) 
+                      data_len=result;
+                    else 
+                      completition  = (uint8) -result; 
                   }
                   break;
 
+     case 0x6f :  {  /* attach server to queue */
+                     /* from pserver */
+                    uint32 q_id      = GET_BE32(rdata);
+                    int result=nw_attach_server_to_queue(
+                             act_c->object_id,
+                             act_connection,
+                             q_id);
+                    if (result < 0) 
+                      completition  = (uint8) -result; 
+                    /* NO REPLY */
+                  }
+                  break;
+
+     case 0x70 :  {  /* detach server from queue */
+                     /* from pserver */
+                    uint32 q_id      = GET_BE32(rdata);
+                    int result=nw_detach_server_from_queue(
+                                act_c->object_id,
+                                act_connection,
+                                q_id);
+                    if (result < 0) 
+                      completition  = (uint8) -result; 
+                    /* NO REPLY */
+                  }
+                  break;
+
+     case 0x78:   /* Get Queue Job File Size (old) */
+     case 0x87:   /* Get Queue Job File Size       */
+                  {
+                    uint32 q_id   = GET_BE32(rdata);
+     		    uint32 job_id = (ufunc==0x78) 
+     		                    ? GET_BE16(rdata+4)
+     		                    : GET_BE32(rdata+4);
+                    int result = nw_get_queue_job_file_size(q_id, job_id);
+                    if (result > -1) {
+                      uint8 *p=responsedata;
+                      U32_TO_BE32(q_id, p); p+=4;
+                      if (ufunc==0x78) {
+                        U16_TO_BE16(job_id, p); p+=2;
+                      } else {
+                        U32_TO_BE32(job_id, p); p+=4;
+                      }
+                      U32_TO_BE32(result, p); p+=4;
+                      data_len=(int)(p-responsedata);
+                    } else 
+                      completition  = (uint8) -result; 
+                  }
+                  break;
+
+     case 0x7c :  {  /* service queue job */
+                    uint32 q_id      = GET_BE32(rdata);
+                    int    type      = GET_BE16(rdata+4);
+                    int result=nw_service_queue_job(
+                         act_c->object_id,
+                         act_connection, ncprequest->task,  
+                         q_id, type, responsedata, 0);
+                    if (result > -1)
+                      data_len=result;
+                    else
+                     completition=(uint8)-result;
+                  }
+                  break;
+
+
      case 0x7d :  { /* Read Queue Current Status, new */
-                   NETOBJ    obj;
                    struct XDATA {
                      uint8  id[4];     /* queue id */
                      uint8  status[4]; /* &1 no station allowed */
@@ -1183,11 +1278,34 @@ static void handle_fxx(int gelen, int func)
                      uint8 entries[4]; /* current entries */
                      uint8 servers[4]; /* current servers */ 
                    } *xdata = (struct XDATA*) responsedata;
-                   obj.id =  GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO:READ QUEUE STATUS NEW of Q=0x%lx", obj.id));
-                   memset(xdata, 0, sizeof(*xdata));
-                   U32_TO_BE32(obj.id, xdata->id);
-                   data_len=sizeof(struct XDATA);
+                   uint32 q_id =  GET_BE32(rdata);
+                   int status;
+                   int entries;
+                   int servers;
+                   int server_ids[25];
+                   int server_conns[25];
+                   int result=nw_get_queue_status(q_id, &status, &entries, 
+                                  &servers, server_ids, server_conns);
+                   if (result>-1) {
+                     int k;
+                     uint8 *p=responsedata+sizeof(*xdata);
+                     U32_TO_BE32(q_id, xdata->id);
+                     U32_TO_32(status, xdata->status);
+                     U32_TO_32(entries, xdata->entries);
+                     U32_TO_32(servers, xdata->servers);
+                     k=-1;
+                     while (++k < servers) {
+                       U32_TO_BE32(server_ids[k], p);
+                       p+=4;
+                     }
+                     k=-1;
+                     while (++k < servers) {
+                       U32_TO_32(server_conns[k], p);
+                       p+=4;
+                     }
+                     data_len=sizeof(struct XDATA)+8*servers;
+                   } else
+                     completition=(uint8)-result;
                   } break;
 
      case 0x81 :  { /* Get Queue Job List */
@@ -1202,6 +1320,37 @@ static void handle_fxx(int gelen, int func)
                    memset(xdata, 0, sizeof(struct XDATA));
                    data_len=sizeof(struct XDATA);
                   }break;
+
+     case 0x83:   {  /* finish servicing queue job */
+                    uint32 q_id       = GET_BE32(rdata);
+     		    uint32 job_id     = GET_BE32(rdata+4);
+#if 0
+                    uint32 chargeinfo = GET_BE32(rdata+8);
+#endif
+                    int result        = nw_finish_abort_queue_job(0,
+                                           act_c->object_id,
+                                           act_connection, 
+                                           q_id, job_id);
+                    if (result <0)
+                      completition=(uint8) -result;
+                  }break;
+
+     case 0x84:   {  /* abort servicing queue job */
+                    uint32 q_id       = GET_BE32(rdata);
+     		    uint32 job_id     = GET_BE32(rdata+4);
+                    int result        = nw_finish_abort_queue_job(1,
+                                           act_c->object_id,
+                                           act_connection, 
+                                           q_id, job_id);
+                    if (result <0)
+                      completition=(uint8) -result;
+                    else {
+                      memset(responsedata, 0, 2);
+                      data_len=2;
+                    }
+                  }break;
+
+
 
      case 0xc8 :  { /* CHECK CONSOLE PRIVILEGES */
                    XDPRINTF((1, 0, "TODO: CHECK CONSOLE PRIV"));
@@ -1283,14 +1432,18 @@ static void handle_fxx(int gelen, int func)
 #if 0
      case 0xfd :  /* Send Console Broadcast (new) */
                   return(-1); /* nicht erkannt */
-
                   break;
 #endif
        default : completition = 0xfb; /* not known here */
+                  break;
     }  /* switch */
   } else if (func == 0x19) {  /* logout */
     write_utmp(0, act_connection, act_c->pid_nwconn, &(act_c->client_adr), NULL);
     act_c->object_id  = 0; /* not LOGIN  */
+  } else if (0x20 == func) { /* Semaphore */
+    int result = handle_func_0x20(act_c, rdata, ufunc, responsedata);
+    if (result > -1) data_len = result;
+    else completition=(uint8)-result;
   } else completition = 0xfb;
 
   U16_TO_BE16(0x3333,           ncpresponse->type);
@@ -1346,8 +1499,11 @@ static void handle_bind_calls(uint8 *p)
 
 static void reinit_nwbind(void)
 {
+  int org_internal_act=internal_act;
   get_ini_debug(NWBIND);
+  internal_act=1;
   (void)nw_fill_standard(NULL, NULL);
+  internal_act=org_internal_act;
   sync_dbm();
 }
 
@@ -1561,7 +1717,8 @@ int main(int argc, char *argv[])
       t_close(ipx_out_fd);
     }
   }
-  sync_dbm();
+  internal_act=1;
+  nw_exit_dbm();
   xfree(connections);
   XDPRINTF((2,0, "LEAVE nwbind"));
   return(0);

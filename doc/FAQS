@@ -49,6 +49,10 @@ A: Give the volume the 'O' flag.
    [HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\VxD\NWREDIR]
    "SupportLFN"=hex:02
 
+A: Pascal Haible reported that he had to set system.ini, too.
+   [nwredir]
+   SupportLFN=2
+
 Q: I have 2 Eth-devices (one for IP/IPX and one for IPX only)
    and after starting mars_nwe I have strange problems with my IP-net.
 A: Make sure that all Eth-devices have an assigned IP address, even if

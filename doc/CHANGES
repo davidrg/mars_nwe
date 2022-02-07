@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 14-Jul-97
+Aenderungen in mars_nwe bis zum : 08-Aug-97
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -349,3 +349,14 @@ Erste 'oeffentliche' Version
 - Internen Router Code fuer SAP Anfragen des internen Netzes (slist usw.) 
   korrigiert.
 <----- ^^^^^^^^^^ pl0 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- namespace routine delete file/dir um wildcardhandling erweitert fuer 
+  client32. (W95)
+- einfache Semaphore Routinen eingebaut.
+- Routine 0x16,0x2f eingebaut. (fuer Pete)
+- Quota Support wieder zum Laufen gebracht. 
+  Durch Bindery Security Fixes funktionierte Quota Support 
+  nicht mehr.
+- im MAIL Verzeichnis werden nun im Unterverzeichnis user symbolische Links 
+  der Login Namen erzeugt.
+<----- ^^^^^^^^^^ pl1 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+

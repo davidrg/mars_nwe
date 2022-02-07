@@ -1,4 +1,4 @@
-/* namspace.c 30-Jul-97 : NameSpace Services, mars_nwe */
+/* namspace.c 12-Aug-97 : NameSpace Services, mars_nwe */
 
 /* !!!!!!!!!!!! NOTE !!!!!!!!!! */
 /* Its still dirty, but it should work fairly well */
@@ -967,15 +967,24 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe,
 
   memset(p, 0, result+2);
 
+  if ( (!S_ISDIR(stb->st_mode)) 
+     && (voloptions & VOL_OPTION_IS_PIPE) ) {
+    (void)time(&(stb->st_mtime));
+    stb->st_size  = 0x70000000|(stb->st_mtime&0xfffffff);
+    stb->st_atime = stb->st_mtime;
+  }
+
+
   if (infomask & INFO_MSK_DATA_STREAM_SPACE) {
     U32_TO_32(stb->st_size, p);
   }
   p  += 4;
 
   if (infomask & INFO_MSK_ATTRIBUTE_INFO) {
-    uint32 attrib = (voloptions & VOL_OPTION_IS_PIPE)
-                     ? (uint32) FILE_ATTR_SHARE
-                     : (uint32) un_nw_attrib(stb, 0, 0);
+    uint32 attrib = ( (!S_ISDIR(stb->st_mode)) 
+                     && (voloptions & VOL_OPTION_IS_PIPE) )
+                       ? (uint32) FILE_ATTR_SHARE|FILE_ATTR_A
+                       : (uint32) un_nw_attrib(stb, 0, 0);
     U32_TO_32(attrib, p);
     p      += 4;
     U16_TO_16((uint16)(attrib & 0xFFFF), p);
@@ -1517,7 +1526,8 @@ static int nw_open_creat_file_or_dir(
   int   exist  = result;
   uint8 last_part[258];
   *last_part='\0';
-  if (result < 0 && (opencreatmode & OPC_MODE_CREAT)) {  /* do not exist */
+  if (result < 0 && (opencreatmode & (OPC_MODE_CREAT|OPC_MODE_REPLACE))) {  
+    /* do not exist */
     result = build_base(namespace, nwp, pathes, 1, last_part);
     XDPRINTF((5, 0, "nw_open_c... result=%d, last_part='%s'",
                 result, last_part));
@@ -1533,7 +1543,7 @@ static int nw_open_creat_file_or_dir(
     if (!(creatattrib & FILE_ATTR_DIR)) {
       int creatmode=0; /* open */
       int attrib=0;
-      if (opencreatmode & (OPC_MODE_OPEN | OPC_MODE_CREAT) ) {
+      if (opencreatmode & (OPC_MODE_OPEN | OPC_MODE_CREAT| OPC_MODE_REPLACE) ) {
         if (opencreatmode & OPC_MODE_CREAT) {
 #if 0
           if (exist > -1 && !(opencreatmode & OPC_MODE_REPLACE))
@@ -1547,7 +1557,7 @@ static int nw_open_creat_file_or_dir(
               nwpath_2_unix(&dbe->nwpath, 2), &(dbe->nwpath.statb),
               attrib, access_rights, creatmode, task)) > -1) {
           fhandle = (uint32) result;
-#if 0
+#if 1    /* should be ok, 31-Jul-97 0.99.pl1 */
           actionresult |= OPC_ACTION_OPEN;  /* FILE OPEN */
 #endif
           if (exist > -1 && (opencreatmode & OPC_MODE_REPLACE))
@@ -1572,32 +1582,136 @@ static int nw_open_creat_file_or_dir(
   return(result);
 }
 
+typedef struct {
+  int         searchattrib;
+  uint8       *ubuf;   /* userbuff */
+} FUNC_SEARCH;
+
+static int func_search_entry(DIR_BASE_ENTRY *dbe, int namespace,
+    uint8 *path, int len, int searchattrib, 
+    int (*fs_func)(DIR_BASE_ENTRY *dbe, FUNC_SEARCH *fs), FUNC_SEARCH *fs)
+{
+  int result=-0xff;
+  FUNC_SEARCH    fs_local;
+  DIR_SEARCH_STRUCT *ds=(DIR_SEARCH_STRUCT*) xcmalloc(sizeof(DIR_SEARCH_STRUCT));
+  if (!fs) {
+    fs        = &fs_local;
+    fs->ubuf  = NULL;
+  }
+  fs->searchattrib = searchattrib;
+  ds->unixname     = (uint8*)nwpath_2_unix1(&(dbe->nwpath), 2, 258);
+  if (NULL != (ds->fdir = opendir(ds->unixname)) ) {
+    uint8          entry[257];
+    uint8          *pe=entry;
+    int            have_wild    = 0; /* do we have a wildcard entry */
+    int            inode_search = 0;
+    uint8          *is_ap   = NULL;      /* one after point */
+    struct dirent  *dirbuff = NULL;
+    int vol_options  = get_volume_options(dbe->nwpath.volume);
+    ds->kpath        = ds->unixname+strlen(ds->unixname);
+    *(ds->kpath)     = '/';
+    *(++(ds->kpath)) = '\0';
+    dbe->locked++;   /* lock dbe */
+
+    while (len--) {
+      uint8 c=*path++;
+      *pe++=c;
+      if (!have_wild) {
+        if (c==0xff) {
+          if (*path == '?' || *path == '*'
+                   || *path == 0xae || *path == 0xbf || *path==0xaa)
+            have_wild++;
+        } else if (c == '.') is_ap=pe;
+      }
+    }
+    *pe='\0';
+
+    if ((!have_wild) && is_ap && pe - is_ap == 3 && *is_ap== '_'
+      && *(is_ap+1) == '_'  && *(is_ap+2) == '_') {
+      *(is_ap -1) = '\0';
+      inode_search=atoi(entry);
+      *(is_ap -1) = '.';
+    }
+
+    if ( (namespace == NAME_DOS || namespace == NAME_OS2)
+        && !(vol_options & VOL_OPTION_IGNCASE) )  {
+      if (vol_options & VOL_OPTION_DOWNSHIFT) {
+        down_fn(entry);
+      } else {
+        up_fn(entry);
+      }
+    }
+    
+    while (NULL != (dirbuff=readdir(ds->fdir))) {
+      uint8 dname[257];
+      if (search_match( dirbuff,
+                        vol_options,
+                        namespace,
+                        inode_search,
+                        entry,
+                        searchattrib,
+                        dname,
+                        ds)) {
+        int dest_entry = get_add_new_entry(dbe, namespace, dname, 0);
+        if (dest_entry > -1) {
+          int res = (*fs_func)(dir_base[dest_entry], fs);
+          if (res < 0) {
+            result=res;
+            break;
+          } else
+            result=0;
+        } else {
+          XDPRINTF((2, 0, "func_search_entry:Cannot add entry '%s'", entry));
+        }
+      }
+    } /* while  */
+    *(ds->kpath) = '\0';
+    dbe->locked=0;
+    closedir(ds->fdir);
+  } else {  /* if NULL != ds->fdir */
+    XDPRINTF((5, 0, "func_search_entry:could not opendir=`%s`", ds->unixname));
+  }
+  xfree(ds->unixname);
+  xfree(ds);
+  return(result);
+}
+  
+static int delete_file_dir(DIR_BASE_ENTRY *dbe, FUNC_SEARCH *fs)
+/* callbackroutine */
+{
+  uint8  *unname=(uint8*)nwpath_2_unix(&(dbe->nwpath), 2);
+  int    result;
+  if (S_ISDIR(dbe->nwpath.statb.st_mode)) {
+    result = rmdir(unname);
+    if (result < 0) {
+      switch (errno) {
+        case EEXIST: result=-0xa0; /* dir not empty */
+        default:     result=-0x8a; /* No privilegs */
+      }
+    } else {
+      result = 0;
+      free_dbe_p(dbe);
+    }
+  } else  {
+    if (-1 < (result = nw_unlink(dbe->nwpath.volume, unname)))
+       free_dbe_p(dbe);
+  }
+  return(result);
+}
+
+
 static int nw_delete_file_dir(int namespace, int searchattrib,
                                NW_HPATH *nwp)
 {
-  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  uint8 search_entry[258];
+  int result = build_base(namespace, nwp, nwp->pathes, 1, search_entry);
   if (result > -1) {
     DIR_BASE_ENTRY *dbe=dir_base[result];
-    uint8  *unname=(uint8*)nwpath_2_unix(&(dbe->nwpath), 2);
     if (get_volume_options(dbe->nwpath.volume) &
-            VOL_OPTION_READONLY) result = -0x8a;
-    else {
-      if (S_ISDIR(dbe->nwpath.statb.st_mode)) {
-        result = rmdir(unname);
-        if (result < 0) {
-          switch (errno) {
-            case EEXIST: result=-0xa0; /* dir not empty */
-            default:     result=-0x8a; /* No privilegs */
-          }
-        } else {
-          result = 0;
-          free_dbe_p(dbe);
-        }
-      } else {
-        if (-1 < (result = nw_unlink(dbe->nwpath.volume, unname)))
-           free_dbe_p(dbe);
-      }
-    }
+       VOL_OPTION_READONLY) result = -0x8a;
+    else result=func_search_entry(dbe, namespace,
+          search_entry, strlen(search_entry), searchattrib,
+          delete_file_dir, NULL);
   }
   return(result);
 }
@@ -1674,6 +1788,8 @@ static int nw_get_full_path_cookies(int namespace,
         *(p++) = (uint8)l;
         memcpy(p, pp, l);
         *(p+l)='\0';
+        if (!namespace)
+           up_fn(p);
         k++;
         XDPRINTF((5, 0, "component=%d, path=`%s`", k ,p));
         p+=l;
@@ -2136,6 +2252,56 @@ static int code = 0;
   return(result);
 }
 
+
+int fill_namespace_buffer(int volume, uint8 *rdata)
+{
+  if (volume < used_nw_volumes) {
+    int voloptions=get_volume_options(volume);
+    uint8 *p=rdata;
+    int count=0;
+
+    *p++=5; /* we say 5 known namespaces (index 0=DOS .. 4=OS2 */
+    
+    /* names */
+    *p++=3; memcpy(p,"DOS",  3); p+=3;
+    *p++=9; memcpy(p,"MACINTOSH", 9); p+=9;
+    *p++=3; memcpy(p,"NFS",  3); p+=3;
+    *p++=4; memcpy(p,"FTAM", 4); p+=4;
+    *p++=3; memcpy(p,"OS2",  3); p+=3;
+    
+    /* datastreams */
+    *p++=3; /* we say 3 datastreams here */
+    
+    *p++=NAME_DOS; 
+    *p++=19; memcpy(p,"Primary Data Stream",  19);    p+=19;
+
+    *p++=NAME_MAC; 
+    *p++=23; memcpy(p,"Macintosh Resource Fork", 23); p+=23;
+
+    *p++=NAME_FTAM; 
+    *p++=20; memcpy(p,"FTAM Extra Data Fork", 20);    p+=20;
+
+    if (loaded_namespaces & VOL_NAMESPACE_DOS) ++count;
+    if (loaded_namespaces & VOL_NAMESPACE_OS2) ++count;
+    if (loaded_namespaces & VOL_NAMESPACE_NFS) ++count;
+    *p++ = count;  /* loaded namespaces */
+    if (loaded_namespaces & VOL_NAMESPACE_DOS) *p++ = NAME_DOS;
+    if (loaded_namespaces & VOL_NAMESPACE_OS2) *p++ = NAME_OS2;
+    if (loaded_namespaces & VOL_NAMESPACE_NFS) *p++ = NAME_NFS;
+    
+    count=0;
+    if (voloptions & VOL_NAMESPACE_DOS) ++count;
+    if (voloptions & VOL_NAMESPACE_OS2) ++count;
+    if (voloptions & VOL_NAMESPACE_NFS) ++count;
+    *p++ = count;  /* volume namespaces */
+    if (voloptions & VOL_NAMESPACE_DOS) *p++ = NAME_DOS;
+    if (voloptions & VOL_NAMESPACE_OS2) *p++ = NAME_OS2;
+    if (voloptions & VOL_NAMESPACE_NFS) *p++ = NAME_NFS;
+    *p++ = 1;  /* only one datastream */
+    *p++ = 0;  /* DOS datastream */
+    return((int)(p-rdata));
+  } else return(-0x98);
+}
 
 int get_namespace_dir_entry(int volume, uint32 basehandle,
                                    int namspace, uint8 *rdata)

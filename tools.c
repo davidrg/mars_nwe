@@ -115,12 +115,14 @@ static char *buffered=NULL;
   int errnum      = errno;
   if (nw_debug >= dlevel) {
     if (use_syslog==1) {
-      char buf[2048];  /* should be ever big enough */
-      char *pb=buf;
+      char *buf;
+      char *pb;
       if (buffered) {
-        strcpy(buf, buffered);
-        xfree(buffered);
-        pb+=strlen(buf);
+        buf=buffered;
+        pb=buf+strlen(buffered);
+        buffered=NULL;
+      } else {
+        pb=buf=xmalloc(2048);
       }
       if (p) {
         int l;
@@ -143,9 +145,10 @@ static char *buffered=NULL;
         closelog();
       } else {
         int l=strlen(buf);
-        buffered=xmalloc(l+1);
-        strcpy(buffered, buf);
+        buffered=xmalloc(l+2048);
+        memcpy(buffered, buf, l+1);
       }
+      xfree(buf);
     } else {
       if (!(mode & 1))
         fprintf(logfile, "%-8s %d:", get_modstr(), connection);
@@ -288,6 +291,7 @@ int get_ini_entry(FILE *f, int entry, uint8 *str, int strsize)
 }
 
 static uint8 *path_bindery=NULL;
+static uint8 *path_spool=NULL;
 
 char *get_div_pathes(char *buff, char *name, int what, char *p, ... )
 {
@@ -297,15 +301,29 @@ char *get_div_pathes(char *buff, char *name, int what, char *p, ... )
   switch (what) {
     case  0 : wpath = PATHNAME_PROGS;    break;
     case  1 : if (path_bindery==NULL) {
-                if (get_ini_entry(NULL, 45, locbuf, sizeof(locbuf)) 
+                if (get_ini_entry(NULL, 45, locbuf, sizeof(locbuf))
                       && *locbuf) {
                   new_str(path_bindery, locbuf);
                 } else
                   new_str(path_bindery, PATHNAME_BINDERY);
               }
-              wpath = path_bindery;  
+              wpath = path_bindery;
               break;
     case  2 : wpath = PATHNAME_PIDFILES; break;
+
+    case  3 :
+    case  4 : if (path_spool==NULL) {
+                if (get_ini_entry(NULL, 42, locbuf, sizeof(locbuf))
+                      && *locbuf) {
+                  new_str(path_spool, locbuf);
+                } else
+                  new_str(path_spool, "/var/spool/nwserv");
+              }
+              wpath = path_spool;
+              if (what==4) name="queues/";
+              break;
+
+
     default : buff[0]='\0';
               return(buff);
   }
@@ -375,7 +393,7 @@ void get_debug_level(uint8 *buf)
       char dummy;
       if (sscanf(buf2, "%ld%c", &debug_mask, &dummy) != 1)
           sscanf(buf2, "%lx",   &debug_mask);
-    } 
+    }
   }
 }
 
@@ -390,7 +408,7 @@ void get_ini_debug(int module)
  */
 {
   uint8 buff[300];
-  if (get_ini_entry(NULL, 100+module, buff, sizeof(buff))) 
+  if (get_ini_entry(NULL, 100+module, buff, sizeof(buff)))
     get_debug_level(buff);
 }
 
@@ -465,6 +483,19 @@ void init_tools(int module, int options)
     if (!withlog) strcpy(logfilename, "./nw.log");
     if (!strcmp(logfilename, "syslog"))
        use_syslog=1;
+
+    if (NWSERV == module) {
+      fprintf(stdout, "\n\nMars_nwe V%d.%02dpl%d started using %s.\n", 
+         _VERS_H_, _VERS_L_, _VERS_P_, FILENAME_NW_INI);
+      fprintf(stdout, "If you have problems, please read mars_nwe/doc/BUGS !\n");
+      if (use_syslog==1) {
+        fprintf(stdout, "Errors/warnings will be reported in syslog\n");
+      } else {
+        fprintf(stdout, "Errors/warnings will be reported in %s\n", logfilename);
+      }
+      fprintf(stdout, "\n\n");
+      fflush(stdout);
+    }
 
     if (NWSERV == module || NWROUTED == module) { /* now make daemon */
       int fd=fork();

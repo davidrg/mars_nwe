@@ -1,4 +1,4 @@
-/* nwvolume.c  20-Jul-97 */
+/* nwvolume.c  02-Aug-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -34,6 +34,7 @@
 
 NW_VOL     *nw_volumes=NULL;
 int        used_nw_volumes=0;
+int        loaded_namespaces=0;
 uint8      *home_dir=NULL;
 int        home_dir_len=0;
 char       *path_vol_inodes_cache=NULL;
@@ -78,7 +79,8 @@ void nw_init_volumes(FILE *f)
     }
   }
   rewind(f);
-  used_nw_volumes = 0;
+  used_nw_volumes   = 0;
+  loaded_namespaces = 0;
   new_str(path_vol_inodes_cache, "/var/spool/nwserv/.volcache");
   while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))) {
     if ( what == 1 && used_nw_volumes < max_nw_vols && strlen((char*)buff) > 3){
@@ -91,6 +93,7 @@ void nw_init_volumes(FILE *f)
       if (founds > 1) {
         NW_VOL *vol=&(nw_volumes[used_nw_volumes]);
         vol->options    = VOL_NAMESPACE_DOS;
+        loaded_namespaces |= VOL_NAMESPACE_DOS;
         up_fn(sysname);
         new_str(vol->sysname, sysname);
         if (1 == (len = strlen((char*)unixname)) && unixname[0] == '~') {
@@ -133,10 +136,12 @@ void nw_init_volumes(FILE *f)
 
               case 'O' : vol->options
                          |= VOL_NAMESPACE_OS2;
+                         loaded_namespaces |= VOL_NAMESPACE_OS2;
                          break;
 
               case 'N' : vol->options
                          |= VOL_NAMESPACE_NFS;
+                         loaded_namespaces |= VOL_NAMESPACE_NFS;
                          break;
 
               default : break;

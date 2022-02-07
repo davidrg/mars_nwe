@@ -1,4 +1,4 @@
-/* nwdbm.c  24-Jul-97  data base for mars_nwe */
+/* nwdbm.c  16-Aug-97  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -24,6 +24,7 @@
 #include "net.h"
 #include "nwdbm.h"
 #include "nwcrypt.h"
+#include "nwqueue.h"
 #include "dirent.h"
 
 #ifdef LINUX
@@ -60,7 +61,7 @@ uint32 network_serial_nmbr=(uint32)NETWORK_SERIAL_NMBR;
 uint16 network_appl_nmbr=(uint16)NETWORK_APPL_NMBR;
 static int entry8_flags = 0;
 
-static uint8 *sys_unixname=NULL; /* Unixname of SYS:  */
+static uint8 *sys_unixname=NULL; /* Unixname of SYS: ends with '/'  */
 static int   sys_unixnamlen=0;   /* len of unixname   */
 static int   sys_downshift=0;    /* is SYS downshift  */
 
@@ -153,10 +154,33 @@ void sync_dbm()
 
 
 #ifdef USE_GDBM
-#  define firstkey()          gdbm_firstkey(my_dbm)
-#  define nextkey(key)        gdbm_nextkey(my_dbm, key)
+static datum firstkey(void)
+{
+  static char *last_dptr=NULL;
+  datum result=gdbm_firstkey(my_dbm);
+  if (last_dptr) free(last_dptr);
+  last_dptr=result.dptr;
+  return(result);
+}
+
+static datum nextkey(datum key)
+{
+  static char *last_dptr=NULL;
+  datum result=gdbm_nextkey(my_dbm, key);
+  if (last_dptr) free(last_dptr);
+  last_dptr=result.dptr;
+  return(result);
+}
+
+static datum fetch(datum key)
+{
+  static char *last_dptr=NULL;
+  datum result=gdbm_fetch(my_dbm, key);
+  if (last_dptr) free(last_dptr);
+  last_dptr=result.dptr;
+  return(result);
+}
 #  define delete(key)         gdbm_delete(my_dbm, key)
-#  define fetch(key)          gdbm_fetch(my_dbm,  key)
 #  define store(key, content) gdbm_store(my_dbm,  key, content, GDBM_REPLACE)
 #else
 #  define firstkey()          dbm_firstkey(my_dbm)
@@ -218,11 +242,11 @@ int find_obj_id(NETOBJ *o)
   int result;
   XDPRINTF((2, 0,"findobj_id OBJ=%s, type=0x%x", o->name,(int)o->type));
   if ((result=handle_iobj(0, o)) == 0) {
+    result    = -0xff;
     if (!dbminit(FNOBJ)){
       key.dsize = NETOBJ_KEY_SIZE;
       key.dptr  = (char*)o;
       data      = fetch(key);
-      result    = -0xff;
       if (data.dptr != NULL){
         NETOBJ *obj=(NETOBJ*)data.dptr;
         XDPRINTF((3,0, "got OBJ name=%s, id = 0x%x", obj->name, (int)obj->id));
@@ -239,7 +263,7 @@ int find_obj_id(NETOBJ *o)
         XDPRINTF((1,0, "OBJ Index '%s',0x%x, id=0x%x not found in OBJ data",
                        o->name, (int)o->type, o->id));
       }
-    } else result = -0xff;
+    } 
     dbmclose();
     if (!result)
       return(0);
@@ -827,6 +851,17 @@ int nw_delete_property(int object_type,
   return(result);
 }
 
+int nw_is_member_in_set(uint32 obj_id, char *propname, uint32 member_id)
+{
+  NETPROP prop;
+  int result;
+  strmaxcpy(prop.name, propname, sizeof(prop.name));
+  result=find_first_prop_id(&prop, obj_id);
+  if (!result)
+    result = prop_find_member(obj_id, (int)prop.id, prop.security, member_id);
+  return(result);
+}
+
 int nw_is_obj_in_set(int object_type,
 	        uint8 *object_name, int object_namlen,
 	        uint8 *prop_name, int prop_namlen,
@@ -998,8 +1033,9 @@ int nw_get_prop_val_str(uint32 q_id, char *propname, uint8 *buff)
   if (result > -1) {
     result=strlen(buff);
     XDPRINTF((5,0, "nw_get_prop_val_str:%s strlen=%d", propname, result));
-  } else
+  } else {
     XDPRINTF((5,0, "nw_get_prop_val_str:%s, result=-0x%x", propname, -result));
+  }
   return(result);
 }
 
@@ -1078,6 +1114,19 @@ static int nw_create_obj_prop(uint32 obj_id, NETPROP *prop)
 	  prop->id     = p->id;
 	  prop->obj_id = obj_id;
 	  result       = -0xed;  /* Property exists */
+	  if (p->security != prop->security ||
+              p->flags    != prop->flags) {
+            /* added 16-Aug-97 0.99.pl1 */
+            XDPRINTF((1, 0, "prop '%s' got new security/flag=0x%x / %d",
+               p->name, p->security, p->flags));
+            p->security=prop->security;
+            p->flags=prop->flags;
+            key.dsize     = NETPROP_KEY_SIZE;
+            key.dptr      = (char *)p;
+            data.dsize    = sizeof(NETPROP);
+            data.dptr     = (char *)p;
+            if (store(key, data)) result = -0xff;
+	  }
 	  break;
 	} else founds[p->id]++;
       }
@@ -1515,6 +1564,7 @@ int nw_test_adr_time_access(uint32 obj_id, ipxAddr_t *client_adr)
   return(result);
 }
 
+
 static int nw_new_add_prop_member(uint32 obj_id, char *propname,
                                   int propflags, int propsecurity,
                                   uint32 member_id)
@@ -1534,13 +1584,19 @@ static int nw_new_add_prop_member(uint32 obj_id, char *propname,
   return(result);
 }
 
-static int xmkdir(char *unixname, int mode)
+int nwdbm_mkdir(char *unixname, int mode, int flags)
+/* flags & 1 = set x permiss flag in upper dirs */
 {
   char *p=unixname;
   while (NULL != (p=strchr(p+1, '/'))) {
     *p = '\0';
     if (!mkdir(unixname, mode))
        chmod(unixname, mode);
+    else if (flags&1){
+      struct stat stb;
+      if (!stat(unixname, &stb))
+        chmod(unixname, stb.st_mode|0111);
+    }
     *p='/';
   }
   if (!mkdir(unixname, mode)) {
@@ -1557,7 +1613,7 @@ static void create_nw_db(char *fn, int always)
   (void)get_div_pathes(fname, fn, 1, ".dir");
   if (stat(fname, &stbuff)){
     (void)get_div_pathes(fname, NULL, 1, NULL);
-    xmkdir(fname, 0700);
+    nwdbm_mkdir(fname, 0700, 0);
     (void)get_div_pathes(fname, fn, 1, ".dir");
   }
   if (always || stat(fname, &stbuff)){
@@ -1573,30 +1629,54 @@ static void create_nw_db(char *fn, int always)
   chmod(fname, 0600);
 }
 
-
 static void add_pr_queue(uint32 q_id,
                          char *q_name, char *q_directory,
                          char *q_command,
                          uint32 su_id, uint32 ge_id)
 {
+  uint8 buf[300];
+  nw_new_obj(&q_id, q_name, 0x3, O_FL_STAT, 0x31);
+  
+  if (!q_directory || !*q_directory) {
+    q_directory=buf;
+    sprintf(q_directory, "SYS:/SYSTEM/%08lX.QDR", q_id);
+  }
   XDPRINTF((2,0, "ADD Q=%s, V=%s, C=%s", q_name, q_directory, q_command));
-  q_id =
-  nw_new_obj_prop(q_id, q_name,          0x3,  O_FL_DYNA,  0x31,
+  nw_new_obj_prop(q_id, NULL,            0,     0,    0,
 	             "Q_DIRECTORY",      P_FL_ITEM,   0x31,
 	              q_directory,  strlen(q_directory), 1);
 
-  /* this is mars_nwe own property to handle the print job !!! */
-  nw_new_obj_prop(q_id ,NULL,              0  ,   0  ,   0   ,
+  /* this is mars_nwe own property to handle the print job direct !!! */
+  if (q_command && *q_command) {
+    nw_new_obj_prop(q_id ,NULL,              0  ,   0  ,   0   ,
 	             "Q_UNIX_PRINT",     P_FL_ITEM| P_FL_DYNA,   0x31,
 	              q_command,  strlen(q_command), 1);
-
+  }
   nw_new_add_prop_member(q_id, "Q_USERS",      P_FL_STAT,  0x31,  ge_id);
   nw_new_add_prop_member(q_id, "Q_OPERATORS",  P_FL_STAT,  0x31,  su_id);
-#if 0
   nw_new_obj_prop(q_id , NULL,             0  ,   0  ,   0   ,
 	             "Q_SERVERS",             P_FL_SET,  0x31,
 	              NULL,  0, 0);
-#endif
+}
+
+static void add_pr_server(uint32 ps_id,
+                         char *ps_name, 
+                         char *ps_queue,
+                         uint32 su_id, uint32 ge_id)
+{
+  XDPRINTF((2,0, "ADD PS=%s, Q=%s", ps_name, ps_queue));
+  nw_new_obj(&ps_id, ps_name, 0x7, O_FL_STAT, 0x31);
+  nw_new_add_prop_member(ps_id, "PS_OPERATORS", P_FL_STAT,  0x31,  su_id);
+  nw_new_add_prop_member(ps_id, "PS_USERS", P_FL_STAT,      0x31,  ge_id);
+  
+  if (ps_queue && *ps_queue) {
+    NETOBJ  obj;
+    strmaxcpy((char*)obj.name, (char*)ps_queue, 47);
+    obj.type = 0x3; /* QUEUE */
+    if (!find_obj_id(&obj)) 
+      nw_new_add_prop_member(obj.id, "Q_SERVERS",  P_FL_STAT, 0x31, ps_id);
+  }
+
 }
 
 static void add_user_to_group(uint32 u_id,  uint32 g_id)
@@ -1610,7 +1690,7 @@ static void add_user_2_unx(uint32 u_id,  char  *unname)
 {
   if (unname && *unname)
     nw_new_obj_prop(u_id, NULL,          0  ,   0  ,   0 ,
-      	             pn_unix_user,        P_FL_ITEM,    0x33,
+      	             pn_unix_user,        P_FL_ITEM,    0x30,
 	             (char*)unname,  strlen(unname), 1);
 }
 
@@ -1703,7 +1783,7 @@ static int get_sys_unixname(uint8 *unixname, uint8 *sysname, uint8 *sysentry)
     *(pp+1) = '\0';
 
     if (stat(unixname, &statb) < 0)
-      xmkdir(unixname, 0777);
+      nwdbm_mkdir(unixname, 0777, 1);
 
     if (stat(unixname, &statb) < 0 || !S_ISDIR(statb.st_mode)) {
       errorp(1, "No good SYS", "unix name='%s'", unixname);
@@ -1720,13 +1800,14 @@ static uint8 *test_add_dir(uint8 *unixname, uint8 *pp, int flags,
 
 /* flags & 1 = fn will be appended to unixname   */
 /* flags & 2 = always modify uid/gid, permission */
+/* flags & 4 = always add x   flag to upper dirs */
 {
   struct stat stb;
   strcpy((char*)pp, fn);
   if (downshift) downstr(pp);
   else upstr(pp);
   if (stat(unixname, &stb) < 0) {
-    if (xmkdir(unixname, permiss)< 0)
+    if (nwdbm_mkdir(unixname, permiss, (flags&4) ? 1 : 0)< 0)
       errorp(1, "mkdir error", "fname='%s'", unixname);
     else {
       chmod(unixname, permiss);
@@ -1734,10 +1815,22 @@ static uint8 *test_add_dir(uint8 *unixname, uint8 *pp, int flags,
         chown(unixname, uid, gid);
       XDPRINTF((1, 0, "Created dir '%s'", unixname));
     }
-  } else if (flags&2) {
-    chmod(unixname, permiss);
-    if (uid >-1  && gid > -1)
-      chown(unixname, uid, gid);
+  } else {
+    if (flags&4) { /* add 'x' flag */
+      char *p=unixname;
+      while (NULL != (p=strchr(p+1, '/'))) {
+        struct stat stb;
+        *p = '\0';
+        if (!stat(unixname, &stb))
+            chmod(unixname, stb.st_mode|0111);
+        *p='/';
+      }
+    }
+    if (flags&2) {
+      chmod(unixname, permiss);
+      if (uid >-1  && gid > -1)
+        chown(unixname, uid, gid);
+    }
   }
   if (flags&1) {
     pp += strlen(pp);
@@ -1748,24 +1841,30 @@ static uint8 *test_add_dir(uint8 *unixname, uint8 *pp, int flags,
   return(pp);
 }
 
-static void correct_user_dirs(uint32 objid, int uid, int gid)
+static void correct_user_dirs(uint32 objid, uint8 *objname, int uid, int gid)
 {
   uint8  fndir[512];
+  uint8  buf1[20];
   uint8  *p = fndir+sys_unixnamlen;
   uint8  *pp;
+  uint8  *p1;
   int    l;
   DIR    *f;
   memcpy(fndir, sys_unixname, sys_unixnamlen);
-  
   /* SYS/MAIL */
-  l=sprintf(p,"/mail/%x", (int)objid);
-  pp=p+l;
-  if (!sys_downshift)
+  memcpy(p,"/mail/", 6);
+  p1=p+6;
+  l=sprintf(buf1,"../%x", (int)objid)-3;
+  memcpy(p1, buf1+3, l+1);
+  pp=p1+l;
+  *pp='\0';
+  if (!sys_downshift) {
     upstr(p);
+    upstr(buf1);
+  }
   (void)mkdir(fndir, 0733);
   (void)chmod(fndir, 0733);
   (void)chown(fndir, uid, gid);
-  
   if ((f=opendir(fndir)) != (DIR*)NULL) {
     struct dirent* dirbuff;
     *pp='/';
@@ -1778,24 +1877,35 @@ static void correct_user_dirs(uint32 objid, int uid, int gid)
         }
       }
     }
-    *pp='\0';
     closedir(f);
   }
+  memcpy(p1, "user/", 5);
+  strmaxcpy(p1+5, objname, 47);
+  if (!sys_downshift) 
+    upstr(p1);
+  else
+    downstr(p1+5);
+  symlink(buf1, fndir);
 }
 
 void test_ins_unx_user(uint32 id)
 {
   NETOBJ obj;
   obj.id = id;
-  if ((MYPASSWD*)NULL == nw_getpwnam(id) && !nw_get_obj(&obj)){
-    struct passwd *pw;
-    uint8 unxname[50];
-    xstrcpy(unxname, obj.name);
-    downstr(unxname);
-    pw = getpwnam(unxname);
-    if (NULL != pw && pw->pw_uid) { /* only non root user */
-      add_user_2_unx(id, unxname);
-      correct_user_dirs(id, pw->pw_uid, pw->pw_gid);
+  if (!nw_get_obj(&obj)){
+    MYPASSWD *mpw=nw_getpwnam(id);
+    if ((MYPASSWD*)NULL == mpw){
+      struct passwd *pw;
+      uint8 unxname[50];
+      xstrcpy(unxname, obj.name);
+      downstr(unxname);
+      pw = getpwnam(unxname);
+      if (NULL != pw && pw->pw_uid) { /* only non root user */
+        add_user_2_unx(id, unxname);
+        correct_user_dirs(id, obj.name, pw->pw_uid, pw->pw_gid);
+      }
+    } else if (mpw->pw_uid){
+      correct_user_dirs(id, obj.name, mpw->pw_uid, mpw->pw_gid);
     }
   }
 }
@@ -1806,12 +1916,10 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   char   serverna[MAX_SERVER_NAME+2];
   uint32 su_id    = 0x00000001;
   uint32 ge_id    = 0x01000001;
-  uint32 serv_id  = 0x03000001;
+  uint32 server_id= 0x03000001;
   uint32 q1_id    = 0x0E000001;
-#ifdef _MAR_TESTS_1
-  uint32 pserv_id = 0L;
-#endif
-  FILE *f	     = open_nw_ini();
+  uint32 ps1_id   = 0x0F000001;
+  FILE *f	  = open_nw_ini();
   int  auto_ins_user = 0;
   char auto_ins_passwd[100];
   int  make_tests    = 1;
@@ -1844,13 +1952,16 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
       } else if (8 == what) { /* entry8_flags */
         entry8_flags = hextoi((char*)buff);
       } else if (21 == what) {  /* QUEUES */
-        char name[100];
+        char name[200];
         char directory[200];
         char command[200];
         char *p=buff;
         char *pp=name;
         char c;
         int  state=0;
+        name[0]='\0';
+        directory[0]='\0';
+        command[0]='\0';
         while (0 != (c = *p++)) {
           if (c == 32 || c == '\t') {
             if (!(state & 1)) {
@@ -1862,21 +1973,59 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
               if (state == 1) {
                 pp=directory;
                 state++;
-              } else {
+              } else if (state==3) {
                 strcpy(command, p-1);
-                if (*command) state++;
                 break;
-              }
+              } 
             }
             *pp++ = c;
           }
         }
         *pp='\0';
-        if (state == 4) {
+        if (*name) {
           upstr(name);
+          if (directory[0]=='-' && directory[1]=='\0')
+            directory[0]='\0';
+          if (command[0]=='-' && command[1]=='\0')
+            command[0]='\0';
           add_pr_queue(q1_id, name, directory, command, su_id, ge_id);
           q1_id++;
         }
+      } else if (22 == what) {  /* PSERVER */
+        char name[200];
+        char queue[200];
+        char *p=buff;
+        char *pp=name;
+        char c;
+        int  state=0;
+        name[0]='\0';
+        queue[0]='\0';
+        
+        while (0 != (c = *p++)) {
+          if (c == 32 || c == '\t') {
+            if (!(state & 1)) {
+              *pp = '\0';
+              state++;
+            }
+          } else {
+            if (state & 1){
+              if (state == 1) {
+                pp=queue;
+                state++;
+              } else break;
+            }
+            *pp++ = c;
+          }
+        }
+        *pp='\0';
+
+        if (*name) {
+          upstr(name);
+          upstr(queue);
+          add_pr_server(ps1_id, name, queue, su_id, ge_id);
+          ps1_id++;
+        }
+
       } else if (12 == what || 13 == what || 14 == what) {
         /* SUPERVISOR, OTHERS  and GROUPS*/
         char nname[100];
@@ -1927,10 +2076,12 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
     fclose(f);
   }
 
+
+
   if (servername && adr) {
     strmaxcpy(serverna, servername, MAX_SERVER_NAME);
     upstr(serverna);
-    nw_new_obj_prop(serv_id, serverna,       0x4,      O_FL_DYNA,  0x40,
+    nw_new_obj_prop(server_id, serverna,       0x4,      O_FL_DYNA,  0x40,
 	               "NET_ADDRESS",         P_FL_ITEM | P_FL_DYNA, 0x40,
 	                (char*)adr,  sizeof(ipxAddr_t), 1);
 
@@ -1940,6 +2091,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
 	                (char*)adr,  sizeof(ipxAddr_t), 1);
 #endif
   }
+  
   if (auto_ins_user) {
     /* here Unix users will be inserted automaticly as mars_nwe users */
     struct passwd *pw;
@@ -1989,83 +2141,90 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   memset(auto_ins_passwd, 0, sizeof(auto_ins_passwd));
 
   if (*sysentry) {
-    int result = 0;
+    uint8 unixname[512];
+    uint8 sysname[256];  
+    int   result    = get_sys_unixname(unixname, sysname, sysentry);
+    int   downshift = (result & 1);
+    int   unlen     = strlen(unixname);
+    if (result < 0) return(-1);
+    new_str(sys_unixname, unixname);
+    sys_downshift  = downshift;
+    sys_unixnamlen = unlen;
+    
     if (make_tests) {
-      uint8 unixname[512];
-      uint8 maildir[512];
-      uint8 sysname[256];
-      result = get_sys_unixname(unixname, sysname, sysentry);
-      if (result > -1) {
-        uint32  objs[2000]; /* max. 2000 User should be enough :) */
-        int     ocount=0;
-        int downshift = (result & 1);
-        int    unlen  = strlen(unixname);
-        uint8  *pp    = unixname+unlen;
-        uint8  *ppp   = maildir+unlen;
-        memcpy(maildir, unixname, unlen+1);
+      uint32  objs[LOC_MAX_OBJS]; 
+      uint8   maildir[512];
+      int     ocount=0;
+      uint8  *pp    = unixname+unlen;
+      uint8  *ppp   = maildir+unlen;
+      memcpy(maildir, unixname, unlen+1);
 
-        new_str(sys_unixname, unixname);
-        sys_downshift=downshift;
-        sys_unixnamlen=unlen;
+      test_add_dir(unixname,     pp, 4, downshift,0755, 0,0, "LOGIN");
+      test_add_dir(unixname,     pp, 0, downshift,0755, 0,0, "SYSTEM");
+      test_add_dir(unixname,     pp, 0, downshift,0755, 0,0, "PUBLIC");
+      /* ----- */
+      ppp=test_add_dir(maildir, ppp, 1, downshift,0755, 0,0, "MAIL");
+      test_add_dir(maildir,     ppp, 0, downshift,0755, 0,0, "USER");
 
-        test_add_dir(unixname,     pp, 0, downshift,0777, 0,0, "LOGIN");
-        test_add_dir(unixname,     pp, 0, downshift,0777, 0,0, "SYSTEM");
-        test_add_dir(unixname,     pp, 0, downshift,0777, 0,0, "PUBLIC");
-        ppp=test_add_dir(maildir, ppp, 1, downshift,0777, 0,0, "MAIL");
-
-        if (!dbminit(FNOBJ)){
-          for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
-            data = fetch(key);
-            if (data.dptr) {
-	      NETOBJ *obj=(NETOBJ*)data.dptr;
-	      if (obj->type == 1 || obj->type == 3) {
-	        objs[ocount++] = obj->id;
-                if (ocount == 2000) break;
-              }
+      if (!dbminit(FNOBJ)){
+        for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+          data = fetch(key);
+          if (data.dptr) {
+            NETOBJ *obj=(NETOBJ*)data.dptr;
+            if (obj->type == 1 || obj->type == 3) {
+              objs[ocount++] = obj->id;
+              if (ocount == LOC_MAX_OBJS) break;
             }
           }
         }
-        dbmclose();
+      }
+      dbmclose();
 
-        while (ocount--) {
-          NETOBJ obj;
-          obj.id = objs[ocount];
-          nw_get_obj(&obj);
-          if (obj.type == 1) {
-            char sx[20];
-            int gid;
-            int uid;
-            sprintf(sx, "%x", (int)obj.id);
-            if (!get_guid(&gid, &uid, obj.id, NULL))
-              test_add_dir(maildir, ppp, 2, downshift, 0733, gid, uid, sx);
-            else
-              errorp(0, "Cannot get unix uid/gid", "User=`%s`", obj.name);
+      while (ocount--) {
+        NETOBJ obj;
+        obj.id = objs[ocount];
+        nw_get_obj(&obj);
+        if (obj.type == 1) {
+          char sx[20];
+          int gid;
+          int uid;
+          sprintf(sx, "../%x", (int)obj.id);
+          if (!get_guid(&gid, &uid, obj.id, NULL))  {
+            test_add_dir(maildir, ppp, 2, downshift, 0733, gid, uid, sx+3);
+            memcpy(ppp, "user/", 5);
+            strmaxcpy(ppp+5, obj.name, 47);
+            if (downshift) downstr(ppp+5);
+            else upstr(ppp);
+            unlink(maildir);
+            symlink(sx, maildir);
+            *ppp='\0';
+          } else
+            errorp(0, "Cannot get unix uid/gid", "User=`%s`", obj.name);
 
-          } else if (obj.type == 3) { /* print queue */
-            uint8 buff[300];
-            char  *p;
-            int result=nw_get_q_dirname(obj.id, buff);
-            upstr(buff);
-            if (result > -1 && NULL != (p=strchr(buff, ':')) ) {
-              *p++='\0';
-              if (!strcmp(buff, sysname)) {
-                test_add_dir(unixname, pp, 2, downshift, 0770, 0, 0, p);
-              } else
-               errorp(0, "Warning:queue dir not on first SYS",
-                  "Queue=%s, Volume=%s", obj.name, sysname);
+        } else if (obj.type == 3) { /* print queue */
+          uint8 buff[300];
+          char  *p;
+          result=nw_get_q_dirname(obj.id, buff);
+          upstr(buff);
+          if (result > -1 && NULL != (p=strchr(buff, ':')) ) {
+            *p++='\0';
+            if (!strcmp(buff, sysname)) {
+              test_add_dir(unixname, pp, 2|4, downshift, 0775, 0, 0, p);
             } else
-              errorp(0, "Cannot get queue dir", "Queue=%s", obj.name);
-          }
+             errorp(0, "queue dir not on SYS",
+                "Queue=%s, Volume=%s", obj.name, sysname);
+          } else
+            errorp(0, "Cannot get queue dir", "Queue=%s", obj.name);
         }
-        result = 0;
       }
     }
-    return(result);
+    init_queues(sys_unixname, sys_unixnamlen, sys_downshift, sysname);  /* nwqueue.c */
+    return(0);
   }
   return(-1);
 }
 
-int nw_init_dbm(char *servername, ipxAddr_t *adr)
+static void nw_init_dbm_1(char *servername, ipxAddr_t *adr)
 /*
  * routine inits bindery
  * all dynamic objects and properties will be deleted.
@@ -2122,11 +2281,22 @@ int nw_init_dbm(char *servername, ipxAddr_t *adr)
   dbmclose();
   while (anz--) /* now delete dynamic properties */
     loc_delete_property(objs[anz], (char*)NULL, props[anz], 1);
-  anz = nw_fill_standard(servername, adr);
-  sync_dbm();
-  return(anz);
 }
 
+int nw_init_dbm(char *servername, ipxAddr_t *adr)
+{
+  int result;
+  nw_init_dbm_1(servername, adr);
+  result = nw_fill_standard(servername, adr);
+  sync_dbm();
+  return(result);
+}
+
+void nw_exit_dbm(void)
+{
+  exit_queues();
+  sync_dbm();
+}
 
 #if 0
 #define MAX_OBJ_IDS 100000 /* should be enough */
@@ -2392,14 +2562,3 @@ int do_import_dbm(char *path)
   return(result);
 }
 
-/* ============> this should becomes queue.c or similar < ============== */
-
-int nw_get_q_dirname(uint32 q_id, uint8 *buff)
-{
-  return(nw_get_prop_val_str(q_id, "Q_DIRECTORY", buff));
-}
-
-int nw_get_q_prcommand(uint32 q_id, uint8 *buff)
-{
-  return(nw_get_prop_val_str(q_id, "Q_UNIX_PRINT", buff));
-}

@@ -249,7 +249,7 @@ int fn_os2_match(uint8 *s, uint8 *p, int soptions)
                      continue;
 
         default  :  if (soptions & VOL_OPTION_IGNCASE) {
-                      if (!dfn_imatch(*s, *p))
+                      if (!dfn_imatch(*s, pc))
                            return(0);
                     } else if (pc != *s) return(0);
                     ++s;

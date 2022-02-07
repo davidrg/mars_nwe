@@ -1,4 +1,4 @@
-/* nwconn.c 20-Jul-97       */
+/* nwconn.c 14-Aug-97       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -28,12 +28,9 @@
 #include "nwvolume.h"
 #include "nwfile.h"
 #include "connect.h"
-#include "nwqueue.h"
+#include "nwqconn.h"
 #include "namspace.h"
 #include "nwconn.h"
-
-IPX_IO_RW ipx_io;
-int       use_ipx_io=0;
 
 int act_connection = 0;
 int act_pid        = 0;
@@ -92,8 +89,8 @@ typedef struct {
   struct t_unitdata ud;
   ipxAddr_t to_addr;
 
-  uint8   *recv_buf;        /* complete data buf for burst read requests 
-                             * must be 24 byte more allocated 
+  uint8   *recv_buf;        /* complete data buf for burst read requests
+                             * must be 24 byte more allocated
                              * than max_recv_size !
                              */
 
@@ -108,9 +105,9 @@ static BURST_W *burst_w=NULL;
 static void set_program_title(char *s)
 {
   memset(prog_title, 0, 49);
-  if (s&&*s) 
+  if (s&&*s)
     strmaxcpy(prog_title, s, 48);
-  else 
+  else
     strcpy(prog_title, "()");
 }
 
@@ -541,8 +538,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            }
                          }
                          completition = (uint8)-result;
-                       } else  if (*p == 0x19){ 
-                        /* Set Directory Information 
+                       } else  if (*p == 0x19){
+                        /* Set Directory Information
                          * Modifies basic directory information as creation date and
                          * directory rights mask. DOS namespace.
                          */
@@ -550,8 +547,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          struct INPUT {
                            uint8   header[7];         /* Requestheader */
                            uint8   div[3];            /* 0x0, dlen, ufunc */
-                           uint8   dir_handle;        
-                           uint8   creation_date[2];  
+                           uint8   dir_handle;
+                           uint8   creation_date[2];
                            uint8   creation_time[2];
                            uint8   owner_id[4];
                            uint8   new_max_rights;
@@ -633,17 +630,17 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          /* remove Vol restrictions for Obj */
                          XDPRINTF((5, 0, "Remove vol restrictions"));
                          return(-2); /* nwbind must do prehandling */
-                       } else  if (*p == 0x25){ 
-                        /* Set Entry, Set Directory File Information 
+                       } else  if (*p == 0x25){
+                        /* Set Entry, Set Directory File Information
                          * sets or changes the file or directory information to the
                          * values entered in 'Change Bits'.
                          */
                          /* NO REPLY */
                          /* ncopy use this call */
                           /* TODO !!!!!!!!!!!!!!!!!!!!  */
-                         
+
                          do_druck++;
-                         
+
                        } else  if (*p == 0x26) { /* Scan file or Dir for ext trustees */
                          int sequenz = (int)*(p+2); /* trustee sequenz  */
                          struct XDATA {
@@ -806,10 +803,18 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          } else completition = (uint8) -result;
                        } else  if (*p == 0x2e){  /* RENAME DATEI */
                          completition   = 0xfb;  /* TODO: !!! */
-                       } else  if (*p == 0x2f){  /* Fill namespace buffer */
-                         completition   = 0xfb;  /* TODO: !!! */
-                         /* ncopy use this call */
+
 #if WITH_NAME_SPACE_CALLS
+                       } else  if (*p == 0x2f){
+                         /* Fill namespace buffer */
+                         /* ncopy use this call */
+                         int volume     = (int) *(p+1);
+                         /* (p+2) == 0xe4 or 0xe2 sometimes  ???? */
+                         int result=fill_namespace_buffer(
+                            volume, responsedata);
+                         if (result > -1) {
+                           data_len = result;
+                         } else completition = (uint8) -result;
                        } else  if (*p == 0x30){
                          /* Get Name Space Directory Entry */
                          int volume          = (int) *(p+1);
@@ -929,10 +934,53 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
              break;
 
              case 0x68:   /* create queue job and file old */
-             case 0x69:   /* close file and start queue old ?? */
              case 0x79:   /* create queue job and file     */
-             case 0x7f:   /* close file and start queue */
              return(-2);  /* nwbind must do prehandling    */
+
+             case 0x69:    /* close file and start queue old ?? */
+             case 0x7f: {  /* close file and start queue */
+               struct INPUT {
+                 uint8   header[7];          /* Requestheader */
+                 uint8   packetlen[2];       /* low high      */
+                 uint8   func;               /* 0x7f or 0x69  */
+                 uint8   queue_id[4];        /* Queue ID      */
+                 uint8   job_id[4];          /* result from creat queue    */
+                                             /* if 0x69 then only first 2 byte ! */
+               } *input = (struct INPUT *) (ncprequest);
+               uint32 q_id = GET_BE32(input->queue_id);
+               int  job_id = (ufunc==0x69) ? GET_BE16(input->job_id)
+                                           : GET_BE32(input->job_id);
+               int result  = close_queue_job(q_id, job_id);
+               if (result < 0) {
+                 completition = (uint8)-result;
+               } else {
+                 return(-2);  /* nwbind must do next    */
+               }
+             }
+             break;
+
+             case 0x7c :  /* service queue job */
+             return(-2);  /* nwbind must do prehandling    */
+
+             case 0x83 :  /* finish queue job */
+             case 0x84 : { /* abort queue job */
+               struct INPUT {
+                 uint8   header[7];          /* Requestheader */
+                 uint8   packetlen[2];       /* low high      */
+                 uint8   func;               /* 0x7f or 0x69  */
+                 uint8   queue_id[4];        /* Queue ID      */
+                 uint8   job_id[4];          /* result from creat queue    */
+                                             /* if 0x69 then only first 2 byte ! */
+               } *input = (struct INPUT *) (ncprequest);
+               uint32 q_id = GET_BE32(input->queue_id);
+               int  job_id = GET_BE32(input->job_id);
+               int result  = finish_abort_queue_job(q_id, job_id);
+               if (result <0)
+                 completition=(uint8) -result;
+               else
+                return(-1);  /* nwbind must do the rest */
+             }
+             break;
 
              case 0xf3: {  /* Map Direktory Number TO PATH */
                XDPRINTF((2,0, "TODO: Map Directory Number TO PATH"));
@@ -957,6 +1005,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                      break;
 
          case 0x19 : /* logout, some of this call is handled in ncpserv. */
+                     free_queue_jobs();
                      nw_free_handles(-1);
                      set_default_guid();
                      nw_setup_home_vol(-1, NULL);
@@ -964,6 +1013,9 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                      set_program_title(NULL);
                      return(-1); /* nwbind must do a little rest */
                      break;
+
+         case 0x20 : /* Semaphore */
+                     return(-1);   /* handled by nwbind */
 
          case 0x1a : /* lock file  */
          case 0x1e : /* unlock file */
@@ -1583,23 +1635,21 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                        burst_w->max_send_size=
                          min(max_burst_send_size,
                            GET_BE32(input->max_recv_size));
-                       
-#if 1  /* MUST BE REMOVED LATER !!! */
-                       /* we don't want fragment send packets */
-                       if (burst_w->max_send_size > 
-                            burst_w->max_burst_data_size-8)
-                          burst_w->max_send_size
-                            =burst_w->max_burst_data_size-8;
-#endif
-                       
                        burst_w->send_buf=xcmalloc(burst_w->max_send_size+8);
 
                        burst_w->max_recv_size=
                          min(max_burst_recv_size,
                            GET_BE32(input->max_send_size));
+#if 1  /* MUST BE REMOVED LATER !!! */
+                       /* we don't want fragmented receive packets */
+                       if (burst_w->max_recv_size >
+                            burst_w->max_burst_data_size-24)
+                          burst_w->max_recv_size
+                            =burst_w->max_burst_data_size-24;
+#endif
                        burst_w->recv_buf=xcmalloc(burst_w->max_recv_size+24);
-#if 0
-                       U32_TO_BE32(0x1600, burst_w->sendburst->delaytime);
+#if 1
+                       U32_TO_BE32(0x5ff22, burst_w->sendburst->delaytime);
 #endif
                        U32_TO_BE32(burst_w->max_recv_size,   xdata->max_recv_size);
                        U32_TO_BE32(burst_w->max_send_size,   xdata->max_send_size);
@@ -1635,6 +1685,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
 
     } /* switch function */
   } else if (ncp_type == 0x1111) {
+    free_queue_jobs();
     (void) nw_init_connect();
     last_sequence = -9999;
   } else {
@@ -1771,7 +1822,7 @@ static void handle_after_bind()
 
          case 0x68:   /* create queue job and file old */
          case 0x79: { /* create queue job and file     */
-                      /* nwbind must do prehandling    */
+                      /* nwbind made prehandling       */
            struct INPUT {
              uint8   header[7];          /* Requestheader   */
              uint8   packetlen[2];       /* low high        */
@@ -1779,22 +1830,15 @@ static void handle_after_bind()
              uint8   queue_id[4];        /* Queue ID        */
              uint8   queue_job[280];     /* oldsize is 256  */
            } *input = (struct INPUT *) (ncprequest);
-           struct RINPUT {
-             uint8   dir_nam_len;        /* len of dirname */
-             uint8   dir_name[1];
-           } *rinput = (struct RINPUT *) (bindresponse);
-           int result = nw_creat_queue(
-                             (int)ncpresponse->connection
-                         | (((int)ncpresponse->high_connection) << 8),
-                                  input->queue_id,
-                                  input->queue_job,
-                                   rinput->dir_name,
-                                   (int)rinput->dir_nam_len,
-                                   (ufunc == 0x68)  );
-           if (!result) {
-             data_len = (ufunc == 0x68) ? 54 : 78;
-             memcpy(responsedata, input->queue_job, data_len);
-           } else completition= (uint8)-result;
+           uint32  q_id = GET_BE32(input->queue_id);
+           uint8  *qjob = bindresponse;
+           int result = creat_queue_job(q_id, qjob,
+                                         responsedata,
+                                         (ufunc == 0x68)  );
+           if (result > -1) 
+             data_len=result;
+           else
+             completition = (uint8) -result; 
          }
          break;
 
@@ -1803,22 +1847,47 @@ static void handle_after_bind()
            struct INPUT {
              uint8   header[7];          /* Requestheader */
              uint8   packetlen[2];       /* low high      */
-             uint8   func;               /* 0x7f or 0x6f  */
+             uint8   func;               /* 0x7f or 0x69  */
              uint8   queue_id[4];        /* Queue ID      */
              uint8   job_id[4];          /* result from creat queue    */
                                          /* if 0x69 then only 2 byte ! */
            } *input = (struct INPUT *) (ncprequest);
            struct RINPUT {
+             uint8   client_area[152];
              uint8   prc_len;           /* len of printcommand */
              uint8   prc[1];            /* printcommand */
            } *rinput = (struct RINPUT *) (bindresponse);
-           int result = nw_close_file_queue(input->queue_id,
-                                            input->job_id,
+           uint32 q_id = GET_BE32(input->queue_id);
+           int  job_id = (ufunc==0x69) ? GET_BE16(input->job_id)
+                                       : GET_BE32(input->job_id);
+
+           int result = close_queue_job2(q_id, job_id,
+                                            rinput->client_area,
                                             rinput->prc,
                                             rinput->prc_len);
            if (result < 0) completition = (uint8)-result;
          }
          break;
+
+         case 0x7c : {  /* service queue job */
+           struct INPUT {
+             uint8   header[7];          /* Requestheader   */
+             uint8   packetlen[2];       /* low high        */
+             uint8   func;               /* 0x7c            */
+             uint8   queue_id[4];        /* Queue ID        */
+             uint8   job_typ[2];         /* service typ     */
+           } *input = (struct INPUT *) (ncprequest);
+           uint32  q_id = GET_BE32(input->queue_id);
+           uint8  *qjob = bindresponse;
+           int result = service_queue_job(q_id, qjob,
+                                      responsedata, 0);
+           if (result > -1) 
+             data_len=result;
+           else
+             completition = (uint8) -result; 
+         }
+         break;
+
          default : completition = 0xfb;
        }
     }
@@ -1864,7 +1933,7 @@ static void handle_burst_response(uint32 offset, int size)
   U16_TO_BE16(burst_w->burst_sequence,   sb->burst_seq);
   U16_TO_BE16(burst_w->burst_sequence+1, sb->ack_seq);
   U32_TO_BE32(size,  sb->burstsize);
-  
+
   while (size) {
     int sendsize=min(size, burst_w->max_burst_data_size);
     int flags=0;
@@ -1901,8 +1970,8 @@ static void handle_burst(BURSTPACKET *bp, int len)
       struct REQ {
         uint8 function[4];           /* lo-hi    1=READ, 2=WRITE   */
         uint8 fhandle[4];            /* from open file             */
-        uint8 reserved1[6];          /* all zero                   */
-        uint8 reserved2[2];          /* ??? c8,0 od. c9,f0         */
+        uint8 reserved1[4];          /* all zero                   */
+        uint8 reserved2[4];          /* ??? c8,0 od. c9,f0         */
         uint8 file_offset[4];        /* HI-LO  */
         uint8 file_size  [4];        /* HI-LO  */
         uint8 data[2];               /* only Write */
@@ -1923,9 +1992,13 @@ static void handle_burst(BURSTPACKET *bp, int len)
                              */
             uint8 readbytes[4];   /* hi-lo */
           } *xdata= (struct XDATA*)burst_w->send_buf;
-          int    size = nw_read_file(fhandle,
+          int zusatz = 0; /* (foffset & 1) ? 1 : 0; */
+          int size   = nw_read_file(fhandle,
                                    burst_w->send_buf+sizeof(struct XDATA),
                                    fsize, foffset);
+          if (zusatz) {
+            XDPRINTF((1, 0, "foffset=%d, fsize=%d", foffset, fsize));
+          }
           if (size > -1) {
             U32_TO_32(0,      xdata->resultcode);
             U32_TO_BE32(size, xdata->readbytes);
@@ -1948,7 +2021,10 @@ static void handle_burst(BURSTPACKET *bp, int len)
           burst_w->burst_sequence = burstsequence;
           handle_burst_response(0, sizeof(struct XDATA));
         }
+      } else {
+        XDPRINTF((1, 0, "burst unknow function=0x%x", function));
       }
+      req->function[0]=0;
     } else if (bp->flags & 0x80) {  /* System Flag */
       int missing=GET_BE16(bp->missing);
       uint8 *p=(uint8*)(bp+1);
@@ -2013,11 +2089,11 @@ static void set_sig(void)
 
 int main(int argc, char **argv)
 {
-  if (argc != 4 || 3!=sscanf(argv[3], "()INIT-:%x,%x,%x-", 
+  if (argc != 4 || 3!=sscanf(argv[3], "()INIT-:%x,%x,%x-",
      &father_pid, &sock_nwbind, &sock_echo)) {
     fprintf(stderr, "usage nwconn connid FROM_ADDR ()INIT-:pid,nwbindsock,echosock-\n");
     exit(1);
-  } 
+  }
   prog_title=argv[3];
   setuid(0);
   setgid(0);
@@ -2027,7 +2103,7 @@ int main(int argc, char **argv)
   XDPRINTF((2, 0, "FATHER PID=%d, ADDR=%s CON:%d",
                   father_pid, *(argv+2), act_connection));
   adr_to_ipx_addr(&from_addr,   *(argv+2));
-  
+
   if (nw_init_connect()) exit(1);
   act_pid = getpid();
 
@@ -2044,9 +2120,6 @@ int main(int argc, char **argv)
      int conn   = act_connection;
      int result = ioctl(0, SIOCIPXNCPCONN, &conn);
      XDPRINTF((2, 0, "ioctl:SIOCIPXNCPCONN result=%d", result));
-#if 0
-     if (result == 1) use_ipx_io++;
-#endif
    }
 #  endif
 # endif
@@ -2069,27 +2142,10 @@ int main(int argc, char **argv)
   ncpresponse->connection      = (uint8)act_connection;
   ncpresponse->high_connection = (uint8)(act_connection >> 8);
 
-  ipx_io.ubuf     =  readbuff;
-  ipx_io.size     =  sizeof(readbuff);
-  ipx_io.ncp_resp =  (char*)&ipxdata;
-  ipx_io.resp_size=  sizeof(ipxdata);
-
-  ipx_io.fh_r     =  0;
-  ipx_io.fd_r     = -1;
-  ipx_io.fh_w     =  0;
-  ipx_io.fd_w     = -1;
-
   set_sig();
 
   while (fl_get_int >= 0) {
-    int data_len ;
-#ifdef SIOCIPXNCPCONN
-    if (use_ipx_io)
-      data_len = ioctl(0, SIOCIPXNCPCONN+1, &ipx_io);
-    else
-#endif
-      data_len = read(0, readbuff, sizeof(readbuff));
-
+    int data_len = read(0, readbuff, sizeof(readbuff));
     /* this read is a pipe or a socket read,
      * depending on CALL_NWCONN_OVER_SOCKET
      */

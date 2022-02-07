@@ -1,4 +1,4 @@
-/* namspace.h 09-Nov-96 : NameSpace Services, mars_nwe */
+/* namspace.h 01-Aug-97 : NameSpace Services, mars_nwe */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -108,6 +108,7 @@ typedef struct {
 extern int handle_func_0x57(uint8 *p, uint8 *responsedata, int task);
 extern int handle_func_0x56(uint8 *p, uint8 *responsedata, int task);
 
+extern int fill_namespace_buffer(int volume, uint8 *rdata);
 extern int get_namespace_dir_entry(int volume, uint32 basehandle,
                                    int namspace, uint8 *rdata);
 

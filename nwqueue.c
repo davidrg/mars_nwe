@@ -1,4 +1,4 @@
-/* nwconn.c 19-Oct-96       */
+/* nwqueue.c 24-Aug-97       */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,432 +17,778 @@
  */
 
 #include "net.h"
-#include <dirent.h>
-
-#include "nwvolume.h"
-#include "nwfile.h"
-#include "connect.h"
+#include "nwdbm.h"
+#include "nwbind.h"
 #include "nwqueue.h"
 
-static char **build_argv(char *buf, int bufsize,  char *command)
-/* routine returns **argv for use with execv routines */
-/* buf will contain the path component 	     	      */
-{
-  int len        = strlen(command);
-  int offset     = ((len+4) / 4) * 4; /* aligned offset for **argv */
-  int components = (bufsize - offset) / 4;
-  if (components > 1) {  /* minimal argv[0] + NULL */
-    char **argv  = (char **)(buf+offset);
-    char **pp    = argv;
-    char  *p     = buf;
-    char  c;
-    int   i=0;
-    --components;
-    memcpy(buf, command, len);
-    memset(buf+len, 0, bufsize - len);
-    *pp    = p;
-    while ((0 != (c = *p++)) && i < components) {
-      if (c == 32 || c == '\t') {
-        *(p-1) = '\0';
-        if (*p != 32 && *p != '\t') {
-          *(++pp)=p;
-          i++;
-        }
-      } else if (!i && c == '/') {  /* here i must get argv[0] */
-        *pp=p;
-      }
-    }
-    XDPRINTF((5, 0, "build_argv,   path='%s'",  buf));
-    pp=argv;
-    while (*pp) {
-      XDPRINTF((5, 0, "build_argv, argv='%s'", *pp));
-      pp++;
-    }
-    return(argv);
-  }
-  return(NULL);
-}
+/* 
+ * the bindery/global queue handling is in this modul.
+ * The running process is nwbind.
+ * the connection based queue stuff is in nwqconn.c         
+*/
 
-
-static void close_piped(int piped[3][2])
-{
-  int j=3;
-  while (j--) {
-    int k=2;
-    while (k--) {
-      if (piped[j][k] > -1){
-	close(piped[j][k]);
-	piped[j][k] = -1;
-      }
-    }
-  }
-}
-
-static void err_close_pipe(FILE_PIPE *fp, int lpid, int j, int piped[3][2])
-{
-  while (j--) if (fp->fildes[j]) fclose(fp->fildes[j]);
-  close_piped(piped);
-  kill(lpid, SIGTERM);
-  kill(lpid, SIGQUIT);
-  waitpid(lpid, NULL, 0);
-  kill(lpid, SIGKILL);
-}
-
-static int x_popen(char *command, int uid, int gid, FILE_PIPE *fp)
-{
-  int piped[3][2];
-  int lpid=-1;
-  int j=3;
-  char buf[300];
-  char **argv=build_argv(buf, sizeof(buf), command);
-  if (argv == NULL) return(-1);
-  while (j--){
-    int k=2;
-    while(k--) piped[j][k] = -1;
-  }
-  if (! (pipe(&piped[0][0]) > -1 && pipe(&piped[1][0]) > -1
-       && pipe(&piped[2][0]) > -1 && (lpid=fork()) > -1)) {
-    close_piped(piped);
-    return(-1);
-  }
-  if (lpid == 0) { /* Child */
-    signal(SIGTERM,  SIG_DFL);
-    signal(SIGQUIT,  SIG_DFL);
-    signal(SIGINT,   SIG_DFL);
-    signal(SIGPIPE,  SIG_DFL);
-    signal(SIGHUP,   SIG_DFL);
-    j=3;
-    while(j--) close(j);
-    j=3;
-    while(j--) {
-      int x  = (j) ? 0 : 1;
-      int x_ = (j) ? 1 : 0;
-      close(piped[j][x]    );
-      dup2( piped[j][x_], j);
-      close(piped[j][x_]   );
-    }
-    if (uid > -1 || gid > -1) {
-      seteuid(0);
-      if (gid > -1) setgid(gid);
-      if (uid > -1) setuid(uid);
-      if (gid > -1) setegid(gid);
-      if (uid > -1) seteuid(uid);
-    }
-    execvp(buf, argv);
-    exit(1);    /* Never reached I hope */
-  }
-  j=-1;
-  while (++j < 3) {
-    int x  = (j) ? 0 : 1;
-    int x_ = (j) ? 1 : 0;
-    close(piped[j][x_]);
-    piped      [j][x_]  = -1;
-
-    fp->fildes [j]      = fdopen(piped[j][x], ( (j) ? "r" : "w") );
-    if (NULL == fp->fildes[j]){
-      err_close_pipe(fp, lpid, j+1, piped);
-      return(-1);
-    }
-  }
-  return(lpid);
-}
-
-int ext_pclose(FILE_PIPE *fp)
-{
-  int status=-1;
-  void (*intsave) (int) = signal(SIGINT,  SIG_IGN);
-  void (*quitsave)(int) = signal(SIGQUIT, SIG_IGN);
-  void (*hupsave) (int) = signal(SIGHUP,  SIG_IGN);
-  int j = 3;
-  while (j--) if (fp->fildes[j]) fclose(fp->fildes[j]);
-  if (fp->command_pid != waitpid(fp->command_pid, &status, 0)) {
-    kill(fp->command_pid, SIGTERM);
-    waitpid(fp->command_pid, &status, 0);
-  }
-  kill(fp->command_pid, SIGKILL);
-  signal(SIGINT,   intsave);
-  signal(SIGQUIT,  quitsave);
-  signal(SIGHUP,   hupsave);
-  xfree(fp);
-  return(status);
-}
-
-FILE_PIPE *ext_popen(char *command, int uid, int gid)
-{
-  FILE_PIPE *fp=(FILE_PIPE*) xcmalloc(sizeof(FILE_PIPE));
-  void (*intsave) (int) = signal(SIGINT,  SIG_IGN);
-  void (*quitsave)(int) = signal(SIGQUIT, SIG_IGN);
-  void (*hupsave) (int) = signal(SIGHUP,  SIG_IGN);
-  if ((fp->command_pid  = x_popen(command, uid, gid, fp)) < 0) {
-    xfree(fp);
-    fp=NULL;
-    XDPRINTF((1, 0, "ext_popen failed:command='%s'", command));
-  }
-  signal(SIGINT,   intsave);
-  signal(SIGQUIT,  quitsave);
-  signal(SIGHUP,   hupsave);
-  return(fp);
-}
-
-/* minimal queue handling to enable simple printing */
-
-#define MAX_JOBS    5   /*  max. open queue jobs for one connection */
-static int anz_jobs=0;
-
-typedef struct {
-  uint32  fhandle;
-  int     old_job;        /* is old structure */
-  union  {
-    QUEUE_JOB      n;
-    QUEUE_JOB_OLD  o;
-  } q;
+typedef struct S_INT_QUEUE_JOB {
+  int     client_connection;
+  int     client_task;
+  uint32  client_id;
+  time_t  entry_time;    
+  uint32  target_id;          /* if 0xffffffff then all q-servers allowed */
+  time_t  execute_time;       /* if -1 then at once */
+  int     job_id;             /* 1 ... 999 */
+  int     job_typ;
+  int     job_position;
+  int     job_control_flags;  /* if | 0x20 then job is actually queued */
+  int     server_station;     
+  int     server_task;
+  uint32  server_id;
+  uint8   job_description[50];
+  uint8   client_area[152];
+  time_t  file_entry_time;   /* for filenamehandling */  
+  struct S_INT_QUEUE_JOB *next;
 } INT_QUEUE_JOB;
 
-INT_QUEUE_JOB *queue_jobs[MAX_JOBS];
+typedef struct S_QUEUE_SERVER {
+  int     connection;           /* actual connection         */
+  uint32  user_id;
+  uint8   status_record[64];    /* for free queue server use */
+} QUEUE_SERVER;
 
-static INT_QUEUE_JOB *give_new_queue_job(int old_job)
+typedef struct S_NWE_QUEUE {
+  uint32        id;
+  int           last_job_id;  /* job id 1 .. 999 */
+  int           count_jobs;
+  INT_QUEUE_JOB *queue_jobs;
+  int           status;       /* 0x1 = stations not allow to insert in queue
+  			       * 0x2 = no more queue servers allowed to login.
+                               * 0x4 = queue servers not allowed to handle queue.
+                               */
+  int           changed;      /* needs flush     */
+  
+  uint8         *queuedir;
+  int           queuedir_len;
+  int           queuedir_downshift;  /* is downshift volume */
+  QUEUE_SERVER  *qserver;
+  struct S_NWE_QUEUE *next;
+} NWE_QUEUE;
+
+NWE_QUEUE *nwe_queues=NULL;
+
+static NWE_QUEUE *new_queue(uint32 id)
 {
-  int k=-1;
-  while (++k < anz_jobs) {
-    INT_QUEUE_JOB *p=queue_jobs[k];
-    if (!p->fhandle) { /* free slot */
-      memset(p, 0, sizeof(INT_QUEUE_JOB));
-      p->old_job = old_job;
-      if (old_job)
-        p->q.o.job_id[0] = k+1;
-      else
-        p->q.n.job_id[0] = k+1;
-      return(p);
-    }
+  NWE_QUEUE *p=(NWE_QUEUE*)xcmalloc(sizeof(NWE_QUEUE));
+  if (!nwe_queues) {
+    nwe_queues=p;
+  } else {
+    NWE_QUEUE *q=nwe_queues;
+    while (q->next != NULL) q=q->next;
+    q->next=p;
   }
-  if (anz_jobs < MAX_JOBS) {
-    INT_QUEUE_JOB **pp=&(queue_jobs[anz_jobs++]);
-    *pp = (INT_QUEUE_JOB *) xmalloc(sizeof(INT_QUEUE_JOB));
-    memset(*pp, 0, sizeof(INT_QUEUE_JOB));
-    (*pp)->old_job = old_job;
-    if (old_job)
-      (*pp)->q.o.job_id[0] = anz_jobs;
-    else
-      (*pp)->q.n.job_id[0] = anz_jobs;
-    return(*pp);
+  p->next=NULL;
+  p->id=id;
+  return(p);
+}
+
+static void free_queue_p(NWE_QUEUE *q)
+{
+  if (!q) return;
+  xfree(q->qserver);
+  xfree(q->queuedir);
+  xfree(q);
+}
+
+static void free_queue(uint32 id)
+{
+  NWE_QUEUE *q=nwe_queues;
+  if (!q) return;
+  if (q->id==id){
+    nwe_queues=q->next;
+    free_queue_p(q);
+    return;
+  }
+  while (q->next) {
+    if (q->next->id == id) {
+      NWE_QUEUE *tmp=q->next;
+      q->next=tmp->next;
+      free_queue_p(tmp);
+      return;
+    } else q=q->next;
+  }
+  /* not found */
+}
+
+static NWE_QUEUE *find_queue(uint32 id)
+{
+  NWE_QUEUE *q=(NWE_QUEUE*)nwe_queues;
+  while (q) {
+    if (q->id==id) return(q);
+    q=q->next;
   }
   return(NULL);
 }
 
-static void free_queue_job(int q_id)
+static INT_QUEUE_JOB *add_queue_job(NWE_QUEUE *que, INT_QUEUE_JOB *p)
 {
-  if (q_id > 0 && q_id <= anz_jobs) {
-    INT_QUEUE_JOB **pp=&(queue_jobs[q_id-1]);
-    uint32 fhandle   = (*pp)->fhandle;
-    if (fhandle > 0) nw_close_file(fhandle, 1);
-    if (q_id == anz_jobs) {
-      xfree(*pp);
-      --anz_jobs;
-    } else (*pp)->fhandle=0L;
-  }
-}
-
-static void set_entry_time(uint8 *entry_time)
-{
-  struct tm  *s_tm;
-  time_t     timer;
-  time(&timer);
-  s_tm = localtime(&timer);
-  entry_time[0]    = (uint8) s_tm->tm_year;
-  entry_time[1]    = (uint8) s_tm->tm_mon+1;
-  entry_time[2]    = (uint8) s_tm->tm_mday;
-  entry_time[3]    = (uint8) s_tm->tm_hour;
-  entry_time[4]    = (uint8) s_tm->tm_min;
-  entry_time[5]    = (uint8) s_tm->tm_sec;
-}
-
-static int create_queue_file(uint8   *job_file_name,
-                             uint32 q_id,
-                             int    jo_id,
-                             int    connection,
-                             uint8  *dirname,
-                             int    dir_nam_len,
-                             uint8  *job_bez)
-
-{
-  int result;
-  *job_file_name
-     = sprintf((char*)job_file_name+1, "%07lX%d.%03d", q_id, jo_id, connection);
-
-  seteuid(0);
-  result=nw_alloc_dir_handle(0, dirname, dir_nam_len, 99, 2, 1);
-  if (result > -1) {
-    char unixname[300];
-    result=conn_get_kpl_unxname(unixname, result,
-                             job_file_name+1, (int) *job_file_name);
-    if (result > -1) {
-      struct stat stbuff;
-      result=file_creat_open(result, (uint8*)unixname,
-                            &stbuff, 0x6, 0x6, 1|4|8, 0);
-      if (result > -1) {
-        chown(unixname, act_uid, act_gid);
-        chmod(unixname, 0660);
-      }
-    }
-  }
-  reset_guid();
-  XDPRINTF((5,0,"creat queue file bez=`%s` handle=%d",
-                                         job_bez, result));
-  return(result);
-}
-
-
-int nw_creat_queue(int connection, uint8 *queue_id, uint8 *queue_job,
-                           uint8 *dirname, int dir_nam_len, int old_call)
-{
-  INT_QUEUE_JOB *jo   = give_new_queue_job(old_call);
-  uint32         q_id = GET_BE32(queue_id);
-  int result = -0xff;
-  XDPRINTF((5,0,"NW_CREAT_Q:dlen=%d, dirname=%s", dir_nam_len, dirname));
-
-  if (NULL  != jo) {
-    int jo_id = 0;
-    if (jo->old_job) {
-      jo_id = (int) jo->q.o.job_id[0];
-      memcpy(&(jo->q.o), queue_job, sizeof(QUEUE_JOB_OLD));
-      jo->q.o.job_id[0]         = (uint8) jo_id;
-      jo->q.o.client_connection = (uint8)connection;
-
-      jo->q.o.client_task       = (uint8)0xfe; /* ?? */
-      U32_TO_BE32(1, jo->q.o.client_id); /* SU */
-      set_entry_time(jo->q.o.job_entry_time);
-      jo->q.o.job_typ[0]            = 0x0; /* 0xd0;*/
-      jo->q.o.job_typ[1]            = 0x0;
-      jo->q.o.job_position          = 0x1;
-      jo->q.o.job_control_flags    |= 0x20;
-
-      result = create_queue_file(jo->q.o.job_file_name,
-                                 q_id, jo_id, connection,
-                                 dirname, dir_nam_len,
-                                 jo->q.o.job_bez);
-
-      if (result > -1) {
-        jo->fhandle     = (uint32) result;
-        U16_TO_BE16(0,           jo->q.o.job_file_handle);
-        U32_TO_32(jo->fhandle,   jo->q.o.job_file_handle+2);
-        result = 0;
-      }
-      jo->q.o.server_station = 0;
-      jo->q.o.server_task    = 0;
-      U32_TO_BE32(0, jo->q.o.server_id);
-      if (!result) memcpy(queue_job, &(jo->q.o), sizeof(QUEUE_JOB_OLD));
+  if (que) {
+    if (!que->queue_jobs) {
+      que->queue_jobs=p;
+      p->job_position=1;
+      que->last_job_id=1;
     } else {
-      jo_id = (int) jo->q.n.job_id[0];
-      memcpy(&(jo->q.n), queue_job, sizeof(QUEUE_JOB));
-      jo->q.n.job_id[0]         = (uint8) jo_id;
-
-      U16_TO_BE16(0xffff, jo->q.n.record_in_use);
-      U32_TO_BE32(0x0,    jo->q.n.record_previous);
-      U32_TO_BE32(0x0,    jo->q.n.record_next);
-      jo->q.n.client_connection[2] = 0;
-      jo->q.n.client_connection[3] = 0;
-      U16_TO_16(connection, jo->q.n.client_connection);
-
-      memset(jo->q.n.client_task,  0, 4);
-      jo->q.n.client_task[0]       = (uint8)0xfe; /* ?? */
-      U32_TO_BE32(1, jo->q.n.client_id); /* SU */
-      set_entry_time(jo->q.n.job_entry_time);
-
-      jo->q.n.job_typ[0]            = 0x0; /* 0xd0;*/
-      jo->q.n.job_typ[1]            = 0x0;
-      jo->q.n.job_position[0]       = 0x1;
-      jo->q.n.job_position[1]       = 0x0;
-      jo->q.n.job_control_flags[0] |= 0x20;
-      jo->q.n.job_control_flags[1]  = 0x0;
-
-      result = create_queue_file(jo->q.n.job_file_name,
-                                 q_id, jo_id, connection,
-                                 dirname, dir_nam_len,
-                                 jo->q.n.job_bez);
-
-      if (result > -1) {
-        jo->fhandle = (uint32) result;
-        U32_TO_32(jo->fhandle,    jo->q.n.job_file_handle);
-        result = 0;
-      }
-      U32_TO_BE32(0, jo->q.n.server_station);
-      U32_TO_BE32(0, jo->q.n.server_task);
-      U32_TO_BE32(0, jo->q.n.server_id);
-      if (!result) memcpy(queue_job, &(jo->q.n), sizeof(QUEUE_JOB));
-    }
-    if (result) free_queue_job(jo_id);
-  }
-  return(result);
-}
-
-int nw_close_file_queue(uint8 *queue_id,
-                        uint8 *job_id,
-                        uint8 *prc, int prc_len)
-{
-  int result = -0xff;
-  int jo_id  = (int) *job_id;  /* ever only the first byte */
-  XDPRINTF((5,0,"nw_close_file_queue JOB=%d", jo_id));
-  if (jo_id > 0 && jo_id <= anz_jobs){
-    INT_QUEUE_JOB *jo=queue_jobs[jo_id-1];
-    int fhandle = (int)jo->fhandle;
-    char unixname[300];
-    QUEUE_PRINT_AREA qpa;
-    if (jo->old_job) {
-      memcpy(&qpa, jo->q.o.client_area, sizeof(QUEUE_PRINT_AREA));
-    } else {
-      memcpy(&qpa, jo->q.n.client_area, sizeof(QUEUE_PRINT_AREA));
-    }
-    strmaxcpy((uint8*)unixname, (uint8*)file_get_unix_name(fhandle), sizeof(unixname)-1);
-    XDPRINTF((5,0,"nw_close_file_queue fhandle=%d", fhandle));
-    if (*unixname) {
-      char buff[1024];
-      char printcommand[300];
-      FILE *f=NULL;
-      if (prc_len && *(prc+prc_len-1)=='!'){
-        strmaxcpy((uint8*)buff, prc, prc_len-1);
-        sprintf(printcommand, "%s %s %s", buff,
-           qpa.banner_user_name, qpa.banner_file_name);
-      } else
-        strmaxcpy((uint8*)printcommand, prc, prc_len);
-      nw_close_file(fhandle, 1);
-      jo->fhandle = 0L;
-      if (NULL == (f = fopen(unixname, "r"))) {
-        /* OK now we try the open as root */
-        seteuid(0);
-        f = fopen(unixname, "r");
-        reset_guid();
-      }
-      if (NULL != f) {
-        int  is_ok = 0;
-        FILE_PIPE *fp = ext_popen(printcommand, geteuid(), getegid());
-        if (fp) {
-          int  k;
-          is_ok++;
-          while ((k = fread(buff, 1, sizeof(buff), f)) > 0) {
-            /*
-            if (1 != fwrite(buff, k, 1, fp->fildes[0])) {
-             */
-            if (k != write(fileno(fp->fildes[0]), buff, k)) {
-              XDPRINTF((1,0,"Cannot write to pipe `%s`", printcommand));
-              is_ok=0;
-            }
+      int flag;
+      INT_QUEUE_JOB *qj;
+      int verylastjobid=que->last_job_id?que->last_job_id:1;
+      do {
+        qj=que->queue_jobs;
+        flag=1;
+        do {
+          if (++(que->last_job_id)>999) que->last_job_id=1;
+          if (que->last_job_id==verylastjobid) {
+            xfree(p);
+            return(NULL);
           }
-          if (0 != (k=ext_pclose(fp))) {
-            XDPRINTF((1,0,"Errorresult = %d by closing print pipe", k));
+        } while (que->last_job_id==qj->job_id);
+        while (qj->next != NULL) {
+          qj=qj->next;
+          if (qj->job_id==que->last_job_id) {
+            flag=0;
+            break;
           }
-        } else
-          XDPRINTF((1,0,"Cannot open pipe `%s`", printcommand));
-        fclose(f);
-        if (is_ok) {
-          seteuid(0);
-          unlink(unixname);
-          reset_guid();
-          result=0;
         }
-      } else XDPRINTF((1,0,"Cannot open queue-file `%s`", unixname));
-    } else
-      XDPRINTF((2,0,"fhandle=%d NOT OK !", fhandle));
-    free_queue_job(jo_id);
+      } while (!flag);
+      qj->next=p;
+      p->job_position=qj->job_position+1;
+    }
+    if (!p->job_id) 
+      p->job_id=que->last_job_id;
+    p->next=NULL;
+    que->changed++;
+    que->count_jobs++;
+    return(p);
+  }
+  return(NULL);
+}
+
+static INT_QUEUE_JOB *new_queue_job(NWE_QUEUE*que, int connection, int task, uint32 id)
+{
+  if (que) {
+    INT_QUEUE_JOB *p=(INT_QUEUE_JOB*)xcmalloc(sizeof(INT_QUEUE_JOB));
+    time(&(p->entry_time));
+    p->file_entry_time=p->entry_time;
+    p->client_connection=connection;
+    p->client_task=task;
+    p->client_id=id;
+    p->next=NULL;
+    p->job_id=0;
+    return(add_queue_job(que, p));
+  }
+  return(NULL);
+}
+
+static void free_queue_job(NWE_QUEUE *que, int job_id)
+{
+  INT_QUEUE_JOB *qj=(que) ? que->queue_jobs : NULL;
+  if (!qj) return;
+  if (qj->job_id==job_id){
+    int pos=1;
+    que->queue_jobs=qj->next;
+    xfree(qj);
+    qj=que->queue_jobs;
+    while(qj) {
+      qj->job_position=pos++;
+      qj=qj->next;
+    }
+    que->changed++;
+    que->count_jobs--;
+    return;
+  }
+  while (qj->next) {
+    if (qj->next->job_id == job_id) {
+      INT_QUEUE_JOB *tmp=qj->next;
+      int pos=tmp->job_position;
+      qj->next=tmp->next;
+      xfree(tmp);
+      tmp=qj->next;
+      while(tmp) {
+        tmp->job_position=pos++;
+        tmp=tmp->next;
+      }
+      que->changed++;
+      que->count_jobs--;
+      return;
+    } else qj=qj->next;
+  }
+  /* not found */
+}
+
+static INT_QUEUE_JOB *find_queue_job(NWE_QUEUE *que, uint32 job_id)
+{
+  if (que) {
+    INT_QUEUE_JOB *qj=que->queue_jobs;
+    while (qj) {
+      if (qj->job_id==job_id) return(qj);
+      qj=qj->next;
+    }
+  }
+  return(NULL);
+}
+
+static void r_w_queue_jobs(NWE_QUEUE *q, int mode)
+/* mode == 0 read, 1 = write if changed, 2 = write always */
+{
+  if (q && (q->changed || !mode || mode == 2)) {
+    uint8 path[300];
+    int fd=open(get_div_pathes(path, NULL, 4, "%x/queue", q->id),
+           mode ? O_RDWR|O_TRUNC|O_CREAT:O_RDONLY);
+    if (fd>-1) {
+      int i;
+      if (!mode) { /* read */
+        if (read(fd, &i, sizeof(i))==sizeof(i) && i==sizeof(INT_QUEUE_JOB)){
+          INT_QUEUE_JOB *qj=(INT_QUEUE_JOB*)xmalloc(sizeof(INT_QUEUE_JOB));
+          while (i == read(fd, qj, i)){
+            if (i < sizeof(INT_QUEUE_JOB)) 
+              memset(((uint8*)qj)+i, 0, sizeof(INT_QUEUE_JOB)-i);
+            /* correct some possible wrong values */
+            qj->server_station=0;
+            qj->server_id=0;
+            add_queue_job(q, qj);
+            qj=(INT_QUEUE_JOB*)xmalloc(sizeof(INT_QUEUE_JOB));
+          }
+          xfree(qj);
+        }
+      } else {
+        INT_QUEUE_JOB *qj=q->queue_jobs;
+        if (qj) {
+          i=sizeof(INT_QUEUE_JOB);
+          i=(sizeof(i)==write(fd, &i, sizeof(i))) ? 0: -1;
+          while (!i&&qj) {
+            if(sizeof(INT_QUEUE_JOB) != write(fd, qj, sizeof(INT_QUEUE_JOB)))
+              --i;
+            qj=qj->next;
+          }
+        }
+      }
+      close(fd);
+    } else if (mode || errno != 2)  {
+      XDPRINTF((1,0x10, "Cannot open '%s'", path));
+    }
+    q->changed=0;
+  }
+}
+
+static void set_time_field(uint8 *timef, time_t ptime)
+{
+  if ((int)ptime == -1) {
+    memset(timef, 0xff, 6);
+  } else {
+    struct tm *s_tm = localtime(&ptime);
+    timef[0]    = (uint8) s_tm->tm_year;
+    timef[1]    = (uint8) s_tm->tm_mon+1;
+    timef[2]    = (uint8) s_tm->tm_mday;
+    timef[3]    = (uint8) s_tm->tm_hour;
+    timef[4]    = (uint8) s_tm->tm_min;
+    timef[5]    = (uint8) s_tm->tm_sec;
+  }
+}
+
+static time_t get_time_field(uint8 *timef)
+{
+  struct tm s_tm;
+  if (0xff==timef[0]) return((time_t)-1);
+  s_tm.tm_year   = timef[0];
+  s_tm.tm_mon    = timef[1]-1;
+  s_tm.tm_mday   = timef[2];
+  s_tm.tm_hour   = timef[3];
+  s_tm.tm_min    = timef[4];
+  s_tm.tm_sec    = timef[5];
+  s_tm.tm_isdst  = -1;  
+  return(mktime(&s_tm));
+}
+
+static void build_queue_file_name(uint8 *job_file_name, INT_QUEUE_JOB *jo)
+{
+  *job_file_name = (uint8) sprintf((char*)job_file_name+1, 
+     "%08lX.%03d", jo->file_entry_time, jo->job_id);
+}
+
+static void build_unix_queue_file(uint8 *buf, NWE_QUEUE *q, INT_QUEUE_JOB *jo)
+{
+  if (q->queuedir_len) {
+    memcpy(buf, q->queuedir, q->queuedir_len);
+    sprintf(buf+q->queuedir_len, "/%08lX.%03d", jo->file_entry_time, jo->job_id);
+    if (q->queuedir_downshift)
+      downstr(buf+q->queuedir_len+1);
+  } else *buf='\0';
+  XDPRINTF((3,0, "build_unix_queue_file=`%s`", buf));
+}
+
+int nw_get_q_dirname(uint32 q_id, uint8 *buff)
+{
+  return(nw_get_prop_val_str(q_id, "Q_DIRECTORY", buff));
+}
+
+static int nw_get_q_prcommand(uint32 q_id, uint8 *buff)
+{
+  return(nw_get_prop_val_str(q_id, "Q_UNIX_PRINT", buff));
+}
+
+static int fill_q_job_entry_old(INT_QUEUE_JOB *jo, 
+                                QUEUE_JOB_OLD *job,
+                                int full)
+{
+  job->client_connection = (uint8)jo->client_connection;
+  job->client_task       = (uint8)jo->client_task;
+  U32_TO_BE32(jo->client_id, job->client_id);
+  U32_TO_BE32(jo->target_id, job->target_id);
+  
+  set_time_field(job->target_execute_time, jo->execute_time);
+  set_time_field(job->job_entry_time,      jo->entry_time);
+  
+  U16_TO_BE16(jo->job_id,   job->job_id);
+  U16_TO_BE16(jo->job_typ,  job->job_typ);
+
+  job->job_position      = (uint8)jo->job_position;
+  job->job_control_flags = (uint8)jo->job_control_flags;
+
+  build_queue_file_name(job->job_file_name, jo);
+  /* file handle is not filled here */
+  job->server_station    = (uint8)jo->server_station;
+  job->server_task       = (uint8)jo->server_task;
+  U32_TO_BE32(jo->server_id, job->server_id);
+  if (full) {
+    memcpy(job->job_description, jo->job_description, 
+          sizeof(job->job_description));
+    memcpy(job->client_area, jo->client_area, 
+          sizeof(job->client_area));
+    return(sizeof(QUEUE_JOB_OLD));
+  }
+  return(54);
+}
+
+static int fill_q_job_entry(INT_QUEUE_JOB *jo, 
+                            QUEUE_JOB *job,
+                            int full)
+{
+  memset(job->record_in_use,   0xff, 2);
+  memset(job->record_previous, 0, 4);
+  memset(job->record_next,     0, 4);
+  
+  U32_TO_32(jo->client_connection, job->client_connection);
+  U32_TO_32(jo->client_task, job->client_task);
+  U32_TO_BE32(jo->client_id, job->client_id);
+  U32_TO_BE32(jo->target_id, job->target_id);
+  
+  set_time_field(job->target_execute_time, jo->execute_time);
+  set_time_field(job->job_entry_time,      jo->entry_time);
+  
+  U32_TO_BE32(jo->job_id,   job->job_id);
+  U16_TO_BE16(jo->job_typ,  job->job_typ);
+
+  U16_TO_16(jo->job_position, job->job_position);
+  U16_TO_16(jo->job_control_flags, job->job_control_flags);
+
+  build_queue_file_name(job->job_file_name, jo);
+  /* file handle is not filled here */
+  U32_TO_32(jo->server_station, job->server_station);
+  U32_TO_32(jo->server_task,    job->server_task);
+  U32_TO_BE32(jo->server_id,    job->server_id);
+  if (full) {
+    memcpy(job->job_description, jo->job_description, 
+          sizeof(job->job_description));
+    memcpy(job->client_area, jo->client_area, 
+          sizeof(job->client_area));
+    return(sizeof(QUEUE_JOB));
+  }
+  return(78);
+}
+
+int nw_creat_queue_job(int connection, int task, uint32 object_id,
+                       uint32 q_id, uint8 *q_job, uint8 *responsedata,
+                       int old_call)
+{
+  uint8 *fulldirname  = (old_call) ? responsedata+sizeof(QUEUE_JOB_OLD)
+                                   : responsedata+sizeof(QUEUE_JOB);
+  int result          = nw_get_q_dirname(q_id, fulldirname+1);
+  NWE_QUEUE *que=find_queue(q_id);
+  if (result > 0 && que) {
+    INT_QUEUE_JOB *jo = new_queue_job(que, connection, task, object_id);
+    *fulldirname=(uint8) result++;
+    if (jo == NULL) return(-0xd4); /* queue full */
+    if (old_call) {  /* before 3.11 */
+      QUEUE_JOB_OLD *job  = (QUEUE_JOB_OLD*)q_job; 
+      memcpy(jo->job_description, job->job_description, 
+             sizeof(jo->job_description));
+      memcpy(jo->client_area, job->client_area, 
+             sizeof(jo->client_area));
+      jo->target_id         = GET_BE32(job->target_id);
+      jo->execute_time      = get_time_field(job->target_execute_time);
+      jo->job_typ           = GET_BE16(job->job_typ);
+      jo->job_control_flags = job->job_control_flags|0x20;
+      result+=fill_q_job_entry_old(jo, (QUEUE_JOB_OLD*)responsedata, 1);
+    } else {
+      QUEUE_JOB *job  = (QUEUE_JOB*)q_job; 
+      memcpy(jo->job_description, job->job_description, 
+             sizeof(jo->job_description));
+      memcpy(jo->client_area, job->client_area, 
+             sizeof(jo->client_area));
+      jo->target_id         = GET_BE32(job->target_id);
+      jo->execute_time      = get_time_field(job->target_execute_time);
+      jo->job_typ           = GET_BE16(job->job_typ);
+      jo->job_control_flags = GET_16(job->job_control_flags) | 0x20;
+      result+=fill_q_job_entry(jo, (QUEUE_JOB*)responsedata, 1);
+    }
+  } else {
+    result=-0xd3; /* no rights */
   }
   return(result);
 }
+
+int nw_close_queue_job(uint32 q_id, int job_id, 
+                   uint8 *responsedata)
+{
+  NWE_QUEUE *que=find_queue(q_id);
+  if (que) {
+    INT_QUEUE_JOB *jo=find_queue_job(que, job_id);
+    if (jo) {
+      int result=sizeof(jo->client_area);
+      int i;
+      jo->job_control_flags &= ~0x20;
+      memcpy(responsedata, jo->client_area, result);
+      i = nw_get_q_prcommand(q_id, responsedata+result+1);
+      if (i > -1) {  /* this job is handled directly by client */
+        *(responsedata+result)=(uint8)i;
+        result+=i;
+        free_queue_job(que, job_id);
+      } else 
+        *(responsedata+result)=0;
+      ++result;
+      return(result);
+    }
+    return(-0xff);
+  }
+  return(-0xd8);  /* queue not active */
+}
+
+int nw_get_queue_status(uint32 q_id,  int *status, int *entries, 
+                 int *servers, int server_ids[], int server_conns[])
+{
+  NWE_QUEUE *q=find_queue(q_id);
+  if (q) {
+    *status=q->status;
+    *entries=q->count_jobs;
+    if (q->qserver) {
+      *servers=1;
+      server_ids[0]   = q->qserver->user_id;
+      server_conns[0] = q->qserver->connection;
+    } else
+      *servers=0;
+    return(0);
+  }
+  return(-0xff);
+}
+
+int nw_get_q_job_entry(uint32 q_id, int job_id, 
+                       uint8 *responsedata, int old_call)
+{
+  int result=-0xd5;
+  NWE_QUEUE     *q  = find_queue(q_id);
+  INT_QUEUE_JOB *qj = find_queue_job(q, job_id);
+  if (qj) {
+    if (old_call) {
+      QUEUE_JOB_OLD *job=(QUEUE_JOB_OLD*)responsedata;
+      result=fill_q_job_entry_old(qj, job, 1);
+    } else {
+      QUEUE_JOB *job=(QUEUE_JOB*)responsedata;
+      result=fill_q_job_entry(qj, job, 1);
+    }
+  }
+  return(result);
+}
+
+int nw_get_queue_job_list_old(uint32 q_id, uint8 *responsedata)
+{
+  int result   = -0xff;
+  NWE_QUEUE *q = find_queue(q_id);
+  if (q) {
+    INT_QUEUE_JOB *qj=q->queue_jobs;
+    uint8 *p=responsedata+2;
+    int count=0;
+    while (qj && count < 255) {
+      U16_TO_BE16(qj->job_id, p);
+      p+=2;
+      ++count;
+      qj=qj->next;
+    }
+    U16_TO_BE16(count, responsedata);  /* Hi-Lo !! */
+    result=2+count*2;
+  }
+  return(result);
+}
+
+int nw_get_queue_job_file_size(uint32 q_id, int job_id)
+{
+  int result=-0xd5;
+  NWE_QUEUE     *q  = find_queue(q_id);
+  INT_QUEUE_JOB *qj = find_queue_job(q, job_id);
+  if (qj) {
+    struct stat stb;
+    uint8 buf[300];
+    build_unix_queue_file(buf, q, qj);
+    if (!stat(buf, &stb))
+      return(stb.st_size);
+    return(0);
+  }
+  return(result);
+}
+                                 
+static int remove_queue_job_file(NWE_QUEUE *q, INT_QUEUE_JOB *qj)
+{
+  struct stat stb;
+  uint8 buf[300];
+  build_unix_queue_file(buf, q, qj);
+  if (!stat(buf, &stb))
+    return(unlink(buf));
+  return(0);
+}
+
+int nw_remove_job_from_queue(uint32 user_id, uint32 q_id, int job_id)
+{
+  int result=-0xff;
+  NWE_QUEUE     *q  = find_queue(q_id);
+  INT_QUEUE_JOB *qj = find_queue_job(q, job_id);
+  if (qj) {
+    if (user_id==1 || user_id == qj->client_id) {
+      result=remove_queue_job_file(q, qj);
+      if (!result)
+        free_queue_job(q, job_id);
+      else result=-0xd6;
+    } else result=-0xd6; /* no queue user rights */
+  }
+  return(result);
+}
+
+/* ------------------ for queue servers ------------------- */
+static QUEUE_SERVER *new_qserver(uint32 user_id, int connection)
+{
+  QUEUE_SERVER *qs=(QUEUE_SERVER*)xcmalloc(sizeof(QUEUE_SERVER));
+  qs->user_id=user_id;
+  qs->connection=connection;
+  return(qs);
+}
+
+static void free_qserver(QUEUE_SERVER *qs)
+{
+  if (qs) {
+    xfree(qs);
+  }
+}
+
+int nw_attach_server_to_queue(uint32 user_id, 
+                              int connection, 
+                              uint32 q_id)
+{
+  int result=-0xff;
+  NWE_QUEUE *q = find_queue(q_id);
+  if (q) {
+    if (!(result=nw_is_member_in_set(q_id, "Q_SERVERS", user_id))){
+      if (!q->qserver) {
+        q->qserver=new_qserver(user_id, connection);
+      } else result=-0xdb; /* too max queue servers */
+        /* we only allow 1 qserver/queue in this version */
+    }
+  }
+  return(result);
+}
+
+int nw_detach_server_from_queue(uint32 user_id, 
+                                int connection, 
+                                uint32 q_id)
+{
+  int result=-0xff;
+  NWE_QUEUE *q = find_queue(q_id);
+  if (q && q->qserver 
+        && q->qserver->user_id    == user_id
+        && q->qserver->connection == connection) {
+    free_qserver(q->qserver);
+    q->qserver=NULL;
+    result=0;
+  }
+  return(result);
+}
+
+
+int nw_service_queue_job(uint32 user_id, int connection, int task,
+    			uint32 q_id, int job_typ, 
+    			uint8 *responsedata, int old_call)	 
+{
+  int result=-0xd5;  /* no job */
+  NWE_QUEUE *q = find_queue(q_id);
+  if (q && q->qserver 
+        && q->qserver->user_id    == user_id
+        && q->qserver->connection == connection) {
+    uint8 *fulldirname  = (old_call) ? responsedata+sizeof(QUEUE_JOB_OLD)
+                                     : responsedata+sizeof(QUEUE_JOB);
+    int len             = nw_get_q_dirname(q_id, fulldirname+1);
+    
+    if (len > 0) {
+      INT_QUEUE_JOB *qj=q->queue_jobs;
+      INT_QUEUE_JOB *fqj=NULL;
+      time_t acttime=time(NULL);
+      *fulldirname=(uint8) len++;
+      while(qj) {
+        if (  (!qj->server_id)
+           && !(qj->job_control_flags&0x20)  /* not actual queued */
+           && qj->execute_time <= acttime 
+           && (qj->target_id == MAX_U32 || qj->target_id == user_id)
+           && (qj->job_typ == MAX_U16 || job_typ==MAX_U16 
+                                      || qj->job_typ == job_typ)) {
+          
+          fqj=qj;
+          break;
+        } else {
+          XDPRINTF((6, 0, "Queue job ignored: station=%d, target_id=0x%x,job_typ=0x%x, %s",
+             qj->server_station, qj->target_id, qj->job_typ,  
+             (qj->execute_time > acttime) ? "execute time not reached" : ""));
+        }
+        qj=qj->next;
+      }
+      if (fqj) {
+        fqj->server_id      = user_id;
+        fqj->server_station = connection;
+        fqj->server_task    = task;
+        if (old_call) {
+          QUEUE_JOB_OLD *job=(QUEUE_JOB_OLD*)responsedata;
+          result=fill_q_job_entry_old(fqj, job, 1);
+        } else {
+          QUEUE_JOB *job=(QUEUE_JOB*)responsedata;
+          result=fill_q_job_entry(fqj, job, 1);
+        }
+        result+=len;
+      } else {
+        XDPRINTF((3, 0, "No queue job found for q_id=0x%x, user_id=0x%x,job_typ=0x%x", 
+             q_id, user_id, job_typ));
+      }
+    } else {
+      XDPRINTF((1, 0, "Could not get queuedir of q_id=0x%x", q_id));
+    }
+  } else {
+    XDPRINTF((1, 0, "Could not find qserver q_id=0x%x, user_id=0x%x, connect=%d",
+            q_id, user_id, connection));
+  }
+  return(result);
+}
+
+int nw_finish_abort_queue_job(int mode, uint32 user_id, int connection,
+                       uint32 q_id, int job_id)
+/* modes
+ * 0 = finish,
+ * 1 = abort
+*/
+{
+  NWE_QUEUE *que=find_queue(q_id);
+  if (que) {
+    INT_QUEUE_JOB *jo=find_queue_job(que, job_id);
+    if (jo && jo->server_id == user_id
+      && jo->server_station == connection) {
+      if (mode && (jo->job_control_flags&0x10) ) {  /* restart job */
+        jo->server_id=0;
+        jo->server_station=0;
+      } else {
+        if (!remove_queue_job_file(que, jo))
+          free_queue_job(que, job_id);
+        else return(-0xd6);
+      }
+      return(0);
+    }
+    return(-0xff);
+  }
+  return(-0xd8);  /* queue not active */
+}
+
+void exit_queues(void)
+{
+  if (nwe_queues) {
+    NWE_QUEUE *q=(NWE_QUEUE*)nwe_queues;
+    while (q) {
+      INT_QUEUE_JOB *qj=q->queue_jobs;
+      uint32 qid=q->id;
+      r_w_queue_jobs(q, 2);
+      while(qj) {
+        int job_id=qj->job_id;
+        qj=qj->next;
+        free_queue_job(q, job_id);
+      }
+      q=q->next;
+      
+      free_queue(qid);
+    }
+    nwe_queues=NULL;
+  }
+}
+
+int build_unix_queue_dir(uint8 *buf, 
+                          uint8 *unixname, 
+                          int   unixname_len, 
+                          int   downshift, 
+                          uint8 *sysname,
+                          uint32 q_id)
+{
+  int result = -0xff;
+  uint8 buf1[300];
+  uint8 *p;
+  memcpy(buf, unixname, unixname_len);
+  result=nw_get_q_dirname(q_id, buf1);
+  upstr(buf1);
+  if (result > -1 && NULL != (p=strchr(buf1, ':')) ) {
+    *p++='\0';
+    result -= (int)(p - buf1);
+    if (!strcmp(buf1, sysname)) {
+      memcpy(buf+unixname_len, p, result);
+      result+=unixname_len;
+      if (buf[result-1]=='/')
+        --result;
+      buf[result]='\0';
+      if (downshift)
+        downstr(buf+unixname_len);
+    }
+  }
+  XDPRINTF((3,0, "build_unix_queue_dir=`%s`, len=%d", buf, result));
+  return(result);
+}
+
+void init_queues(uint8 *unixname, int unixname_len, 
+                 int downshift, uint8 *sysname)
+{
+  NETOBJ obj;
+  uint8 buf[300];
+  int result;
+  uint8 *wild="*";
+  uint32 last_obj_id=MAX_U32;
+  exit_queues();
+  strmaxcpy(buf, unixname, unixname_len);
+  XDPRINTF((3,0, "init_queues:unixname='%s'", buf));
+  obj.type = 3; /* queue */
+  strcpy(obj.name, wild);
+  result = scan_for_obj(&obj, last_obj_id);
+  while (!result) {
+    NWE_QUEUE *que;
+    nwdbm_mkdir(get_div_pathes(buf, NULL, 4, "%x", obj.id), 
+                  0700, 0);
+    strmaxcpy(buf, obj.name, 47);
+    XDPRINTF((3, 0, "init queue, id=0x%x, '%s'",
+      obj.id, buf));
+    
+    result=build_unix_queue_dir(buf, unixname, unixname_len, 
+                         downshift, sysname, obj.id);
+    if (result > 0) {
+      que=new_queue(obj.id);
+      new_str(que->queuedir, buf);
+      que->queuedir_len=result;
+      que->queuedir_downshift=downshift;
+      r_w_queue_jobs(que, 0);
+    }
+    last_obj_id=obj.id;
+    strcpy(obj.name, wild);
+    result = scan_for_obj(&obj, last_obj_id);
+  }
+}
+

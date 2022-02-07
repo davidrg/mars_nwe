@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 09-Jul-97
+#makefile.unx 09-Aug-97
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=99
-P_L=0
+P_L=1
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -113,23 +113,25 @@ PROGS=$(INSTALLPROGS) $(PROG8)
 OBJ1= $(EMUTLIOBJ) net1$(O) tools$(O)
 OBJ2= $(OBJ1) $(EMUTLIOBJ1) $(NWROUTE_O)
 OBJ3= $(OBJ1) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) unxfile$(O) \
-nwqueue$(O) nameos2$(O) nwfname$(O) nwshare$(O)
+nwqconn$(O) nameos2$(O) nwfname$(O) nwshare$(O) extpipe$(O)
 OBJ4= $(OBJ1)
 OBJ5= $(OBJ1)
-OBJ6= $(OBJ1) nwdbm$(O) nwcrypt$(O) unxlog$(O)
+OBJ6= $(OBJ1) nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O)
 OBJ7= $(OBJ1) $(EMUTLIOBJ1)
 OBJ8= $(OBJ6)
 
 OBJS= $(EMUTLIOBJ) net1$(O) tools$(O) \
       $(EMUTLIOBJ1) $(NWROUTE_O) \
       connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) unxfile$(O)\
-      nwqueue$(O) nameos2$(O) \
-      nwdbm$(O) nwcrypt$(O) unxlog$(O)  \
+      nwqconn$(O) nameos2$(O) nwfname$(O) nwshare$(O) extpipe$(O) \
+      nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O)  \
       $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O) $(PROG6)$(O) \
       $(PROG7)$(O) $(PROG8)$(O)
 
 HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) \
        unxfile$(O)
+
+HOBJ6= $(PROG6)$(O) sema$(O) 
 
 #if 0
 #$(PROG1):  $(PROG1)$(O) $(OBJ1)
@@ -162,6 +164,7 @@ $(PROG8):  $(PROG8)$(O) $(OBJ8)
 	   $(CC) -o $(VPATH)/$(PROG8) $(PROG8)$(O) $(OBJ8) $(NDBMLIB) $(CRYPTLIB) $(NSLLIB)
 
 $(HOBJ3):  namspace.h connect.h nwvolume.h nwfile.h
+$(HOBJ6):  nwbind.h sema.h
 $(OBJS):   net.h config.h
 $(PROG7)$(O): nwserv.c nwroute.c
 tools$(O): $(DESTMAKEFILE)

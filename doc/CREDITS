@@ -6,6 +6,9 @@ Michael Beddow <m.beddow@servelan.co.uk>
 Thomas Behr <Thomas.Behr@uvw.uni-bayreuth.de>
         testings, wrote syslog stuff
 
+Peter Beno <Peter.Beno@anasoft.ana.sk>
+        testings+bugfixes
+
 Guntram Blohm  <gbl%th7csun1@str.daimler-benz.com>
         testing router code on token ring
         wrote the 'crypted change password' routines !
@@ -45,6 +48,9 @@ Volker Lendecke <lendecke@math.uni-goettingen.de>
 
 Ambrose Li <acli@acli.interlog.com>
         gave hints, patches, docs
+
+Andreas Liebmann  <Liebmann@bbs1.btf.st.schule.de>
+        docs
 
 James B. MacLean <macleajb@ednet.ns.ca>
         many testings+notes

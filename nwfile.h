@@ -1,7 +1,7 @@
 /* nwfile.h 21-Jul-97 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
-#include "nwqueue.h"
+#include "extpipe.h"
 
 typedef struct {
   int    task;          /* for which task		     */
