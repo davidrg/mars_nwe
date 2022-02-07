@@ -1,4 +1,4 @@
-/*  tools.h : 13-Apr-00   */
+/*  tools.h : 18-Apr-00   */
 
 /* (C)opyright (C) 1993-2000  Martin Stover, Marburg, Germany
  *
@@ -93,6 +93,7 @@ extern int fixed_sprintf(char *buf, char *p, ...);
 extern int slprintf(char *buf, int bufsize, char *p, ...);
 
 extern char *gettmpstr(char *qs, int len, int extralen);
+extern int is_filelink(char *fn);
 
 #endif /* _TOOLS_H_ */
 

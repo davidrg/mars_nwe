@@ -1,4 +1,4 @@
-/* nwfile.c  14-Apr-00 */
+/* nwfile.c  25-Apr-00 */
 /* (C)opyright (C) 1993-2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -15,6 +15,13 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+
+/* history since 21-Apr-00 
+ *
+ * mst:25-Apr-00: nw_get_count_open_files()
+ *
+ */
+
 
 #include "net.h"
 
@@ -1095,6 +1102,23 @@ void log_file_module(FILE *f)
   }
 }
 
+int nw_get_count_open_files(uint8 *handlebuf, uint32 offset)
+/* returns max. 100 handles */
+{
+  int k = max(HOFFS-1, offset-1);
+  int handles = 0;
+  while (handles < 100 && ++k < count_fhandles) {
+    FILE_HANDLE  *fh=&(file_handles[k]);
+    if (fh && fh->fd != -1) {
+      handles++;
+      if (handlebuf) {
+        U32_TO_BE32(k+1, handlebuf);
+        handlebuf+=4;
+      }
+    }
+  }
+  return(handles);
+}
 
 /* quick and dirty hack for 0.99.pl17, 25-May-99 */
 

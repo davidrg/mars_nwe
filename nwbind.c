@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "15-Apr-00"
+#define REVISION_DATE "25-Apr-00"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message and queue handling */
 
@@ -19,6 +19,15 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+
+/* history since 21-Apr-00 
+ *
+ * mst:25-Apr-00: added login control routines from Paolo Prandini
+ * mst:25-Apr-00: added simple example for getting nwconn data
+ *
+ */
+
+
 #include "net.h"
 #include "nwdbm.h"
 #include "unxlog.h"
@@ -49,7 +58,7 @@ static void write_to_nwserv(int what, int connection, int mode,
   switch (what) {
     case 0x4444  : /* tell the wdog there's no need to look  0 */
                    /* activate wdogs to free connection      1 */
-                   /* the connection ist closed        	    99 */
+                   /* the connection ist closed             99 */
                    write(FD_NWSERV, &what,       sizeof(int));
                    write(FD_NWSERV, &connection, sizeof(int));
                    write(FD_NWSERV, &mode,       sizeof(int));
@@ -83,6 +92,234 @@ static int        max_connections=MAX_CONNECTIONS;
 static CONNECTION *connections=NULL;
 static CONNECTION *act_c=(CONNECTION*)NULL;
 static int        internal_act=0;
+
+// Check if the new cleartext password is acceptable or not
+static int nw_valid_newpasswd(uint32 obj_id, char *newpasswd)
+{
+  LOGIN_CONTROL lc;
+  int result;
+  XDPRINTF((99, 0, "Change password for user %x with '%s'", obj_id, newpasswd));
+
+  result = nw_get_login_control(obj_id, &lc);
+  if (result < 0) return(0); /* No restrictions available */
+
+  XDPRINTF((2, 0, "len(pwd)=%d limit=%d", strlen(newpasswd), lc.minimumPasswordLength));
+  if (strlen(newpasswd)<lc.minimumPasswordLength)
+    return (-0xd8); // PASSWORD TOO SHORT
+  return 0;
+}
+
+static int nw_test_time_access(uint32 obj_id)
+/*
+ * Code from  Matt Paley, Mark Robson, Paolo Prandini
+*/
+{
+  time_t t,expiry;
+  struct tm exptm;
+  struct tm *tm;
+  int    half_hours;
+  LOGIN_CONTROL lc;
+  int    result;
+
+  result=nw_get_login_control(obj_id,&lc);
+  if (result < 0) return(0); /* No time limits available */
+
+  /* Check if account disabled - MR */
+
+  if (lc.accountExpired) /* Disabled */
+  {
+    XDPRINTF((1, 0, "No access for user %x - disabled.",obj_id));
+    return (-0xdc);
+  }
+
+  /* Account expires at 23:59:59 on the expiry day :) */
+  if (lc.accountExpiresYear) {
+
+    exptm.tm_year = lc.accountExpiresYear;
+    exptm.tm_mon = lc.accountExpiresMonth-1;
+    exptm.tm_mday = lc.accountExpiresDay;
+    exptm.tm_hour = 23;
+    exptm.tm_min = 59;
+    exptm.tm_sec = 59;
+    expiry = mktime(&exptm);
+
+  } else expiry = 0;
+
+  time(&t);
+  tm = localtime(&t);
+
+  if (expiry>0) /* if expiry is enabled */
+  {
+    XDPRINTF((1,0,"user has expiry of %d but time is %d",expiry,t));
+    if (t>expiry) /* has it expired ? */
+    {
+      XDPRINTF((1, 0, "No access for user %x - expired.",obj_id));
+      return (-0xdc);
+    }
+  }
+
+  half_hours = tm->tm_wday*48 + tm->tm_hour*2 + ((tm->tm_min>=30)? 1 : 0);
+  XDPRINTF((5,0,"half_hours=%d",half_hours));
+  {
+    char s[200];
+    int i;
+    for (i=0;i<42;i++) sprintf(s+i*3,"%02x ",lc.timeBitMap[i]);
+    XDPRINTF((5,0,"TIMEBITMAP=%s",s));
+  }
+  
+  if ((lc.timeBitMap[half_hours/8] & (1<<(half_hours % 8))) == 0) {
+    XDPRINTF((1, 0, "No access for user %x at day %d %02d:%02d",
+            obj_id, tm->tm_wday, tm->tm_hour, tm->tm_min));
+    return(-0xda); /* unauthorized login time */
+  }
+
+  /* Password expires at 23:59:59 on the expiry day :) */
+  if (lc.passwordExpiresYear) {
+    exptm.tm_year = lc.passwordExpiresYear;
+    exptm.tm_mon  = lc.passwordExpiresMonth-1;
+    exptm.tm_mday = lc.passwordExpiresDay;
+    exptm.tm_hour = 23;
+    exptm.tm_min  = 59;
+    exptm.tm_sec  = 59;
+    expiry = mktime(&exptm);
+  } else expiry = 0;
+
+  if (expiry>0) /* if expiry is enabled */
+  {
+    XDPRINTF((2, 0,"user has password expiry of %d and time is %d",expiry,t));
+    if (t>expiry) /* has it expired ? */ {
+      if (lc.passwordGraceLogins==0) {
+        XDPRINTF((1, 0, "No access for user %x - password expired,no grace.",obj_id));
+        return (-0xde);
+      }
+      if (lc.passwordGraceLogins!=255) {
+        // Decrement grace logins
+        lc.passwordGraceLogins--;
+        nw_set_login_control(obj_id, &lc);
+        XDPRINTF((1, 0, "Access for user %x - password expired, grace=%d.",obj_id,
+                lc.passwordGraceLogins));
+        return (-0xdf);
+      }
+    }
+  }
+  return 0;
+}
+
+static int nw_test_adr_access(uint32 obj_id, ipxAddr_t *client_adr)
+{
+  uint8  more_segments;
+  uint8  property_flags;
+  char   *propname="NODE_CONTROL";
+  uint8  buff[200];
+  uint8  wildnode[]={0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+  int    segment = 1 ;
+  int    i,j;
+  LOGIN_CONTROL lc;
+ 
+  /*
+  **    Start by checking the authorized login stations
+  */
+
+  int    result=nw_get_prop_val_by_obj_id(obj_id, segment,
+                  propname, strlen(propname),
+                  buff, &more_segments, &property_flags);
+  if (result >=0 ) {
+    uint8 *p=buff;
+    int    k=0;
+    result=-0xdb; /* unauthorized login station */
+    while (k++ < 12) {
+      if (  (IPXCMPNET(client_adr->net,   p))
+              && ( (IPXCMPNODE(client_adr->node, p+4) )
+              || (IPXCMPNODE(wildnode,        p+4))) ) {
+        result=0;
+        break;
+      }
+      p+=10;
+    }
+  } else {
+    // if bindery object not found, no station restrictions
+    result=0;
+  }
+
+  if (result<0) {
+    XDPRINTF((1, 0, "No access for user %x at Station %s",
+               obj_id, visable_ipx_adr(client_adr)));
+    return result;
+  }
+
+  // Read LOGIN_CONTROL object
+  result=nw_get_login_control(obj_id,&lc);
+  if (result<0) return 0;
+
+  /*
+  **    Now check the number of concurrent connections
+  */
+
+  for (i=j=0;i<max_connections;i++)
+    if (connections[i].active) {
+     // If the object logged in is the same requesting access now,
+     // increment the connection counter
+     if (connections[i].object_id==obj_id)
+       j++;    
+    }
+
+  XDPRINTF((3, 0, "Found connections for user %x = %d", obj_id, j));
+
+  // If the number of active connections is >0 then check permissions
+
+  if ( (j>0) && GET_BE16(lc.maxConcurrentConnections) ) {
+    if (j >= GET_BE16(lc.maxConcurrentConnections)) {
+      XDPRINTF((1, 0, "No access for user %x - max connections=%d",obj_id,
+                    (int)GET_BE16(lc.maxConcurrentConnections)));
+      return (-0xd9);
+    }
+  }
+
+  return 0;
+}
+
+int nw_test_adr_time_access(uint32 obj_id, ipxAddr_t *client_adr)
+{
+  int result;
+  struct tm *tm;
+  time_t t;
+  LOGIN_CONTROL lc;
+
+  time(&t);
+  tm = localtime(&t);
+
+  if (obj_id==1 && (entry8_flags & 8)) {
+    if (nw_get_login_control(obj_id,&lc)==0) {
+      lc.lastLoginDate[0]=tm->tm_year;
+      lc.lastLoginDate[1]=tm->tm_mon+1;
+      lc.lastLoginDate[2]=tm->tm_mday;
+      lc.lastLoginDate[3]=tm->tm_hour;
+      lc.lastLoginDate[4]=tm->tm_min;
+      lc.lastLoginDate[5]=tm->tm_sec;
+      nw_set_login_control(obj_id,&lc);
+    }
+    return(0); /* no limits for SU */
+  }
+
+  result=nw_test_adr_access(obj_id, client_adr);
+
+  if (!result) result=nw_test_time_access(obj_id);
+
+  if ((result==0)||(result==-0xdf)) {
+    if (nw_get_login_control(obj_id,&lc)==0) {
+      lc.lastLoginDate[0]=tm->tm_year;
+      lc.lastLoginDate[1]=tm->tm_mon+1;
+      lc.lastLoginDate[2]=tm->tm_mday;
+      lc.lastLoginDate[3]=tm->tm_hour;
+      lc.lastLoginDate[4]=tm->tm_min;
+      lc.lastLoginDate[5]=tm->tm_sec;
+      nw_set_login_control(obj_id,&lc);
+    }
+  }
+  
+  XDPRINTF((result?1:5, 0, "Access for user %x = %x.",obj_id,-result));
+  return(result);
+}
 
 int b_acc(uint32 obj_id, int security, int forwrite)
 {
@@ -144,6 +381,8 @@ int b_acc(uint32 obj_id, int security, int forwrite)
   return(errcode);
 }
 
+
+
 static void sent_down_message(void)
 {
   int k = -1;
@@ -159,6 +398,14 @@ static void sent_down_message(void)
       nwserv_handle_msg(k+1);
     }
   } /* while */
+}
+
+static void delete_nwconn_request(CONNECTION *c)
+{
+  if (c && c->request_nwconn) {
+    xfree(c->request_nwconn->data);
+    xfree(c->request_nwconn);
+  }
 }
 
 static void open_clear_connection(int conn, int activate, uint8 *addr)
@@ -182,6 +429,10 @@ static void open_clear_connection(int conn, int activate, uint8 *addr)
     }
     c->object_id  = 0;
     c->id_flags   = 0;
+
+    delete_nwconn_request(c);
+    c->last_used_sequence=0;
+
   }
 }
 
@@ -340,17 +591,17 @@ static void handle_fxx(int gelen, int func)
         uint32 id = GET_BE32(rdata+1);
         internal_act=1;
         if (get_guid((int*) responsedata, (int*)(responsedata+sizeof(int)),
-		     id, (char *) NULL) != 0) {
-	  completition = 0xff;
+                     id, (char *) NULL) != 0) {
+          completition = 0xff;
           XDPRINTF((2, 0, "quota id-uid mapping failure %d 0x%x", ufunc, id));
         }
         internal_act=0;
         /* OK if supervisor or trying to read (0x29) own limits */
         if ( (act_c->id_flags&1)  ||
-	    (act_c->object_id == id && ufunc == 0x29))
-	  ((int *) responsedata)[2] = 0; /* OK */
+            (act_c->object_id == id && ufunc == 0x29))
+          ((int *) responsedata)[2] = 0; /* OK */
         else
-	  ((int *) responsedata)[2] = 1; /* Fail */
+          ((int *) responsedata)[2] = 1; /* Fail */
         data_len = sizeof(int)*3;
       }
       break;
@@ -534,8 +785,12 @@ static void handle_fxx(int gelen, int func)
                     memset(password, 0, 50);
                     if (!result)
                       data_len = build_login_response(responsedata, obj.id);
-                    else
+                    else {
                       completition = (uint8) -result;
+                      if (result==-0xdf) { /* PaPr,mst:25-Apr-00 */
+                        data_len = build_login_response(responsedata, obj.id);
+		      }
+                    }
                   } break;
 
      case 0x15 :  { /* Get Object Connection List (old) */
@@ -636,13 +891,17 @@ static void handle_fxx(int gelen, int func)
                     }
                     if (result > -1)
                       data_len = build_login_response(responsedata, obj.id);
-                    else
+                    else {
                       completition = (uint8) -result;
+                      
+                      if (result==-0xdf) { /*PaPr,mst:25-Apr-00 */
+                        data_len = build_login_response(responsedata, obj.id);
+		      }
+                    }
                     /*
                      * completition = 0xde means login time has expired
                      * completition = 0xdf means good login, but
-                     * login time has expired
-                     * perhaps I will integrate it later.
+                     * login time has expired, using grace logins
                      */
                   }
                   break;
@@ -945,6 +1204,8 @@ static void handle_fxx(int gelen, int func)
                         internal_act=1;            
                         if ((act_c->id_flags&1) ||
                            (0 == (result=test_allow_password_change(act_c->object_id))
+                           &&  /* PaPr,mst:25-Apr-00 */
+                           0 == (result=nw_valid_newpasswd(act_c->object_id,newpassword))
                            &&
                            0 == (result=nw_test_unenpasswd(obj.id, oldpassword)))){
                           if ( (!(act_c->id_flags&1))
@@ -1113,15 +1374,15 @@ static void handle_fxx(int gelen, int func)
                     /* from Guntram Blohm  */
                     p += (*p+1); /* here is crypted password length */
                     if (0 == (result = find_obj_id(&obj)))  {
-		      internal_act=1;
+                      internal_act=1;
                       if (obj.id != 1)
                         result=test_allow_password_change(obj.id);
                       if (!result)
-  		        result=nw_keychange_passwd(obj.id, act_c->crypt_key,
-				rdata, (int)*p, p+1, act_c->id_flags);
+                        result=nw_keychange_passwd(obj.id, act_c->crypt_key,
+                                rdata, (int)*p, p+1, act_c->id_flags);
                       if (!result) test_ins_unx_user(obj.id);
-		      internal_act = 0;
-		    }
+                      internal_act = 0;
+                    }
 
                     if (result< 0) completition = (uint8) -result;
                     XDPRINTF((2, 0, "Keyed Change PW from OBJECT='%s', type=0x%x, result=0x%x",
@@ -1278,9 +1539,9 @@ static void handle_fxx(int gelen, int func)
      case 0x69:      /* close file and start queue old ?? */
      case 0x7f:   {  /* close file and start queue */
                     uint32 q_id      = GET_BE32(rdata);
-     		    uint32 job_id    = (ufunc==0x69) 
-     		                         ? GET_BE16(rdata+4)
-     		                         : GET_BE16(rdata+4);
+                    uint32 job_id    = (ufunc==0x69) 
+                                         ? GET_BE16(rdata+4)
+                                         : GET_BE16(rdata+4);
                     int result       = nw_close_queue_job(q_id, job_id, 
                                                          responsedata);
                     if (result > -1) 
@@ -1320,9 +1581,9 @@ static void handle_fxx(int gelen, int func)
      case 0x87:   /* Get Queue Job File Size       */
                   {
                     uint32 q_id   = GET_BE32(rdata);
-     		    uint32 job_id = (ufunc==0x78) 
-     		                    ? GET_BE16(rdata+4)
-     		                    : GET_BE16(rdata+4);
+                    uint32 job_id = (ufunc==0x78) 
+                                    ? GET_BE16(rdata+4)
+                                    : GET_BE16(rdata+4);
                     int result = nw_get_queue_job_file_size(q_id, job_id);
                     if (result > -1) {
                       uint8 *p=responsedata;
@@ -1362,7 +1623,7 @@ static void handle_fxx(int gelen, int func)
      case 0x7B:   /* Change Queue Job Entry */
                   {
                     uint32 q_id   = GET_BE32(rdata);
-     		 /*   uint32 job_id = GET_BE16(rdata+4); */
+                 /*   uint32 job_id = GET_BE16(rdata+4); */
                     int result    = nw_change_queue_job_entry(q_id, rdata+4);
                     if (result < 0)  
                       completition=(uint8)-result;
@@ -1429,7 +1690,7 @@ static void handle_fxx(int gelen, int func)
      case 0x72:      /* finish servicing queue job  (old)*/
      case 0x83:   {  /* finish servicing queue job */
                     uint32 q_id       = GET_BE32(rdata);
-     		    uint32 job_id     = GET_BE16(rdata+4);
+                    uint32 job_id     = GET_BE16(rdata+4);
 #if 0
                     uint32 chargeinfo = GET_BE32(rdata+8);
 #endif
@@ -1444,7 +1705,7 @@ static void handle_fxx(int gelen, int func)
      case 0x73:      /* abort servicing queue job (old) */
      case 0x84:   {  /* abort servicing queue job */
                     uint32 q_id       = GET_BE32(rdata);
-     		    uint32 job_id     = GET_BE16(rdata+4);
+                    uint32 job_id     = GET_BE16(rdata+4);
                     int result        = nw_finish_abort_queue_job(1,
                                            act_c->object_id,
                                            act_connection, 
@@ -1575,6 +1836,79 @@ static void handle_fxx(int gelen, int func)
 
   XDPRINTF((6, 0, "func=0x%x ufunc=0x%x compl:0x%x, written count = %d",
              (int)func, (int)ufunc, (int) completition, data_len));
+}
+
+
+/* mst:25-Apr-00 */
+static void send_request_to_nwconn(int connection, int function,
+                                   char *data, int data_len, 
+                                   RESPONSE_FUNC func)
+{
+  CONNECTION *c = &(connections[connection-1]);
+  if (c->active && c->send_to_sock > 0) {
+    IPX_DATA  buf;
+    NCPREQUEST *req      = (NCPREQUEST*)&buf;
+    U16_TO_BE16(0x2121,  req->type);
+    delete_nwconn_request(c);
+    if (++c->last_used_sequence > 255)
+      c->last_used_sequence=1;
+    req->sequence        = c->last_used_sequence;
+    req->task            = 1;
+    req->connection      = (connection & 0xff);
+    req->high_connection = ((connection >> 8) & 0xff);
+    req->function        = function;
+
+    c->request_nwconn = (NWCONN_REQUEST*)xcmalloc(sizeof(NWCONN_REQUEST));
+    c->request_nwconn->sequence = req->sequence;
+    c->request_nwconn->function = function;
+    c->request_nwconn->sendtime = time(NULL);
+    c->request_nwconn->func     = func;
+
+    if (data_len) {
+      memcpy(req+1, data, data_len);
+      c->request_nwconn->data = xmalloc(data_len);
+      memcpy(c->request_nwconn->data, data, data_len);
+    }
+    
+    data_len+=sizeof(NCPREQUEST);
+    U16_TO_BE16(c->send_to_sock, my_addr.sock);
+    
+    XDPRINTF((1, 0, "send_request_to_nwconn: connection=%d, data_len=%d", 
+                     connection, data_len));
+    send_ipx_data(ipx_out_fd, 17, data_len, (char*)req, &my_addr, NULL);
+  
+  }
+}
+
+static void nwconn_callback(int connection, 
+                            char *data, int data_len,
+                            int completition)
+{
+  struct XDATA {
+    uint8 count_handles[4];
+    uint8 handles[4];
+  } *xdata = (struct XDATA*) data;
+  int open_files = GET_BE32(xdata->count_handles);
+  int handle0    = open_files < 1 ? 0 : GET_BE32(xdata->handles);
+  int handle1    = open_files < 2 ? 0 : GET_BE32(xdata->handles+4);
+
+  XDPRINTF((1, 0, "Got Response form con=%d, open_files=%d, handle0=%d, handle1=%d",
+       connection, open_files, handle0, handle1));
+}
+
+static void handle_usr2(void)
+/* handles SIGUSR2, testfunction */
+{
+  int k;
+  for (k=0; k < max_connections; k++) {
+    CONNECTION *c = &connections[k];
+    if (c->active) {
+      struct {
+        uint8   offset[4];       /* handle offset */
+      } data = { {0} };
+      send_request_to_nwconn(k+1, 0x1, (char*)&data, sizeof(data), nwconn_callback);
+    }
+  }
 }
 
 static void handle_bind_calls(uint8 *p)
@@ -1714,6 +2048,7 @@ static void set_sig(void)
 {
   signal(SIGQUIT,  sig_handler);
   signal(SIGHUP,   sig_handler);
+  signal(SIGUSR2,  sig_handler);
   signal(SIGTERM,  SIG_IGN);
   signal(SIGINT,   SIG_IGN);
   signal(SIGPIPE,  SIG_IGN);
@@ -1775,6 +2110,7 @@ int main(int argc, char *argv[])
       time(&akttime);
       XDPRINTF((10, 0, "NWBIND-LOOP from %s", visable_ipx_adr(&from_addr)));
       act_ncpsequence = (int)ncprequest->sequence;
+      
       if ( ncprequest->type[0] == 0x22
         && ncprequest->type[1] == 0x22) {
         act_connection  = (int)ncprequest->connection
@@ -1800,6 +2136,42 @@ int main(int argc, char *argv[])
             visable_ipx_adr(&from_addr)
             ));
         }
+      } else if ( ncprequest->type[0] == 0x32
+               && ncprequest->type[1] == 0x32 ) {
+        /* response from nwconn */
+        
+        act_connection  = (int)ncprequest->connection
+                         | (((int)ncprequest->high_connection) << 8);
+        
+        if (act_connection > 0 && act_connection <= max_connections) {
+          act_c = &(connections[act_connection-1]);
+          internal_act = 0;
+          if (act_c->active && act_c->request_nwconn 
+                && act_c->request_nwconn->sequence == ncprequest->sequence
+                && IPXCMPNODE (from_addr.node, my_addr.node)
+                && IPXCMPNET  (from_addr.net,  my_addr.net)
+                && GET_BE16   (from_addr.sock) == SOCK_NCP )  {
+            
+            XDPRINTF((1, 0, "GOT 0x3232k OK connection=%d", act_connection));
+            
+            if (act_c->request_nwconn->func) {
+              (*act_c->request_nwconn->func)(
+                act_connection, 
+                ((char*)&ipx_in_data) + sizeof(NCPRESPONSE),    
+                ud.udata.len - sizeof(NCPRESPONSE),
+                (int) ((NCPRESPONSE*)ipx_in_data)->completition);
+            }
+            /* now delete request */
+            delete_nwconn_request(act_c);
+          } else {
+            XDPRINTF((1, 0, "NWBIND-LOOP 0x3232 wrong connection %d, active=%d, seq=%d from %s",
+              act_connection, act_c->active, 
+              (int) ncprequest->sequence, visable_ipx_adr(&from_addr) ));
+          }
+        } else {
+          XDPRINTF((1, 0, "NWBIND-LOOP 0x3232 wrong connection %d from %s",
+            act_connection, visable_ipx_adr(&from_addr) ));
+        }
       } else if ( ncprequest->type[0] == 0xee
                && ncprequest->type[1] == 0xee
                && IPXCMPNODE(from_addr.node, my_addr.node)
@@ -1815,6 +2187,9 @@ int main(int argc, char *argv[])
     if (got_sig == SIGHUP) {
      /* here I update some Bindery stuff from nwserv.conf */
       reinit_nwbind();
+      got_sig = 0;
+    } else if (got_sig == SIGUSR2) {
+      handle_usr2();  /* mst:25-Apr-00 */
       got_sig = 0;
     }
   }

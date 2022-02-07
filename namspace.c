@@ -1,4 +1,4 @@
-/* namspace.c 14-Apr-00 : NameSpace Services, mars_nwe */
+/* namspace.c 21-Apr-00 : NameSpace Services, mars_nwe */
 
 /* !!!!!!!!!!!! NOTE !!!!!!!!!! */
 /* Its still dirty, but it should work fairly well */
@@ -18,6 +18,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
+
+/* history since 21-Apr-00 
+ *
+ * mst:21-Apr-00: fixed routine 0x57/0x18, Get Name Spaces Loaded
+ *                count_namespaces is word field, not byte.
+ *
+ *
  */
 
 #include "net.h"
@@ -693,6 +701,18 @@ static uint32 name_2_base(N_NW_PATH *nwpath, int namespace, int no_stat)
   return(basehandle);
 }
 
+static int volume_supports_namespace(int volume, int namespace)
+{
+  int voloptions = get_volume_options(volume); 
+  if (  (   (namespace&NAME_OS2) && !(VOL_NAMESPACE_OS2&voloptions) )
+      || (  (namespace&NAME_NFS) && !(VOL_NAMESPACE_NFS&voloptions) ) ) {
+    XDPRINTF((2, 0, "wrong namespace=%d, voloptions=0x%x, volume=%d",
+                     namespace, voloptions, volume));
+    return(-0xbf);  /* invalid namespace */
+  }
+  return(0);
+}
+
 static int add_dbe_entry(int namspace, int volume,
                   uint32 basehandle, uint8 *path,
                   struct stat *stb)
@@ -862,12 +882,10 @@ static int build_base(int            namespace,
   
   if (!result) {
     nwpath->namespace = namespace;
-    if ((result = add_hpath_to_nwpath(nwpath, nwp, pathes)) > -1) {
-      int voloptions=get_volume_options(nwpath->volume); 
-      if ( (namespace&NAME_OS2) && !(VOL_NAMESPACE_OS2&voloptions))
-        result=-0xbf;  /* invalid namespace */
-      if ( (namespace&NAME_NFS) && !(VOL_NAMESPACE_NFS&voloptions))
-        result=-0xbf;  /* invalid namespace */
+    if ((result = add_hpath_to_nwpath(nwpath, nwp, pathes)) > -1 && namespace) {
+      int lresult = volume_supports_namespace(nwpath->volume, namespace);
+      if (lresult)
+        result = lresult;
     }
     if (result > -1) {  
       char   *pp=strrchr((char*)nwpath->path, '/');
@@ -1030,123 +1048,125 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe,
                           int namespace,
                           uint32 infomask, uint8 *p)
 {
-  N_NW_PATH      *nwpath=&(dbe->nwpath);
-  struct stat    *stb=&(nwpath->statb);
-  int    result      = 76;  /* minimumsize */
-  uint32 owner       = get_file_owner(stb);
-  int    voloptions  = get_volume_options(nwpath->volume);
+  N_NW_PATH  *nwpath = &(dbe->nwpath);
+  int result         = volume_supports_namespace(nwpath->volume, namespace); 
+  if (!result) {
+    struct stat    *stb=&(nwpath->statb);
+    uint32 owner       = get_file_owner(stb);
+    int    voloptions  = get_volume_options(nwpath->volume);
 
-  memset(p, 0, result+2);
+    result = 76; /* minimumsize */
+    memset(p, 0, result+2);
 
-  if ( (!S_ISDIR(stb->st_mode))
-     && (voloptions & VOL_OPTION_IS_PIPE) ) {
-    (void)time(&(stb->st_mtime));
-    stb->st_size  = 0x70000000|(stb->st_mtime&0xfffffff);
-    stb->st_atime = stb->st_mtime;
-  }
+    if ( (!S_ISDIR(stb->st_mode))
+       && (voloptions & VOL_OPTION_IS_PIPE) ) {
+      (void)time(&(stb->st_mtime));
+      stb->st_size  = 0x70000000|(stb->st_mtime&0xfffffff);
+      stb->st_atime = stb->st_mtime;
+    }
 
 
-  if (infomask & INFO_MSK_DATA_STREAM_SPACE) {
-    U32_TO_32(stb->st_size, p);
-  }
-  p  += 4;
+    if (infomask & INFO_MSK_DATA_STREAM_SPACE) {
+      U32_TO_32(stb->st_size, p);
+    }
+    p  += 4;
 
-  if (infomask & INFO_MSK_ATTRIBUTE_INFO) {
-    uint32 attrib = get_nw_attrib_dword(nwpath->volume, unixname, stb);
-    U32_TO_32(attrib, p);
-    p      += 4;
-    U16_TO_16((uint16)(attrib & 0xFFFF), p);
-    p      += 2;
-  } else p+=6;
+    if (infomask & INFO_MSK_ATTRIBUTE_INFO) {
+      uint32 attrib = get_nw_attrib_dword(nwpath->volume, unixname, stb);
+      U32_TO_32(attrib, p);
+      p      += 4;
+      U16_TO_16((uint16)(attrib & 0xFFFF), p);
+      p      += 2;
+    } else p+=6;
 
-  if (infomask & INFO_MSK_DATA_STREAM_SIZE) {
-    U32_TO_32(stb->st_size, p);
-  }
-  p      +=4;
-
-  if (infomask & INFO_MSK_TOTAL_DATA_STREAM_SIZE) {
-    U32_TO_32(stb->st_size, p);
+    if (infomask & INFO_MSK_DATA_STREAM_SIZE) {
+      U32_TO_32(stb->st_size, p);
+    }
     p      +=4;
-    U16_TO_16(0, p);
-    p      +=2;
-  } else p+=6;
 
-  if (infomask & INFO_MSK_CREAT_INFO) {
-    un_time_2_nw(stb->st_mtime, p, 0);
-    p      +=2;
-    un_date_2_nw(stb->st_mtime, p, 0);
-    p      +=2;
-    U32_TO_BE32(owner, p);  /* HI-LOW ! */
-    p      +=4;
-  } else  p+=8;
+    if (infomask & INFO_MSK_TOTAL_DATA_STREAM_SIZE) {
+      U32_TO_32(stb->st_size, p);
+      p      +=4;
+      U16_TO_16(0, p);
+      p      +=2;
+    } else p+=6;
 
-  if (infomask & INFO_MSK_MODIFY_INFO) {
-    un_time_2_nw(stb->st_mtime, p, 0);
-    p      +=2;
-    un_date_2_nw(stb->st_mtime, p, 0);
-    p      +=2;
-    U32_TO_BE32(owner, p); /* HI-LOW ! */
-    p      +=4;
-    un_date_2_nw(stb->st_atime, p, 0);  /* access date */
-    p      +=2;
-  } else p+=10;
+    if (infomask & INFO_MSK_CREAT_INFO) {
+      un_time_2_nw(stb->st_mtime, p, 0);
+      p      +=2;
+      un_date_2_nw(stb->st_mtime, p, 0);
+      p      +=2;
+      U32_TO_BE32(owner, p);  /* HI-LOW ! */
+      p      +=4;
+    } else  p+=8;
 
-  if (infomask & INFO_MSK_ARCHIVE_INFO) {
-    un_time_2_nw(0, p, 0);
-    p      +=2;
-    un_date_2_nw(0, p, 0);
-    p      +=2;
-    U32_TO_BE32(0, p);   /* HI-LOW */
-    p      +=4;
-  } else p+=8;
+    if (infomask & INFO_MSK_MODIFY_INFO) {
+      un_time_2_nw(stb->st_mtime, p, 0);
+      p      +=2;
+      un_date_2_nw(stb->st_mtime, p, 0);
+      p      +=2;
+      U32_TO_BE32(owner, p); /* HI-LOW ! */
+      p      +=4;
+      un_date_2_nw(stb->st_atime, p, 0);  /* access date */
+      p      +=2;
+    } else p+=10;
 
-  if (infomask & INFO_MSK_RIGHTS_INFO) { /* eff. rights ! */
-    U16_TO_16(tru_get_eff_rights(nwpath->volume, unixname, stb), p);
-  }
-  p      +=2;
+    if (infomask & INFO_MSK_ARCHIVE_INFO) {
+      un_time_2_nw(0, p, 0);
+      p      +=2;
+      un_date_2_nw(0, p, 0);
+      p      +=2;
+      U32_TO_BE32(0, p);   /* HI-LOW */
+      p      +=4;
+    } else p+=8;
 
-  if (infomask & INFO_MSK_DIR_ENTRY_INFO) {
-    U32_TO_32(dbe->basehandle, p);
-    p      +=4;
+    if (infomask & INFO_MSK_RIGHTS_INFO) { /* eff. rights ! */
+      U16_TO_16(tru_get_eff_rights(nwpath->volume, unixname, stb), p);
+    }
+    p      +=2;
+
+    if (infomask & INFO_MSK_DIR_ENTRY_INFO) {
+      U32_TO_32(dbe->basehandle, p);
+      p      +=4;
 #if 0
-    U32_TO_32(dbe->basehandle, p);
+      U32_TO_32(dbe->basehandle, p);
 #else
-    U32_TO_32(name_2_base(nwpath, NAME_DOS, 1),  p);
+      U32_TO_32(name_2_base(nwpath, NAME_DOS, 1),  p);
 #endif
-    p      +=4;
-    U32_TO_32(nwpath->volume, p);
-    p      +=4;
-  } else p+=12;
+      p      +=4;
+      U32_TO_32(nwpath->volume, p);
+      p      +=4;
+    } else p+=12;
 
-  if (infomask & INFO_MSK_EXT_ATTRIBUTES) {
-    U32_TO_32(0, p);  /* Ext Attr Data Size */
-    p      +=4;
-    U32_TO_32(0, p);  /* Ext Attr Count */
-    p      +=4;
-    U32_TO_32(0, p);  /* Ext Attr Key Size */
-    p      +=4;
-  } else p+=12;
+    if (infomask & INFO_MSK_EXT_ATTRIBUTES) {
+      U32_TO_32(0, p);  /* Ext Attr Data Size */
+      p      +=4;
+      U32_TO_32(0, p);  /* Ext Attr Count */
+      p      +=4;
+      U32_TO_32(0, p);  /* Ext Attr Key Size */
+      p      +=4;
+    } else p+=12;
 
-  if (infomask & INFO_MSK_NAME_SPACE_INFO){
-    U32_TO_32(namespace, p);  /* using namespace */
-  }
-  p      +=4;
+    if (infomask & INFO_MSK_NAME_SPACE_INFO){
+      U32_TO_32(namespace, p);  /* using namespace */
+    }
+    p      +=4;
 
-  /* ---------------------------------------------- */
-  if (infomask & INFO_MSK_ENTRY_NAME) {
-    result++;
-    if (namespace == NAME_DOS) {
-      *p=(uint8) build_dos_name(dbe, p+1, 13 );
-      result += (int) *p;
-    } else {
-      *p = (uint8) strlen(nwpath->fn);
-      if (*p) {
-        memcpy(p+1, nwpath->fn, (int) *p);
+    /* ---------------------------------------------- */
+    if (infomask & INFO_MSK_ENTRY_NAME) {
+      result++;
+      if (namespace == NAME_DOS) {
+        *p=(uint8) build_dos_name(dbe, p+1, 13 );
         result += (int) *p;
+      } else {
+        *p = (uint8) strlen(nwpath->fn);
+        if (*p) {
+          memcpy(p+1, nwpath->fn, (int) *p);
+          result += (int) *p;
+        }
       }
     }
   }
-
   XDPRINTF((4, 0, "build_d_i:space=%d, path=%s, result=%d, handle=0x%x, mask=0x%lx",
           namespace, debug_nwpath_name(nwpath), result, dbe->basehandle, infomask));
   return(result);
@@ -1170,9 +1190,9 @@ int nw_optain_file_dir_info(int namespace,    NW_HPATH *nwp,
     nwp_stat(&(dbe->nwpath), "nw_optain_file_dir_info");
     result = build_dir_info(dbe, unixname, destnamspace, infomask, responsedata);
     xfree(unixname);
-  } else {
-    XDPRINTF((3, 0, "nw_optain_file_dir_info NOT OK result=-0x%x",
-           -result));
+  }  
+  if (result < 0) {
+    XDPRINTF((3, 0, "nw_optain_file_dir_info NOT OK result=-0x%x", -result));
   }
   return(result);
 }
@@ -1190,11 +1210,12 @@ static int nsp_get_eff_rights(int namespace,    NW_HPATH *nwp,
     U16_TO_16(tru_get_eff_rights(dbe->nwpath.volume, unixname,  
                                 &(dbe->nwpath.statb)), responsedata);
     responsedata+=2;
-    result = 2+build_dir_info(dbe, unixname, destnamspace, infomask, responsedata);
+    result = build_dir_info(dbe, unixname, destnamspace, infomask, responsedata);
+    if (result>-1) result+=2;
     xfree(unixname);
-  } else {
-    XDPRINTF((3, 0, "nsp_get_eff_rights NOT OK result=-0x%x",
-           -result));
+  }
+  if (result <0 ) {
+    XDPRINTF((3, 0, "nsp_get_eff_rights NOT OK result=-0x%x", -result));
   }
   return(result);
 }
@@ -1508,10 +1529,19 @@ static int search_match(struct dirent *dirbuff,
       flag = (dirbuff->d_ino == inode_search);
 
     if (flag) {
+      int statflag;
       strmaxcpy(ds->kpath, name, 255);
       XDPRINTF((7,0,"search_match, Name found=%s unixname=%s",
                                          name, ds->unixname));
-      if (!stat(ds->unixname, &statb)) {
+      
+      statflag = stat(ds->unixname, &statb);
+      if (statflag && errno == EACCES) {  /* mst:21-Apr-00 */
+        seteuid(0);
+        statflag = stat(ds->unixname, &statb);
+        reseteuid();
+      }
+      
+      if (!statflag) {
         if (needs_search_trustee  /* mst: 13-Apr-00 */
           && tru_eff_rights_exists(volume, ds->unixname, &statb, TRUSTEE_T)){ 
           flag = 0;
@@ -1727,6 +1757,7 @@ int nw_search_file_dir(int namespace, int datastream,
                          infomask |INFO_MSK_NAME_SPACE_INFO,
                          info);
         xfree(funixname);
+        
         *count=1;
         dsh->dirpos = TELLDIR(ds->fdir);
         dirbuff     = readdir(ds->fdir);
@@ -1857,7 +1888,9 @@ static int nw_open_creat_file_or_dir(
       *responsedata     =(uint8) actionresult;
       *(responsedata+1) = 0;
       responsedata+=2;
-      result = 6 + build_dir_info(dbe, unixname, namespace, infomask, responsedata);
+      result = build_dir_info(dbe, unixname, namespace, infomask, responsedata);
+      if (result>-1)
+         result+=6;
       xfree(unixname);
     }
   }
@@ -2335,7 +2368,8 @@ static int nw_modify_file_dir(int namespace,
         result=set_nw_attrib_dword(dbe->nwpath.volume, uname, stb, 
                                    GET_32(dmi->attributes));
       }
-      if (!result && (infomask & DOS_MSK_INHERIT_RIGHTS)){
+      if ( (!result) && (infomask & DOS_MSK_INHERIT_RIGHTS)
+         && !tru_eff_rights_exists(dbe->nwpath.volume, uname, stb, TRUSTEE_A) ) {
         int mask       = tru_get_inherited_mask(dbe->nwpath.volume, uname, stb);
         int grantmask  = GET_16(dmi->rightsgrantmask);
         int revokemask = GET_16(dmi->rightsrevokemask);
@@ -2695,25 +2729,28 @@ static int code = 0;
       }
       break;
 
-    case  0x18 :  /* Get Name Spaces Loaded*/
+    case  0x18 :  /* Get Name Spaces Loaded */
       {
         int volume=*(p+2);
         struct OUTPUT {
-          uint8   anz_name_spaces;
+          uint8   count_namespaces[2];  /* LO-HI */
           uint8   name_space_list[1];
         } *xdata= (struct OUTPUT*)responsedata;
         result=get_volume_options(volume);
-        xdata->anz_name_spaces = (uint8) 0;
+        xdata->count_namespaces[0] = (uint8) 0;
+        xdata->count_namespaces[1] = (uint8) 0;
+        
         if (result & VOL_NAMESPACE_DOS)
-          xdata->name_space_list[xdata->anz_name_spaces++]
+          xdata->name_space_list[xdata->count_namespaces[0]++]
             = (uint8) NAME_DOS;
         if (result & VOL_NAMESPACE_OS2)
-          xdata->name_space_list[xdata->anz_name_spaces++]
+          xdata->name_space_list[xdata->count_namespaces[0]++]
             = (uint8) NAME_OS2;
         if (result & VOL_NAMESPACE_NFS)
-          xdata->name_space_list[xdata->anz_name_spaces++]
+          xdata->name_space_list[xdata->count_namespaces[0]++]
             = (uint8) NAME_NFS;
-        result=xdata->anz_name_spaces+1;
+        
+        result = xdata->count_namespaces[0]+sizeof(xdata->count_namespaces);
       }
       break;
 

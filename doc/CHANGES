@@ -2,7 +2,7 @@ Sorry, beginning is in German only.
 User important notes are in the NEWS file.
 Aenderungen in mars_nwe bis zum: 
 Changes in mars_nwe till:
-=>  13-Apr-00 <=
+=>  30-May-00 <=
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -530,4 +530,11 @@ Erste 'oeffentliche' Version
 - passwords with '-' at beginning should now be allowed in nwserv.conf.
 - better trustee handling.
 <----- ^^^^^^^^^^ pl18 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- security fixes. ( unlink() before fopen() )
+- fixed routine 0x57/0x18, Get Name Spaces Loaded
+- Login Restriction Routines from Paolo Prandini
+- removed bug from pl18 for empty passwords and
+  passwords beginning with '-'. ( tnx Przemyslaw Czerpak )
+- trustee fix
+<----- ^^^^^^^^^^ pl19 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

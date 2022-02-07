@@ -1,4 +1,4 @@
-/* tools.c  13-Apr-00 */
+/* tools.c  18-Apr-00 */
 /* (C)opyright (C) 1993-2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -430,7 +430,9 @@ static void creat_pidfile(void)
 {
   char buf[300];
   char *pidfn=get_pidfilefn(buf);
-  FILE *f=fopen(pidfn, "w");
+  FILE *f;
+  unlink(pidfn);  /* security, mst:18-Apr-00 */
+  f = fopen(pidfn, "w");
   if (f != NULL) {
     fprintf(f, "%d\n", getpid());
     fclose(f);
@@ -493,7 +495,7 @@ void init_tools(int module, int options)
           kill_pid=-1;
         fclose(pf);
       }
-      if (kill_pid < 0) unlink((char*)buf);
+      if (kill_pid < 0) unlink(pidfn);
     }
     if (kill_pid > -1) {
       int sig;
@@ -759,5 +761,14 @@ char *gettmpstr(char *qs, int len, int extralen)
   if (++tmpstrcounter==MAX_TMP_STRINGS)
     tmpstrcounter=0;
   return(s);
+}
+
+
+int is_filelink(char *fn)
+{
+  struct stat stb;
+  return( (lstat(fn, &stb) == -1) 
+                    ? 0 
+                    : S_ISLNK(stb.st_mode) );
 }
 

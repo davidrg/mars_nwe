@@ -388,7 +388,7 @@ typedef union {
       */
   } diaresp;
   struct S_NCPRESPONSE {     /* size = 8 */
-    uint8   type[2];         /* 0x3333 */
+    uint8   type[2];         /* 0x3333 or internal 0x3232 */
     uint8   sequence;
     uint8   connection;      /* low connection */
     uint8   task;
@@ -397,7 +397,7 @@ typedef union {
     uint8   connect_status;
   } ncpresponse;
   struct S_NCPREQUEST {      /* size = 7 */
-    uint8   type[2];         /* 0x1111 od 0x2222 */
+    uint8   type[2];         /* 0x1111 or 0x2222 or internal 0x1212 */
     uint8   sequence;
     uint8   connection;      /* low connection */
     uint8   task;

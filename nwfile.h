@@ -59,6 +59,7 @@ extern int fd_2_fname(int fhandle, char *buf, int bufsize);
 extern FILE_HANDLE *fd_2_fh(int fhandle);
 extern int get_nwfd(int fhandle);
 extern void log_file_module(FILE *f);
+extern int nw_get_count_open_files(uint8 *handlebuf, uint32 offset);
 
 extern  int nw_log_logical_record(int lock_flag,
                   int timeout,

@@ -552,6 +552,8 @@ int tru_get_id_trustee(int volume, uint8 *unixname, struct stat *stb, uint32 id)
   return(-0x85); 
 }
 
+static FILE_TRUSTEE_NODE *find_build_trustee_node(int volume, uint8 *unixname, struct stat *stb);
+
 static int local_tru_add_trustee_set(int volume, uint8 *unixname, 
                        struct stat *stb,
                        int count, NW_OIC *nwoic) 
@@ -562,7 +564,9 @@ static int local_tru_add_trustee_set(int volume, uint8 *unixname,
   if (  (voloptions & VOL_OPTION_TRUSTEES) && 
      (  ((own_eff_rights=tru_get_eff_rights(volume, unixname, stb)) & TRUSTEE_A) 
      || (act_id_flags&1) ))  {
-    FILE_TRUSTEE_NODE *tr=find_trustee_node(volume, stb->st_dev, stb->st_ino);
+    /* FILE_TRUSTEE_NODE *tr=find_trustee_node(volume, stb->st_dev, stb->st_ino); */
+    /* mst:11-May-00 */
+    FILE_TRUSTEE_NODE *tr=find_build_trustee_node(volume, unixname, stb); 
     if (tr && (!(tr->mode_flags&0x18) || !act_uid)) {
       int volumenamelen = get_volume_unixnamlen(volume);
       uint8  ufnbuf[2];
@@ -768,90 +772,96 @@ static int build_trustee_rights(FILE_TRUSTEE_NODE *tr,
   return(count);
 }
 
+static FILE_TRUSTEE_NODE *find_build_trustee_node(int volume, uint8 *unixname, struct stat *stb)
+{
+  FILE_TRUSTEE_NODE *tr=find_creat_add_trustee_node(volume, unixname, stb);
+  if (tr->eff_rights < 0) { /* now we must rebuild eff rights */
+    int count=0;
+    IDS_TRUSTEE *ugid_trustees=
+          (IDS_TRUSTEE*)xcmalloc((grps_count+1)*sizeof(IDS_TRUSTEE)); 
+    struct stat       stb1;
+    (void)get_volume_inode(volume, &stb1);
+    if (stb1.st_ino != stb->st_ino || stb1.st_dev != stb->st_dev) {
+      /* is not volumes root */
+      int volumenamelen = get_volume_unixnamlen(volume);
+      char *p           = unixname+volumenamelen;
+      int last_dev      = stb1.st_dev;
+      int volumes_dev   = stb1.st_dev;
+      FILE_TRUSTEE_NODE *tr1=find_trustee_node(
+                                volume, stb1.st_dev, stb1.st_ino);
+      
+      if (!tr1) {
+        tr1=create_trustee_node(volume, stb1.st_dev, stb1.st_ino, 3);
+        add_trustee_node(tr1);
+      } else tr1->mode_flags|=3;
+      /* build trustees for unix volume */
+      count=build_trustee_rights(tr1, ugid_trustees, count);
+      
+      while (*p=='/')++p;
+      
+      while (NULL != (p=strchr(p, '/'))) {
+        *p = '\0';
+        if (!stat(unixname, &stb1)) {
+          if (stb1.st_ino != stb->st_ino || stb1.st_dev != stb->st_dev) {
+            int mode_flags=S_ISDIR(stb1.st_mode)?1:0;
+            tr1=find_trustee_node(volume, stb1.st_dev, stb1.st_ino);
+            if (last_dev != stb1.st_dev) {
+              last_dev    = stb1.st_dev;
+              mode_flags |= 0x8; 
+            }
+            if (volumes_dev != stb1.st_dev)
+              mode_flags|=0x10;
+            
+            if (!tr1) {
+              struct stat lstatbuf;
+              if (  lstat(unixname, &lstatbuf)  
+                 || (lstatbuf.st_dev != stb1.st_dev)
+                 || (lstatbuf.st_ino != stb1.st_ino)
+                 || S_ISLNK(lstatbuf.st_mode) ) {
+                mode_flags|=4;  
+              }
+              tr1=create_trustee_node(volume, stb1.st_dev, stb1.st_ino, 
+                              mode_flags);
+              add_trustee_node(tr1);
+            } else
+              tr1->mode_flags|=mode_flags;
+            count=build_trustee_rights(tr1, ugid_trustees, count);
+          } else {
+            *p='/';
+            break;
+          }
+        } else {
+          errorp(10, "tru_get_eff_rights", "stat error `%s`", unixname);
+          *p='/';
+          xfree(ugid_trustees);
+          return(0);
+        }
+        *p='/';
+        while (*p=='/')++p;
+      } /* while */
+      
+      if (last_dev != stb->st_dev) 
+        tr->mode_flags|=0x8;
+      if (volumes_dev!=stb->st_dev)
+        tr->mode_flags|=0x10;
+    } else { 
+      /* volumes directory */
+      tr->mode_flags|=(1|2); 
+    }
+    count=build_trustee_rights(tr, ugid_trustees, count);
+    xfree(ugid_trustees);
+  } /* if eff_rights < 0 */
+  return(tr);
+}
+
 static int get_eff_rights_by_trustees(int volume, uint8 *unixname, struct stat *stb)
 /* returns the eff. rights the actual user has as real trustees */
 {
-  if ( (act_obj_id == 1) && (act_id_flags&1))
+  if ( (act_obj_id == 1) && (act_id_flags&1) )  /* supervisor */
     return(MAX_TRUSTEE_MASK); /* all rights */
   else {
-    FILE_TRUSTEE_NODE *tr=find_creat_add_trustee_node(volume, unixname, stb);
-    if (tr->eff_rights < 0) { /* now we must rebuild eff rights */
-      int count=0;
-      IDS_TRUSTEE *ugid_trustees=
-            (IDS_TRUSTEE*)xcmalloc((grps_count+1)*sizeof(IDS_TRUSTEE)); 
-      struct stat       stb1;
-      (void)get_volume_inode(volume, &stb1);
-      if (stb1.st_ino != stb->st_ino || stb1.st_dev != stb->st_dev) {
-        /* is not volumes root */
-        int volumenamelen = get_volume_unixnamlen(volume);
-        char *p           = unixname+volumenamelen;
-        int last_dev      = stb1.st_dev;
-        int volumes_dev   = stb1.st_dev;
-        FILE_TRUSTEE_NODE *tr1=find_trustee_node(
-                                  volume, stb1.st_dev, stb1.st_ino);
-        
-        if (!tr1) {
-          tr1=create_trustee_node(volume, stb1.st_dev, stb1.st_ino, 3);
-          add_trustee_node(tr1);
-        } else tr1->mode_flags|=3;
-        /* build trustees for unix volume */
-        count=build_trustee_rights(tr1, ugid_trustees, count);
-        
-        while (*p=='/')++p;
-        
-        while (NULL != (p=strchr(p, '/'))) {
-          *p = '\0';
-          if (!stat(unixname, &stb1)) {
-            if (stb1.st_ino != stb->st_ino || stb1.st_dev != stb->st_dev) {
-              int mode_flags=S_ISDIR(stb1.st_mode)?1:0;
-              tr1=find_trustee_node(volume, stb1.st_dev, stb1.st_ino);
-              if (last_dev != stb1.st_dev) {
-                last_dev    = stb1.st_dev;
-                mode_flags |= 0x8; 
-              }
-              if (volumes_dev != stb1.st_dev)
-                mode_flags|=0x10;
-              
-              if (!tr1) {
-                struct stat lstatbuf;
-                if (  lstat(unixname, &lstatbuf)  
-                   || (lstatbuf.st_dev != stb1.st_dev)
-                   || (lstatbuf.st_ino != stb1.st_ino)
-                   || S_ISLNK(lstatbuf.st_mode) ) {
-                  mode_flags|=4;  
-                }
-                tr1=create_trustee_node(volume, stb1.st_dev, stb1.st_ino, 
-                                mode_flags);
-                add_trustee_node(tr1);
-              } else
-                tr1->mode_flags|=mode_flags;
-              count=build_trustee_rights(tr1, ugid_trustees, count);
-            } else {
-              *p='/';
-              break;
-            }
-          } else {
-            errorp(10, "tru_get_eff_rights", "stat error `%s`", unixname);
-            *p='/';
-            xfree(ugid_trustees);
-            return(0);
-          }
-          *p='/';
-          while (*p=='/')++p;
-        } /* while */
-        
-        if (last_dev != stb->st_dev) 
-          tr->mode_flags|=0x8;
-        if (volumes_dev!=stb->st_dev)
-          tr->mode_flags|=0x10;
-      } else { 
-        /* volumes directory */
-        tr->mode_flags|=(1|2); 
-      }
-      count=build_trustee_rights(tr, ugid_trustees, count);
-      xfree(ugid_trustees);
-    } /* if eff_rights < 0 */
-    return((tr->eff_rights>-1) ? tr->eff_rights : 0);
+    FILE_TRUSTEE_NODE *tr = find_build_trustee_node(volume, unixname, stb);
+    return( (tr->eff_rights > -1) ? tr->eff_rights : 0);
   }
 }
 

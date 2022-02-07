@@ -1,4 +1,4 @@
-/* nwdbm.h 14-Apr-00 */
+/* nwdbm.h 25-Apr-00 */
 /* (C)opyright (C) 1993,2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -84,6 +84,64 @@ extern int entry8_flags;
 #define PW_SCHEME_LOGIN		  2
 #define PW_SCHEME_GET_KEY_FAIL    4
 #define PW_SCHEME_ALLOW_EMPTY_PW  8
+
+/*
+**	LOGIN_CONTROL structure is an 86 byte structure that contains
+**	account password information
+**      Paolo Prandini <prandini@spe.it>  mst:25-Apr-00
+**
+*/
+typedef struct {
+	
+  uint8	accountExpiresYear;
+  uint8	accountExpiresMonth;
+  uint8	accountExpiresDay;
+  uint8	accountExpired;
+
+  uint8	passwordExpiresYear;
+  uint8	passwordExpiresMonth;
+  uint8	passwordExpiresDay;
+  uint8	passwordGraceLogins;
+  uint8 expirationInterval[2]; /* hi-lo */
+  uint8	graceReset;
+  uint8	minimumPasswordLength;
+  
+  uint8 maxConcurrentConnections[2]; /* hi-lo */
+  uint8	timeBitMap[42];
+  uint8	lastLoginDate[6];
+  uint8	restrictionFlags;  // bit 0=1 disallow pwd change, 
+  			   // bit 1=1 require unique pwd
+  uint8	filler;
+  uint8	maxDiskBlocks[4];  /* hi-lo */
+  uint8	badLoginCount[2];  /* hi-lo */
+  uint8	nextResetTime[4];  /* hi-lo */
+  uint8	badStationAddress[12];
+
+} LOGIN_CONTROL;	
+
+/*
+**	USER_DEFAULTS structure is a structure that contains
+**	default account password information
+*/
+typedef struct {
+
+  uint8	accountExpiresYear;
+  uint8	accountExpiresMonth;
+  uint8	accountExpiresDay;
+  uint8	restrictionFlags;
+  uint8 expirationInterval[2];  /* hi-lo */
+  uint8	graceReset;
+  uint8	minimumPasswordLength;
+  
+  uint8 maxConcurrentConnections[2]; /* hi-lo */
+  uint8	timeBitMap[42];
+  uint8	balance[4];       /* ?? */
+  uint8 creditLimit[4];   /* ?? */
+  uint8	maxDiskBlocks[4]; /* hi-lo */
+  uint8	createHomeDir;
+
+} USER_DEFAULTS;
+
 
 /* next routine is in nwbind.c !!!! */
 extern int b_acc(uint32 obj_id, int security, int forwrite);
@@ -193,6 +251,10 @@ extern int nw_is_security_equal(uint32 id1,  uint32 id2);
 extern int get_groups_i_m_in(uint32 id, uint32 *gids);
 
 extern int get_guid(int *gid, int *uid, uint32 obj_id, uint8 *name);
+
+/* mst:25-Apr-00 */
+extern int nw_get_login_control(uint32 obj_id, LOGIN_CONTROL *plc);
+extern int nw_set_login_control(uint32 obj_id, LOGIN_CONTROL *plc);
 
 extern int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key);
 extern int nw_test_unenpasswd(uint32 obj_id, uint8 *password);

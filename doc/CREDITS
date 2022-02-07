@@ -85,6 +85,9 @@ Matt Paley <mtpa@mail.nerc-bas.ac.uk>
 Boris Popov <bp@butya.kz>
         ported mars_nwe to FreeBSD
 
+Paolo Prandini <prandini@spe.it>
+        added login control routines
+
 Jiri A. Randus <Jiri.Randus@vslib.cz>
         testing bindery code
 

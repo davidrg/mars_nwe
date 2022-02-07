@@ -8,7 +8,7 @@
 #define TRUSTEE_O    0x04  /* file Open rights      */
 #define TRUSTEE_C    0x08  /* file/dir Creat rights */
 #define TRUSTEE_E    0x10  /* file/dir Erase rights */
-#define TRUSTEE_A    0x20  /* Access control, may change trustees */
+#define TRUSTEE_A    0x20  /* Access control,change trustees,inherited rights */
 #define TRUSTEE_F    0x40  /* File scan rights     */
 #define TRUSTEE_M    0x80  /* Modify filename, attrib rights  */
 /* ......extended Trustees ................. */

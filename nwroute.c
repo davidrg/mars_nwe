@@ -1,5 +1,5 @@
-/* nwroute.c 08-Feb-98 */
-/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
+/* nwroute.c 18-Apr-00 */
+/* (C)opyright (C) 1993,2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -607,6 +607,10 @@ static FILE *open_route_info_fn(int force, FILE *ff, int section)
       } else {
         fn=pr_route_info_fn;
       }
+
+      if (is_filelink(fn)) /* security, mst:18-Apr-00 */
+        unlink(fn);
+
       f=fopen(fn, (print_route_mode&0x1) ? "w" : "a");
       if (section == 1) {
         if (NULL != f)

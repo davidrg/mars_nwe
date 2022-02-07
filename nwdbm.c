@@ -1,4 +1,4 @@
-/* nwdbm.c  14-Apr-00 data base for mars_nwe */
+/* nwdbm.c  25-Apr-00 data base for mars_nwe */
 /* (C)opyright (C) 1993,2000  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -14,6 +14,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
+
+/* history since 21-Apr-00 
+ *
+ * mst:25-Apr-00: added login control routines from Paolo Prandini
+ * mst:25-Apr-00: removed bug from pl18 for passwords beginning with '-'
+ *
  */
 
 /*
@@ -44,7 +51,7 @@
 #endif
 
 #ifdef USE_GDBM
-#  define DBM_FILE			GDBM_FILE
+#  define DBM_FILE                      GDBM_FILE
 #else
 #  define DBM_FILE                      DBM *
 #endif
@@ -316,32 +323,32 @@ int scan_for_obj(NETOBJ *o, uint32 last_obj_id, int ignore_rights)
 {
   int result = -0xfc; /* no Object */
   XDPRINTF((2, 0,"scan_for_obj OBJ=%s, type=0x%x, lastid=0x%x",
-	      o->name, (int)o->type, (int)last_obj_id));
+              o->name, (int)o->type, (int)last_obj_id));
 
   if (!dbminit(FNOBJ)){
     key = firstkey();
     if (last_obj_id && (last_obj_id != MAX_U32)){
       int  flag = 0;
       while (key.dptr != NULL && !flag) {
-	if ( ((NETOBJ*)(key.dptr))->id == last_obj_id) flag++;
-	key = nextkey(key);
+        if ( ((NETOBJ*)(key.dptr))->id == last_obj_id) flag++;
+        key = nextkey(key);
       }
     }
     while (key.dptr != NULL && result) {
       data = fetch(key);
       if (data.dptr != NULL){
-	NETOBJ *obj = (NETOBJ*)data.dptr;
-	if ( ( ((int)obj->type == (int)o->type) || o->type == MAX_U16) &&
-	   name_match(obj->name, o->name) &&
+        NETOBJ *obj = (NETOBJ*)data.dptr;
+        if ( ( ((int)obj->type == (int)o->type) || o->type == MAX_U16) &&
+           name_match(obj->name, o->name) &&
            ( ignore_rights ||
-	   (b_acc(obj->id, obj->security, 0x00)== 0)))  {
-	  XDPRINTF((2, 0, "found OBJ=%s, id=0x%x", obj->name, (int)obj->id));
-	  result = 0;
-	  memcpy((char *)o, (char*)obj, sizeof(NETOBJ));
-	} else {
-	  XDPRINTF((3,0,"not found,but NAME=%s, type=0x%x, id=0x%x",
-	                 obj->name, (int)obj->type, (int)obj->id));
-	}
+           (b_acc(obj->id, obj->security, 0x00)== 0)))  {
+          XDPRINTF((2, 0, "found OBJ=%s, id=0x%x", obj->name, (int)obj->id));
+          result = 0;
+          memcpy((char *)o, (char*)obj, sizeof(NETOBJ));
+        } else {
+          XDPRINTF((3,0,"not found,but NAME=%s, type=0x%x, id=0x%x",
+                         obj->name, (int)obj->type, (int)obj->id));
+        }
       }
       if (result) key = nextkey(key);
     } /* while */
@@ -364,18 +371,18 @@ static int loc_delete_property(uint32 obj_id,
     XDPRINTF((2,0, "loc_delete_property obj_id=0x%x, prop=%s", obj_id, prop_name));
     if (!dbminit(FNPROP)){
       for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
-	NETPROP *p=(NETPROP*)key.dptr;
-	if (p->obj_id == obj_id) {
-	  data = fetch(key);
-	  p = (NETPROP*)data.dptr;
+        NETPROP *p=(NETPROP*)key.dptr;
+        if (p->obj_id == obj_id) {
+          data = fetch(key);
+          p = (NETPROP*)data.dptr;
           if (p != NULL && name_match(p->name, prop_name)){
-	    XDPRINTF((2,0, "found prop: %s, id=%d for deleting", p->name, (int)p->id));
+            XDPRINTF((2,0, "found prop: %s, id=%d for deleting", p->name, (int)p->id));
             if (ever || !b_acc(obj_id, p->security, 0x13)) {
-	      if ((int)(p->id) > result) result = (int)(p->id);
-	      xset[p->id]++;
+              if ((int)(p->id) > result) result = (int)(p->id);
+              xset[p->id]++;
             } else if (result < 0) result = -0xf6; /* no delete priv. */
-	  }
-	}
+          }
+        }
       } /* for */
     } else result = -0xff;
     dbmclose();
@@ -392,34 +399,34 @@ static int loc_delete_property(uint32 obj_id,
       key.dsize  = NETVAL_KEY_SIZE;
       val.obj_id = obj_id;
       for (k = 1; k <= result; k++){
-	if (xset[k]){
-	  int l   = 0;
-	  val.prop_id  = (uint8)k;
-	  while (l++ < 255) {
-	    val.segment = (uint8)l;
-	    if (delete(key)) break;
-	  }
-	}
+        if (xset[k]){
+          int l   = 0;
+          val.prop_id  = (uint8)k;
+          while (l++ < 255) {
+            val.segment = (uint8)l;
+            if (delete(key)) break;
+          }
+        }
       } /* for */
     } else result=-0xff;
     dbmclose();
     if (result > 0) {
       if (!dbminit(FNPROP)){  /* now delete properties */
-	int k;
-	NETPROP prop;
-	key.dptr   = (char*)&prop;
-	key.dsize  = NETPROP_KEY_SIZE;
-	prop.obj_id = obj_id;
-	for (k = (prop_id) ? prop_id : 1; k <= result; k++){
-	  if (xset[k]){
-	    prop.id  = (uint8)k;
-	    if (delete(key)) {
-	      result = -0xf6;
-	      break;
-	    }
-	  }
-	} /* for */
-	if (result > 0) result=0;
+        int k;
+        NETPROP prop;
+        key.dptr   = (char*)&prop;
+        key.dsize  = NETPROP_KEY_SIZE;
+        prop.obj_id = obj_id;
+        for (k = (prop_id) ? prop_id : 1; k <= result; k++){
+          if (xset[k]){
+            prop.id  = (uint8)k;
+            if (delete(key)) {
+              result = -0xf6;
+              break;
+            }
+          }
+        } /* for */
+        if (result > 0) result=0;
       } else result=-0xff;
       dbmclose();
     }
@@ -444,28 +451,28 @@ static int prop_delete_member(uint32 obj_id, int prop_id, int prop_security,
     while (val.segment++ < (uint8)255) {
       data         = fetch(key);
       if (data.dptr != NULL) {
-	NETVAL  *v = (NETVAL*)data.dptr;
-	uint8   *p = v->value;
-	int      k = 0;
-	while (k++ < 32){
-	  uint32 id=GET_BE32(p);
-	  if (id == member_id) {
+        NETVAL  *v = (NETVAL*)data.dptr;
+        uint8   *p = v->value;
+        int      k = 0;
+        while (k++ < 32){
+          uint32 id=GET_BE32(p);
+          if (id == member_id) {
 #if 0
-	    memset(p, 0, 4);
-	    memcpy(&val, v, sizeof(NETVAL));
+            memset(p, 0, 4);
+            memcpy(&val, v, sizeof(NETVAL));
 #else       /* new since 0.99.pl7 */
-	    memcpy(&val, v,  p - (uint8*)v);
+            memcpy(&val, v,  p - (uint8*)v);
             if (k<32)
               memcpy(&val.value[(k-1)*4], p+4, (32-k) * 4);
             memset(&val.value[124], 0, 4);
 #endif
-	    data.dptr = (char*)&val;
-	    if (store(key, data)) result=-0xff;
-	    else result=0;
-	    goto L1;
+            data.dptr = (char*)&val;
+            if (store(key, data)) result=-0xff;
+            else result=0;
+            goto L1;
           }
           p += 4;
-	}
+        }
       } else break;
     }
   } else result = -0xff;
@@ -494,12 +501,12 @@ static int loc_delete_obj(uint32 objid, int security)
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);
       if (data.dptr) {
-	NETPROP *prop=(NETPROP*)data.dptr;
-	if (prop->flags & P_FL_SET) { /* is set property */
-	  objs[anz]    = prop->obj_id;
-	  props[anz++] = prop->id;
-	  if (anz == LOC_MAX_OBJS) break;
-	}
+        NETPROP *prop=(NETPROP*)data.dptr;
+        if (prop->flags & P_FL_SET) { /* is set property */
+          objs[anz]    = prop->obj_id;
+          props[anz++] = prop->id;
+          if (anz == LOC_MAX_OBJS) break;
+        }
       }
     }
     while (anz--) /* now try to delete obj members */
@@ -621,15 +628,15 @@ static int find_prop_id(NETPROP *p, uint32 obj_id, int last_prop_id)
       if (prop->obj_id == obj_id) {
         if (!flag) flag = (last_prop_id == prop->id);
         else {
-	  data = fetch(key);
-	  prop = (NETPROP*)data.dptr;
-	  if (data.dptr != NULL && name_match(prop->name, p->name)
-	    && (b_acc(obj_id, prop->security, 0x00)== 0) ) {
-	    XDPRINTF((2,0, "found PROP %s, id=0x%x", prop->name, (int) prop->id));
-	    result = 0;
-	    memcpy(p, prop, sizeof(NETPROP));
-	    break;
-	  }
+          data = fetch(key);
+          prop = (NETPROP*)data.dptr;
+          if (data.dptr != NULL && name_match(prop->name, p->name)
+            && (b_acc(obj_id, prop->security, 0x00)== 0) ) {
+            XDPRINTF((2,0, "found PROP %s, id=0x%x", prop->name, (int) prop->id));
+            result = 0;
+            memcpy(p, prop, sizeof(NETPROP));
+            break;
+          }
         }
       }
     }
@@ -650,23 +657,23 @@ static int loc_change_prop_security(NETPROP *p, uint32 obj_id)
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       NETPROP *prop=(NETPROP*)key.dptr;
       if (prop->obj_id == obj_id) {
-	data = fetch(key);
-	prop = (NETPROP*)data.dptr;
-	if (data.dptr != NULL  && name_match(prop->name, p->name) )  {
-	  uint8 security = p->security;
-	  XDPRINTF((2,0, "found PROP %s, id=0x%x", prop->name, (int) prop->id));
+        data = fetch(key);
+        prop = (NETPROP*)data.dptr;
+        if (data.dptr != NULL  && name_match(prop->name, p->name) )  {
+          uint8 security = p->security;
+          XDPRINTF((2,0, "found PROP %s, id=0x%x", prop->name, (int) prop->id));
           result = b_acc(obj_id, prop->security, 0x15);
           if (!result) {
-	    memcpy(p, prop, sizeof(NETPROP));
-	    p->security = security;
-	    data.dptr  = (char*)p;
-	    data.dsize = sizeof(NETPROP);
-	    key.dptr  = (char *)p;
-	    key.dsize = NETPROP_KEY_SIZE;
-	    if (store(key, data)) result=-0xff;
+            memcpy(p, prop, sizeof(NETPROP));
+            p->security = security;
+            data.dptr  = (char*)p;
+            data.dsize = sizeof(NETPROP);
+            key.dptr  = (char *)p;
+            key.dsize = NETPROP_KEY_SIZE;
+            if (store(key, data)) result=-0xff;
           }
-	  break;
-	}
+          break;
+        }
       }
     }
   } else result = -0xff;
@@ -729,11 +736,11 @@ static int prop_find_member(uint32 obj_id, int prop_id, int prop_security,
         int     k=0;
         XDPRINTF((2,0, "found VAL 0x%x, %d segment %d", obj_id, prop_id, val.segment));
         while (k++ < 32){
-	  uint32 id = GET_BE32(p);
-	  if (id == member_id) {
-	    result = 0;
-	    break;
-	  } else p += 4;
+          uint32 id = GET_BE32(p);
+          if (id == member_id) {
+            result = 0;
+            break;
+          } else p += 4;
         }
       }
     }
@@ -761,27 +768,27 @@ static int prop_add_member(uint32 obj_id, int prop_id,  int prop_security,
       if (val.segment++ < (uint8)255) {
         data        = fetch(key);
         if (data.dptr != NULL){
-	  NETVAL  *v = (NETVAL*)data.dptr;
-	  uint8   *p = v->value;
-	  int      k = 0;
-	  while (k++ < 32){
-	    uint32 null_id = 0;
-	    if (!memcmp(p, (char*)&null_id, 4)) {
-	      U32_TO_BE32(member_id, p);
-	      memcpy(&val, v, sizeof(NETVAL));
-	      data.dptr = (char*)&val;
-	      key.dptr  = (char*)&val;
-	      if (store(key, data)) result=-0xff;
-	      goto L1;
-	    } else p += 4;
-	  }
+          NETVAL  *v = (NETVAL*)data.dptr;
+          uint8   *p = v->value;
+          int      k = 0;
+          while (k++ < 32){
+            uint32 null_id = 0;
+            if (!memcmp(p, (char*)&null_id, 4)) {
+              U32_TO_BE32(member_id, p);
+              memcpy(&val, v, sizeof(NETVAL));
+              data.dptr = (char*)&val;
+              key.dptr  = (char*)&val;
+              if (store(key, data)) result=-0xff;
+              goto L1;
+            } else p += 4;
+          }
         } else {
-	  memset(val.value, 0, 128);
-	  U32_TO_BE32(member_id, val.value);
-	  data.dptr  = (char*)&val;
-	  data.dsize = sizeof(NETVAL);
-	  if (store(key, data)) result=-0xff;
-	  goto L1;
+          memset(val.value, 0, 128);
+          U32_TO_BE32(member_id, val.value);
+          data.dptr  = (char*)&val;
+          data.dsize = sizeof(NETVAL);
+          if (store(key, data)) result=-0xff;
+          goto L1;
         }
       } else
         /* no more free cells, perhaps we need better result code */
@@ -795,7 +802,7 @@ L1:
 
 
 static int ins_prop_val(uint32 obj_id, NETPROP *prop, int segment,
-	         uint8 *property_value, int erase_segments)
+                 uint8 *property_value, int erase_segments)
 {
   int result = b_acc(obj_id, prop->security, 0x11);
   if (result) return(result);
@@ -818,10 +825,10 @@ static int ins_prop_val(uint32 obj_id, NETPROP *prop, int segment,
       data.dsize = sizeof(NETVAL);
       data.dptr  = (char*)&val;
       if (!store(key, data)) {
-	result = 0;
-	if (erase_segments == 0xff){
-	  while (val.segment++ < (uint8)255 && !delete(key));
-	}
+        result = 0;
+        if (erase_segments == 0xff){
+          while (val.segment++ < (uint8)255 && !delete(key));
+        }
       }
     }
   } else result = -0xff;
@@ -831,10 +838,10 @@ static int ins_prop_val(uint32 obj_id, NETPROP *prop, int segment,
 
 int nw_get_prop_val_by_obj_id(uint32 obj_id,
                               int segment_nr,
-	        	      uint8 *prop_name, int prop_namlen,
-	        	      uint8 *property_value,
-	        	      uint8 *more_segments,
-	        	      uint8 *property_flags)
+                              uint8 *prop_name, int prop_namlen,
+                              uint8 *property_value,
+                              uint8 *more_segments,
+                              uint8 *property_flags)
 {
   NETPROP prop;
   int result=-0xff;
@@ -844,7 +851,7 @@ int nw_get_prop_val_by_obj_id(uint32 obj_id,
 
   if ((result=find_first_prop_id(&prop, obj_id))==0){
     if ((result=loc_get_prop_val(obj_id, prop.id, prop.security, segment_nr,
-	          property_value, more_segments)) == 0){
+                  property_value, more_segments)) == 0){
       *property_flags = prop.flags;
     }
   }
@@ -852,12 +859,12 @@ int nw_get_prop_val_by_obj_id(uint32 obj_id,
 }
 
 int nw_get_prop_val(int object_type,
-	        uint8 *object_name, int object_namlen,
-	        int   segment_nr,
-	        uint8 *prop_name, int prop_namlen,
-	        uint8 *property_value,
-	        uint8 *more_segments,
-	        uint8 *property_flags)
+                uint8 *object_name, int object_namlen,
+                int   segment_nr,
+                uint8 *prop_name, int prop_namlen,
+                uint8 *property_value,
+                uint8 *more_segments,
+                uint8 *property_flags)
 {
   NETOBJ obj;
   int result=-0xff;
@@ -866,17 +873,17 @@ int nw_get_prop_val(int object_type,
   if ((result = find_obj_id(&obj)) == 0){
     result = nw_get_prop_val_by_obj_id(obj.id,
                               segment_nr,
-	        	      prop_name, prop_namlen,
-	        	      property_value,
-	        	      more_segments,
-	        	      property_flags);
+                              prop_name, prop_namlen,
+                              property_value,
+                              more_segments,
+                              property_flags);
   }
   return(result);
 }
 
 int nw_delete_property(int object_type,
-	        uint8 *object_name, int object_namlen,
-	        uint8 *prop_name,   int prop_namlen)
+                uint8 *object_name, int object_namlen,
+                uint8 *prop_name,   int prop_namlen)
 {
   NETOBJ  obj;
   uint8   prop_name_x[20];
@@ -904,10 +911,10 @@ int nw_is_member_in_set(uint32 obj_id, char *propname, uint32 member_id)
 }
 
 int nw_is_obj_in_set(int object_type,
-	        uint8 *object_name, int object_namlen,
-	        uint8 *prop_name, int prop_namlen,
-	        int   member_type,
-	        uint8 *member_name, int member_namlen)
+                uint8 *object_name, int object_namlen,
+                uint8 *prop_name, int prop_namlen,
+                int   member_type,
+                uint8 *member_name, int member_namlen)
 {
   NETOBJ  obj;
   NETOBJ  mobj;
@@ -931,10 +938,10 @@ int nw_is_obj_in_set(int object_type,
 }
 
 int nw_add_obj_to_set(int object_type,
-	        uint8 *object_name, int object_namlen,
-	        uint8 *prop_name, int prop_namlen,
-	        int   member_type,
-	        uint8 *member_name, int member_namlen)
+                uint8 *object_name, int object_namlen,
+                uint8 *prop_name, int prop_namlen,
+                int   member_type,
+                uint8 *member_name, int member_namlen)
 {
   NETOBJ  obj;
   NETOBJ  mobj;
@@ -962,10 +969,10 @@ int nw_add_obj_to_set(int object_type,
 }
 
 int nw_delete_obj_from_set(int object_type,
-	        uint8 *object_name, int object_namlen,
-	        uint8 *prop_name, int prop_namlen,
-	        int   member_type,
-	        uint8 *member_name, int member_namlen)
+                uint8 *object_name, int object_namlen,
+                uint8 *prop_name, int prop_namlen,
+                int   member_type,
+                uint8 *member_name, int member_namlen)
 {
   NETOBJ  obj;
   NETOBJ  mobj;
@@ -990,10 +997,10 @@ int nw_delete_obj_from_set(int object_type,
 
 
 int nw_write_prop_value(int object_type,
-	        uint8 *object_name, int object_namlen,
-	        int   segment_nr, int erase_segments,
-	        uint8 *prop_name, int prop_namlen,
-	        uint8 *property_value)
+                uint8 *object_name, int object_namlen,
+                int   segment_nr, int erase_segments,
+                uint8 *prop_name, int prop_namlen,
+                uint8 *property_value)
 {
   NETOBJ  obj;
   NETPROP prop;
@@ -1007,7 +1014,7 @@ int nw_write_prop_value(int object_type,
   if ((result = find_obj_id(&obj)) == 0){
     if ((result=find_first_prop_id(&prop, obj.id))==0){
        result=ins_prop_val(obj.id, &prop, segment_nr,
-	    property_value, erase_segments);
+            property_value, erase_segments);
 
     }
   }
@@ -1016,9 +1023,9 @@ int nw_write_prop_value(int object_type,
 
 
 int nw_change_prop_security(int object_type,
-	        uint8 *object_name, int object_namlen,
-	        uint8 *prop_name, int prop_namlen,
-	        int   prop_security)
+                uint8 *object_name, int object_namlen,
+                uint8 *prop_name, int prop_namlen,
+                int   prop_security)
 {
   NETOBJ  obj;
   NETPROP prop;
@@ -1036,11 +1043,11 @@ int nw_change_prop_security(int object_type,
 
 int nw_scan_property(NETPROP *prop,
                      int      object_type,
-    		     uint8    *object_name,
-    		     int      object_namlen,
-    		     uint8    *prop_name,
-    		     int      prop_namlen,
-    		     uint32   *last_scan)
+                     uint8    *object_name,
+                     int      object_namlen,
+                     uint8    *prop_name,
+                     int      prop_namlen,
+                     uint32   *last_scan)
 {
   NETOBJ  obj;
   int     result;
@@ -1057,7 +1064,7 @@ int nw_scan_property(NETPROP *prop,
     if ((result=find_prop_id(prop, obj.id, last_prop_id))==0){
       *last_scan = prop->id;
       if (!loc_get_prop_val(obj.id, prop->id, prop->security,  1,
-	                   NULL, NULL))
+                           NULL, NULL))
         result = 0xff; /* Has prop Values */
     }
   }
@@ -1099,12 +1106,12 @@ int nw_create_obj(NETOBJ *obj, uint32 wanted_id)
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);
       if (data.dptr){
-	NETOBJ *o=(NETOBJ*)data.dptr;
-	if (o->type == obj->type && !strcmp(o->name, obj->name)){
-	  obj->id =  o->id; /* fill ID       */
-	  result  = -0xee;  /* already exist */
-	  break;
-	}
+        NETOBJ *o=(NETOBJ*)data.dptr;
+        if (o->type == obj->type && !strcmp(o->name, obj->name)){
+          obj->id =  o->id; /* fill ID       */
+          result  = -0xee;  /* already exist */
+          break;
+        }
       }
     }
     if (!result){
@@ -1113,9 +1120,9 @@ int nw_create_obj(NETOBJ *obj, uint32 wanted_id)
       key.dsize  = NETOBJ_KEY_SIZE;
       key.dptr   = (char*)obj;
       while(1) {
-	obj->id++;
-	data = fetch(key);
-	if (data.dptr == NULL) break;
+        obj->id++;
+        data = fetch(key);
+        if (data.dptr == NULL) break;
       }
       data.dsize = sizeof(NETOBJ);
       data.dptr = (char*)obj;
@@ -1135,8 +1142,8 @@ int nw_obj_has_prop(NETOBJ *obj)
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       NETPROP *p=(NETPROP*)key.dptr;
       if (p->obj_id == obj->id) {
-	result = 1;
-	break;
+        result = 1;
+        break;
       }
     }
   }
@@ -1153,13 +1160,13 @@ static int nw_create_obj_prop(uint32 obj_id, NETPROP *prop)
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       NETPROP *p=(NETPROP*)key.dptr;
       if (p->obj_id == obj_id) {
-	data = fetch(key);
-	p  = (NETPROP*)data.dptr;
-	if (data.dptr != NULL  && !strcmp(prop->name, p->name)){
-	  prop->id     = p->id;
-	  prop->obj_id = obj_id;
-	  result       = -0xed;  /* Property exists */
-	  if (p->security != prop->security ||
+        data = fetch(key);
+        p  = (NETPROP*)data.dptr;
+        if (data.dptr != NULL  && !strcmp(prop->name, p->name)){
+          prop->id     = p->id;
+          prop->obj_id = obj_id;
+          result       = -0xed;  /* Property exists */
+          if (p->security != prop->security ||
               p->flags    != prop->flags) {
             /* added 16-Aug-97 0.99.pl1 */
             XDPRINTF((1, 0, "prop '%s' got new security/flag=0x%x / %d",
@@ -1171,15 +1178,15 @@ static int nw_create_obj_prop(uint32 obj_id, NETPROP *prop)
             data.dsize    = sizeof(NETPROP);
             data.dptr     = (char *)p;
             if (store(key, data)) result = -0xff;
-	  }
-	  break;
-	} else founds[p->id]++;
+          }
+          break;
+        } else founds[p->id]++;
       }
     }
     if (!result){
       int k = 0;
       while (++k < sizeof(founds) ) {
-	if (!founds[k]) break;     /* free slot */
+        if (!founds[k]) break;     /* free slot */
       }
       key.dsize     = NETPROP_KEY_SIZE;
       key.dptr      = (char *)prop;
@@ -1197,9 +1204,9 @@ static int nw_create_obj_prop(uint32 obj_id, NETPROP *prop)
 }
 
 int nw_create_prop(int object_type,
-	        uint8 *object_name, int object_namlen,
-	        uint8 *prop_name, int prop_namlen,
-	        int prop_flags, int prop_security)
+                uint8 *object_name, int object_namlen,
+                uint8 *prop_name, int prop_namlen,
+                int prop_flags, int prop_security)
 /* creats property for an object */
 {
   NETOBJ  obj;
@@ -1221,7 +1228,7 @@ int nw_create_prop(int object_type,
 
 static int nw_new_obj(uint32 *wanted_id,
                       char *objname, int objtype,
-           	      int objflags, int objsecurity)
+                      int objflags, int objsecurity)
 {
   NETOBJ obj;
   int result;
@@ -1237,8 +1244,8 @@ static int nw_new_obj(uint32 *wanted_id,
 
 uint32 nw_new_obj_prop(uint32 wanted_id,
                   char *objname, int objtype, int objflags, int objsecurity,
-	          char *propname, int propflags, int propsecurity,
-	          char *value, int valuesize, int ever)
+                  char *propname, int propflags, int propsecurity,
+                  char *value, int valuesize, int ever)
 /*
  * creats new property value, if needed creats Object
  * and the property,
@@ -1448,19 +1455,165 @@ int nw_test_unenpasswd(uint32 obj_id, uint8 *password)
   } else return(-0xff);
 }
 
+/* added Routines from Paolo Prandini: mst:25-Apr-00 */
+static int nw_update_oldpasswd(uint32 obj_id, char *pwd)
+{
+  char  *pn_control="OLD_PASSWORDS"; 
+  uint8 more_segments;
+  uint8 property_flags;
+  int   segment = 1;
+  int   result;
+  uint8 segm[128];
 
+  // Read OLD_PASSWORDS bindery object
+  result=nw_get_prop_val_by_obj_id(obj_id, segment,
+           pn_control, strlen(pn_control),
+           segm, &more_segments, &property_flags);
+  if (result < 0) {
+     // Here if OLD_PASSWORDS object not found
+     return 0;
+  } 
 
+  // Check if password already present in data object
+  for (segment=0;segment<8;segment++) {
+    if (memcmp(pwd,segm+segment*16,16)==0)return 1;
+  }
+  // Update record
+  memcpy(segm+16,segm,128-16);
+  memcpy(segm,pwd,16);
+
+  nw_new_obj_prop(obj_id, NULL, 0, 0, 0,
+                  pn_control, P_FL_STAT|P_FL_ITEM,  0x32,
+                  segm, 128, 1);
+  return(0);
+}
+
+int nw_set_login_control(uint32 obj_id, LOGIN_CONTROL *plc)
+{
+  char *pn_login_control="LOGIN_CONTROL"; 
+  nw_new_obj_prop(obj_id, NULL, 0, 0, 0,
+      pn_login_control, P_FL_STAT|P_FL_ITEM,  0x32,
+      (uint8 *)plc, sizeof(LOGIN_CONTROL), 1);
+  return(0);
+}
+
+int nw_get_login_control(uint32 obj_id, LOGIN_CONTROL *plc)
+{
+  uint8   more_segments;
+  uint8   property_flags;
+  int     segment = 1;
+  char    *pn_login_control="LOGIN_CONTROL"; 
+  int     result;
+  uint8   segm[128];
+
+  // Read LOGIN_CONTROL bindery object
+  result=nw_get_prop_val_by_obj_id(obj_id, segment,
+             pn_login_control, strlen(pn_login_control),
+             segm, &more_segments, &property_flags);
+  
+  if (result < 0) {
+    // Here if LOGIN_CONTROL object not found 
+    char *pn_user_defaults="USER_DEFAULTS";
+    USER_DEFAULTS ud;
+    XDPRINTF((5, 0, "Reading USER_DEFAULTS for user %x",obj_id));
+    // Try reading USER_DEFAULTS object
+    segment=1;
+    result=nw_get_prop_val_by_obj_id(1, segment,
+               pn_user_defaults, strlen(pn_user_defaults),
+               segm, &more_segments, &property_flags);
+    if (result < 0) return -1;
+    XDPRINTF((5, 0, "Read USER_DEFAULTS"));
+    memcpy(&ud,segm,sizeof(ud));
+    // Ok, now fill LOGIN_CONTROL with data from USER_DEFAULTS;
+    memset(plc,0,sizeof(LOGIN_CONTROL));
+    plc->accountExpiresYear  = ud.accountExpiresYear;
+    plc->accountExpiresMonth = ud.accountExpiresMonth;
+    plc->accountExpiresDay   = ud.accountExpiresDay;
+    plc->restrictionFlags    = ud.restrictionFlags;
+    memcpy(plc->expirationInterval, ud.expirationInterval, 
+           sizeof(plc->expirationInterval));
+    plc->graceReset          = ud.graceReset;
+    plc->minimumPasswordLength = ud.minimumPasswordLength;
+    memcpy(plc->maxConcurrentConnections, ud.maxConcurrentConnections,
+           sizeof(plc->maxConcurrentConnections));
+    memcpy(plc->timeBitMap, ud.timeBitMap, sizeof(ud.timeBitMap));
+    memcpy(plc->maxDiskBlocks, ud.maxDiskBlocks, sizeof(plc->maxDiskBlocks));
+  } else 
+    memcpy(plc,segm,sizeof(LOGIN_CONTROL));
+
+  return 0;
+}
+
+// Check if the new crypted password is acceptable or not
+static int nw_valid_keynewpasswd(uint32 obj_id, int pwdlen, char *newpasswd)
+{
+  LOGIN_CONTROL lc;
+  int result;
+
+  XDPRINTF((5, 0, "Change password for user %x with crypted pwd",obj_id));
+
+  result = nw_get_login_control(obj_id, &lc);
+  if (result < 0) return(0); /* No restrictions available */
+
+  XDPRINTF((2, 0, "CHPWD:len(pwd)=%d limit=%d", pwdlen, lc.minimumPasswordLength));
+
+  if (pwdlen < lc.minimumPasswordLength)
+    return (-0xd8); // PASSWORD TOO SHORT
+  return 0;
+}
 
 static int nw_set_enpasswd(uint32 obj_id, uint8 *passwd, int dont_ch)
 {
   uint8 *prop_name=pn_password;
+  LOGIN_CONTROL lc;
+  int result;
+
   if (passwd && *passwd) {
-    if ((!dont_ch) || (nw_get_prop_val_str(obj_id, prop_name, NULL) < 1))
-       nw_new_obj_prop(obj_id, NULL, 0, 0, 0,
-  	                prop_name, P_FL_STAT|P_FL_ITEM,  0x44,
-	                passwd, 16, 1);
+    if ((!dont_ch) || (nw_get_prop_val_str(obj_id, prop_name, NULL) < 1)) {
+      result=nw_update_oldpasswd(obj_id,passwd);
+      if (nw_get_login_control(obj_id,&lc)==0) {
+        if (lc.restrictionFlags&2) {
+          if (result) return -0xd7;
+        }
+      }
+      nw_new_obj_prop(obj_id, NULL, 0, 0, 0,
+                       prop_name, P_FL_STAT|P_FL_ITEM,  0x44,
+                       passwd, 16, 1);
+    }
   } else if (!dont_ch)
     (void)loc_delete_property(obj_id, prop_name, 0, 1);
+  
+  // Here we must update LOGIN_CONTROL properties
+  if (nw_get_login_control(obj_id,&lc)==0) {
+    struct tm exptm,*tm;
+    time_t t,expiry;
+
+    if (lc.passwordExpiresYear) {
+      exptm.tm_year = lc.passwordExpiresYear;
+      exptm.tm_mon  = lc.passwordExpiresMonth-1;
+      exptm.tm_mday = lc.passwordExpiresDay;
+      exptm.tm_hour = 23;
+      exptm.tm_min = 59;
+      exptm.tm_sec = 59;
+      expiry = mktime(&exptm);
+    } else expiry = 0;
+
+    if (expiry>0) { /* if expiry is enabled */
+      if (lc.passwordGraceLogins!=255)
+              lc.passwordGraceLogins=lc.graceReset;
+
+      // Now renew expiration date
+      time(&t);
+      t += ( GET_BE16(lc.expirationInterval) *24L*3600L );
+      tm = localtime(&t);
+
+      lc.passwordExpiresYear = tm->tm_year;
+      lc.passwordExpiresMonth = tm->tm_mon+1;
+      lc.passwordExpiresDay = tm->tm_mday;
+
+      nw_set_login_control(obj_id,&lc);
+    }
+  }
   return(0);
 }
 
@@ -1482,7 +1635,7 @@ int nw_set_passwd(uint32 obj_id, char *password, int dont_ch)
  * from ncp request
  */
 int nw_keychange_passwd(uint32 obj_id, uint8 *cryptkey, uint8 *oldpass,
-			 int cryptedlen, uint8 *newpass, int id_flags)
+                         int cryptedlen, uint8 *newpass, int id_flags)
 /* returns 1 if new password is zero */
 {
   uint8 storedpass[200];
@@ -1517,118 +1670,20 @@ int nw_keychange_passwd(uint32 obj_id, uint8 *cryptkey, uint8 *oldpass,
          return(-0xff);  /* if not BLANK then error */
     } else return(-0xff);
   }
+  result=nw_valid_keynewpasswd(obj_id, len, storedpass);
+  if (result<0) return result;
+
   XDPRINTF((5, 0, "ncp new: %s", hex_str(buf,newpass,     16)));
   nw_decrypt_newpass(storedpass,   newpass,   newpass);
   nw_decrypt_newpass(storedpass+8, newpass+8, newpass+8);
   XDPRINTF((5, 0, "realnew: %s", hex_str(buf,newpass,     16)));
-  nw_set_enpasswd(obj_id, newpass, 0);
+  result=nw_set_enpasswd(obj_id, newpass, 0);
+  if (result<0) return result;
   /* testing for zero password */
   U32_TO_BE32(obj_id, s_uid);
   shuffle(s_uid, buf, 0, storedpass);
   return(memcmp(newpass, storedpass, 16) ? 0 : 1);
 }
-
-static int nw_test_time_access(uint32 obj_id)
-/*
- * Routine from  Matt Paley
- * and code from Mark Robson
-*/
-{
-  time_t t,expiry;
-  struct tm exptm;
-  struct tm *tm;
-  uint8  more_segments;
-  uint8  property_flags;
-  uint8  buff[200];
-  int    segment = 1;
-  int    half_hours;
-  int    result=nw_get_prop_val_by_obj_id(obj_id, segment,
-				   pn_login_control, strlen(pn_login_control),
-				   buff, &more_segments, &property_flags);
-  if (result < 0)
-    return(0); /* No time limits available */
-
-  /* Check if account disabled - MR */
-
-  if (buff[3] != 0) /* Disabled */
-  {
-  	XDPRINTF((1, 0, "No access for user %x - disabled.",obj_id));
-  	return (-0xdc);
-  }
-
-  /* Account expires at 23:59:59 on the expiry day :) */
-  if (buff[0] != 0)
-  {
-  	  exptm.tm_year = buff[0];
-	  exptm.tm_mon = buff[1]-1;
-	  exptm.tm_mday = buff[2];
-	  exptm.tm_hour = 23;
-	  exptm.tm_min = 59;
-	  exptm.tm_sec = 59;
-	  expiry = mktime(&exptm);
-  } else expiry = 0;
-
-  time(&t);
-  tm = localtime(&t);
-
-  if (expiry>0) /* if expiry is enabled */
-  {
-     XDPRINTF((1,0,"user has expiry of %d but time is %d",expiry,t));
-     if (t>expiry) /* has it expired ? */
-     {
- 	XDPRINTF((1, 0, "No access for user %x - expired.",obj_id));
-  	return (-0xdc);
-     }
-  }
-
-  half_hours = tm->tm_wday*48 + tm->tm_hour*2 + ((tm->tm_min>=30)? 1 : 0);
-  if ((buff[14+(half_hours/8)] & (1<<(half_hours % 8))) != 0)
-    return(0);
-  XDPRINTF((1, 0, "No access for user %x at day %d %02d:%02d",
-	    obj_id, tm->tm_wday, tm->tm_hour, tm->tm_min));
-  return(-0xda); /* unauthorized login time */
-}
-
-static int nw_test_adr_access(uint32 obj_id, ipxAddr_t *client_adr)
-{
-  uint8  more_segments;
-  uint8  property_flags;
-  char   *propname="NODE_CONTROL";
-  uint8  buff[200];
-  uint8  wildnode[]={0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-  int    segment = 1;
-  int    result=nw_get_prop_val_by_obj_id(obj_id, segment,
-                  propname, strlen(propname),
-                  buff, &more_segments, &property_flags);
-  if (result < 0)
-    return(0); /* we have no limits */
-  else {
-    uint8 *p=buff;
-    int    k=0;
-    while (k++ < 12) {
-      if (  (IPXCMPNET(client_adr->net,   p))
-        && ( (IPXCMPNODE(client_adr->node, p+4) )
-           || (IPXCMPNODE(wildnode,        p+4))) )
-        return(0);
-      p+=10;
-    }
-  }
-  XDPRINTF((1, 0, "No access for user %x at Station %s",
-               obj_id, visable_ipx_adr(client_adr)));
-  return(-0xdb); /* unauthorized login station */
-}
-
-int nw_test_adr_time_access(uint32 obj_id, ipxAddr_t *client_adr)
-{
-  int result;
-  if (obj_id==1 && (entry8_flags & 8))
-    return(0); /* no limits for SU */
-  result=nw_test_adr_access(obj_id, client_adr);
-  if (!result)
-    result=nw_test_time_access(obj_id);
-  return(result);
-}
-
 
 static int nw_new_add_prop_member(uint32 obj_id, char *propname,
                                   int propflags, int propsecurity,
@@ -1749,20 +1804,20 @@ static void add_pr_queue(uint32 q_id,
   }
   XDPRINTF((2,0, "ADD Q=%s, V=%s, C=%s", q_name, q_directory, q_command));
   nw_new_obj_prop(q_id, NULL,            0,     0,    0,
-	             "Q_DIRECTORY",      P_FL_ITEM,   0x31,
-	              q_directory,  strlen(q_directory), 1);
+                     "Q_DIRECTORY",      P_FL_ITEM,   0x31,
+                      q_directory,  strlen(q_directory), 1);
 
   /* this is mars_nwe own property to handle the print job direct !!! */
   if (q_command && *q_command) {
     nw_new_obj_prop(q_id ,NULL,              0  ,   0  ,   0   ,
-	             "Q_UNIX_PRINT",     P_FL_ITEM| P_FL_DYNA,   0x31,
-	              q_command,  strlen(q_command), 1);
+                     "Q_UNIX_PRINT",     P_FL_ITEM| P_FL_DYNA,   0x31,
+                      q_command,  strlen(q_command), 1);
   }
   nw_new_add_prop_member(q_id, "Q_USERS",      P_FL_STAT,  0x31,  ge_id);
   nw_new_add_prop_member(q_id, "Q_OPERATORS",  P_FL_STAT,  0x31,  su_id);
   nw_new_obj_prop(q_id , NULL,             0  ,   0  ,   0   ,
-	             "Q_SERVERS",             P_FL_SET,  0x31,
-	              NULL,  0, 0);
+                     "Q_SERVERS",             P_FL_SET,  0x31,
+                      NULL,  0, 0);
 }
 
 static void add_pr_server(uint32 ps_id,
@@ -1806,8 +1861,8 @@ static void add_user_2_unx(uint32 u_id,  char  *unname)
 {
   if (unname && *unname)
     nw_new_obj_prop(u_id, NULL,          0  ,   0  ,   0 ,
-      	             pn_unix_user,        P_FL_ITEM,    0x30,
-	             (char*)unname,  strlen(unname), 1);
+                     pn_unix_user,        P_FL_ITEM,    0x30,
+                     (char*)unname,  strlen(unname), 1);
 }
 
 extern int test_allow_password_change(uint32 id)
@@ -1841,8 +1896,8 @@ static void add_remove_special_flags(uint32 obj_id, int flags)
     uint8 buff[4];
     U32_TO_BE32(flags, buff);
     nw_new_obj_prop(obj_id, NULL, 0, 0, 0,
-  	                pn_special_flags, P_FL_STAT|P_FL_ITEM, 0x33,
-	                buff, sizeof(buff), 1);
+                        pn_special_flags, P_FL_STAT|P_FL_ITEM, 0x33,
+                        buff, sizeof(buff), 1);
   } else
     (void)loc_delete_property(obj_id, pn_special_flags, 0, 1);
 }
@@ -1863,13 +1918,14 @@ static void add_user_g(uint32 u_id,   uint32 g_id,
   if (dont_ch) return;
 
   XDPRINTF((1, 0, "Add/Change User='%s', UnixUser='%s'",
-     	       	  name, unname));
+                  name, unname));
 
   add_user_to_group(u_id, g_id);
   add_user_2_unx(u_id, unname);
   if (password && *password) {
     // if (*password == '-') *password='\0';
-    if (password[0] == '-' && password[1] != '\0')    
+    // if (password[0] == '-' && password[1] != '\0')    
+    if (password[0] == '-' && password[1] == '\0') /* mst: 25-Apr-00 */
        *password='\0';
     nw_set_passwd(u_id, password, dont_ch);
   }
@@ -1884,8 +1940,8 @@ static void add_group(char *name,  char  *unname, char *password)
   (void) nw_new_obj(&g_id,  name,       0x2  , 0x0,   0x31);
   if (unname && *unname)
     nw_new_obj_prop(g_id, NULL,                0  ,   0  ,   0 ,
-      	             "UNIX_GROUP",         P_FL_ITEM,    0x33,
-	             (char*)unname,  strlen(unname), 1);
+                     "UNIX_GROUP",         P_FL_ITEM,    0x33,
+                     (char*)unname,  strlen(unname), 1);
 }
 
 
@@ -2148,23 +2204,23 @@ static void check_compress_bindery()
       for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
         data = fetch(key);
         if (data.dptr) {
-	  NETPROP *prop=(NETPROP*)data.dptr;
+          NETPROP *prop=(NETPROP*)data.dptr;
           if (NULL == bsearch(&prop->obj_id, objs,
              (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32)) {
             XDPRINTF((1,0, "will delete property %s for obj_id 0x%lx",
                            prop->name, prop->obj_id));
-	    if (d_pcount == LOC_MAX_OBJS) break;
-	    d_prop_oid[d_pcount] = prop->obj_id;
-	    d_props[d_pcount++]  = prop->id;
+            if (d_pcount == LOC_MAX_OBJS) break;
+            d_prop_oid[d_pcount] = prop->obj_id;
+            d_props[d_pcount++]  = prop->id;
           } else {
-	    if (pcount == LOC_MAX_OBJS_PROPS) {
+            if (pcount == LOC_MAX_OBJS_PROPS) {
               errorp(10, errstr, "to many props = %d.",  pcount);
-	      propok=0;
-	      break;
+              propok=0;
+              break;
             }
-	    prop_oid[pcount]   = prop->obj_id;
-	    props[pcount]      = prop->id;
-	    props_fl[pcount++] = prop->flags;
+            prop_oid[pcount]   = prop->obj_id;
+            props[pcount]      = prop->id;
+            props_fl[pcount++] = prop->flags;
           }
         }
       }  /* for */
@@ -2218,7 +2274,7 @@ static void check_compress_bindery()
                 if (is_set) {
                   int     k=0;
                   while (k++ < 32){
-	            uint32 id = GET_BE32(p);
+                    uint32 id = GET_BE32(p);
                     if (id) {
                       if (NULL != bsearch(&id, objs,
                         (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32)) {
@@ -2248,7 +2304,7 @@ static void check_compress_bindery()
                       eitems++;
                       ep += 4;
                     }
-	            p += 4;
+                    p += 4;
                   }
                 } else {  /* ITEM property */
                   if (sizeof(NETVAL) != write(fd, v, sizeof(NETVAL))){
@@ -2337,8 +2393,8 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   }
 
   ge_id = nw_new_obj_prop(ge_id, "EVERYONE",        0x2,   0x0,  0x31,
-	                   pn_group_members,          P_FL_SET,  0x31,
-	                      NULL, 0, 0);
+                           pn_group_members,          P_FL_SET,  0x31,
+                              NULL, 0, 0);
   if (NULL != (f= open_nw_ini())){
     char buff[256];
     int  what;
@@ -2479,13 +2535,13 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
     strmaxcpy(serverna, servername, MAX_SERVER_NAME);
     upstr(serverna);
     nw_new_obj_prop(server_id, serverna,       0x4,      O_FL_DYNA,  0x40,
-	               "NET_ADDRESS",         P_FL_ITEM | P_FL_DYNA, 0x40,
-	                (char*)adr,  sizeof(ipxAddr_t), 1);
+                       "NET_ADDRESS",         P_FL_ITEM | P_FL_DYNA, 0x40,
+                        (char*)adr,  sizeof(ipxAddr_t), 1);
 
 #ifdef _MAR_TESTS_1
     nw_new_obj_prop(pserv_id, serverna,      0x47,    O_FL_DYNA, 0x31,
-	               "NET_ADDRESS",     P_FL_ITEM | P_FL_DYNA, 0x40,
-	                (char*)adr,  sizeof(ipxAddr_t), 1);
+                       "NET_ADDRESS",     P_FL_ITEM | P_FL_DYNA, 0x40,
+                        (char*)adr,  sizeof(ipxAddr_t), 1);
 #endif
   }
 
@@ -2644,15 +2700,15 @@ static void nw_init_dbm_1(char *servername, ipxAddr_t *adr)
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);
       if (data.dptr) {
-	NETOBJ *obj=(NETOBJ*)data.dptr;
-	if ((obj->flags & O_FL_DYNA) || !obj->name[0]) {
-	  /* dynamic or without name */
-	  objs[anz++] = obj->id;
-	  if (anz == LOC_MAX_OBJS) break;
+        NETOBJ *obj=(NETOBJ*)data.dptr;
+        if ((obj->flags & O_FL_DYNA) || !obj->name[0]) {
+          /* dynamic or without name */
+          objs[anz++] = obj->id;
+          if (anz == LOC_MAX_OBJS) break;
         } else if (obj->type == 1 /* && obj->id != 1 */ && obj->security != 0x31) {
           /* this is for correcting wrong obj security */
           obj->security=0x31;
-	  (void)store(key, data);
+          (void)store(key, data);
           XDPRINTF((1,0, "Correcting access obj_id=0x%x(%s)",
                   (int)obj->id, obj->name));
         }
@@ -2667,12 +2723,12 @@ static void nw_init_dbm_1(char *servername, ipxAddr_t *adr)
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);
       if (data.dptr) {
-	NETPROP *prop=(NETPROP*)data.dptr;
-	if (prop->flags & P_FL_DYNA) { /* dynamic */
-	  objs[anz]    = prop->obj_id;
-	  props[anz++] = prop->id;
-	  if (anz == LOC_MAX_OBJS) break;
-	}
+        NETPROP *prop=(NETPROP*)data.dptr;
+        if (prop->flags & P_FL_DYNA) { /* dynamic */
+          objs[anz]    = prop->obj_id;
+          props[anz++] = prop->id;
+          if (anz == LOC_MAX_OBJS) break;
+        }
       }
     }
   }

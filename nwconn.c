@@ -1,4 +1,4 @@
-/* nwconn.c 15-Apr-00       */
+/* nwconn.c 18-Apr-00       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,2000  Martin Stover, Marburg, Germany
@@ -17,6 +17,13 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+
+/* history since 21-Apr-00 
+ *
+ * mst:25-Apr-00: added routines for sending nwconn data to nwbind
+ *
+ */
+
 
 #include "net.h"
 #if 1
@@ -211,6 +218,57 @@ static void pr_debug_request()
 #if TEST_FNAME
 static int test_handle = -1;
 #endif
+
+static void handle_nwbind_request(void)    /* mst:25-Apr-00 */
+{
+  int result = 0;
+  char buf[IPX_MAX_DATA];
+  char *data = &(buf[sizeof(NCPRESPONSE)]);
+  int data_len = 0;
+  
+  switch (ncprequest->function) {
+    case 0x1: {   /* get number and handles of open files */
+      struct INPUT {
+        uint8   header[7];       /* Requestheader */
+        uint8   offset[4];       /* handle offset */
+      } *input = (struct INPUT *) (ncprequest);
+      struct XDATA {
+        uint8 count_handles[4];
+        uint8 handles[4];
+      } *xdata = (struct XDATA*) data;
+      int handles = nw_get_count_open_files(xdata->handles, GET_BE32(input->offset));
+      U32_TO_BE32(handles, xdata->count_handles);
+      data_len = (handles+1) * 4;
+    }
+    break;
+
+    default :
+      result = 0xfb;
+  }
+  
+  {
+    NCPRESPONSE *resp = (NCPRESPONSE*)&buf;
+    ipxAddr_t to_addr;
+    memcpy(&to_addr, &my_addr, sizeof(ipxAddr_t));
+    U16_TO_BE16(sock_nwbind, to_addr.sock);
+    ud.addr.buf  = (char*)&to_addr;
+    
+    resp->type[0]     = resp->type[1]=0x32;
+    resp->sequence    = ncprequest->sequence;
+    resp->connection  = ncprequest->connection;
+    resp->task        = ncprequest->task;
+    resp->high_connection = ncprequest->high_connection;
+    resp->completition    = result;
+    resp->connect_status  = 0;
+    ud.udata.len  = ud.udata.maxlen = sizeof(NCPRESPONSE) + data_len;
+    ud.udata.buf  = (char*)resp;
+    XDPRINTF((3, 0, "send reply to nwbind"));
+    result        = t_sndudata(FD_NCP_OUT, &ud);
+    ud.addr.buf   = (char*)&from_addr;
+    ud.udata.buf  = (char*)&ipxdata;
+  }
+}
+
 static int handle_ncp_serv(void)
 {
   int    function       = (int)ncprequest->function;
@@ -221,7 +279,7 @@ static int handle_ncp_serv(void)
 
   if (last_sequence == (int)ncprequest->sequence
        && ncp_type != 0x1111){ /* send the same again */
-    if (t_sndudata(FD_NCP_OUT, &ud) < 0){
+    if (t_sndudata(FD_NCP_OUT, &ud) < 0) {
       if (nw_debug) t_error("t_sndudata !OK");
     }
     XDPRINTF((3,0, "Sequence %d is written twice", (int)ncprequest->sequence));
@@ -1116,6 +1174,17 @@ static int handle_ncp_serv(void)
                  } 
                  break;
 #endif
+
+            case 0x33 : { /* Get Extended Volume Information */
+#if 0              
+              int volume  = (int) *(p+1);
+              /* next 3 byte are low bytes of volume */
+#endif              
+              completition = 0xfb;  /* not known yet  */
+            }
+            break;
+
+
             default:
                  completition = 0xfb;  /* unkwown request */
                break;
@@ -2028,7 +2097,7 @@ static int handle_ncp_serv(void)
                     burst_w->sendburst=
                       (BURSTPACKET*)xcmalloc(max_packet_size);
 
-               burst_w->ud.udata.buf = (char*)(burst_w->sendburst);
+                    burst_w->ud.udata.buf = (char*)(burst_w->sendburst);
 
                     burst_w->sendburst->type[0]=0x77;
                     burst_w->sendburst->type[1]=0x77;
@@ -2067,14 +2136,14 @@ static int handle_ncp_serv(void)
 
                     burst_w->ipx_pack_typ     = PACKT_CORE;
                     burst_w->ud.opt.len       = sizeof(uint8);
-               burst_w->ud.opt.maxlen    = sizeof(uint8);
-               burst_w->ud.opt.buf       = (char*)&(burst_w->ipx_pack_typ);
+                    burst_w->ud.opt.maxlen    = sizeof(uint8);
+                    burst_w->ud.opt.buf       = (char*)&(burst_w->ipx_pack_typ);
 
                     memcpy(&(burst_w->to_addr), &from_addr, sizeof(ipxAddr_t));
                     U16_TO_BE16(client_socket, burst_w->to_addr.sock);
-               burst_w->ud.addr.len      = sizeof(ipxAddr_t);
-               burst_w->ud.addr.maxlen   = sizeof(ipxAddr_t);
-               burst_w->ud.addr.buf      = (char*)&(burst_w->to_addr);
+                    burst_w->ud.addr.len      = sizeof(ipxAddr_t);
+                    burst_w->ud.addr.maxlen   = sizeof(ipxAddr_t);
+                    burst_w->ud.addr.buf      = (char*)&(burst_w->to_addr);
                     data_len = sizeof(*xdata);
                   } else
 #endif
@@ -2526,6 +2595,7 @@ static void handle_sigusr2(void)
   fl_get_int &= ~8;
   sprintf(fn, "/tmp/nwconn%04d.log", act_connection);
   seteuid(0);
+  unlink(fn); /* security: mst:18-Apr-00 */
   f=fopen(fn, "w");
   reseteuid();
   if (f) {
@@ -2666,7 +2736,11 @@ int main(int argc, char **argv)
           handle_burst((BURSTPACKET*)readbuff, data_len);
         } else
 #endif
-        {
+        else if (ncp_type == 0x2121) { /* request from nwbind  */
+          /* mst:25-Apr-00 */
+          requestlen  = data_len - sizeof(NCPREQUEST);
+          handle_nwbind_request();
+        } else {
           int result;
           requestlen  = data_len - sizeof(NCPREQUEST);
           if (0 != (result = handle_ncp_serv()) ) {
