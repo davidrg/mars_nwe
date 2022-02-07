@@ -19,6 +19,7 @@ extern int nw_get_q_job_entry(uint32 q_id, int job_id,  uint32 fhandle,
                        uint8 *responsedata, int old_call);
 extern int nw_get_queue_job_list_old(uint32 q_id, uint8 *responsedata);
 extern int nw_get_queue_job_file_size(uint32 q_id, int job_id);
+extern int nw_change_queue_job_entry(uint32 q_id, uint8 *qjstruct);
 
 extern int nw_remove_job_from_queue(uint32 user_id, uint32 q_id, int job_id);
 

@@ -453,4 +453,7 @@ Erste 'oeffentliche' Version
   with '*' as searchstring. Also changed to handle '*xyz.xyz' in a 
   more restrictive way. I hope this is correct now. 
 <----- ^^^^^^^^^^ pl10 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- ncp call 0x7a (read queue job entry (new)) is now availible.
+<----- ^^^^^^^^^^ pl11 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 

@@ -1,4 +1,4 @@
-/* nwconn.c 13-May-98       */
+/* nwconn.c 04-Jun-98       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -1091,8 +1091,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
              case 0x79:   /* create queue job and file     */
              return(-2);  /* nwbind must do prehandling    */
 
-
-             case 0x6C:  { /* Get Queue Job Entry old */
+             case 0x6C:     /* Get Queue Job Entry old */
+             case 0x7A:   { /* Read Queue Job Entry */
                 uint32 q_id = GET_BE32(rdata);
                 int job_id  = GET_BE16(rdata+4);
                 uint32 fhandle = get_queue_job_fhandle(q_id, job_id);

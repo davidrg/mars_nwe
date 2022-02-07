@@ -1,4 +1,4 @@
-/* nwqueue.c 14-Apr-98       */
+/* nwqueue.c 04-Jun-98       */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -558,7 +558,14 @@ int nw_get_queue_job_file_size(uint32 q_id, int job_id)
     return(get_qj_file_size(q, qj));
   return(result);
 }
-                                 
+
+int nw_change_queue_job_entry(uint32 q_id, uint8 *qjstruct)
+{
+   /*       machen */
+
+   return(-0xfb);
+}
+
 static int remove_queue_job_file(NWE_QUEUE *q, INT_QUEUE_JOB *qj)
 {
   struct stat stb;

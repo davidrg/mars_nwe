@@ -1,9 +1,9 @@
 /* nwbind.c */
-#define REVISION_DATE "25-May-98"
+#define REVISION_DATE "04-Jun-98"
 /* NCP Bindery SUB-SERVER */
-/* authentification and some message handling */
+/* authentification and some message and queue handling */
 
-/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1246,13 +1246,15 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
-     case 0x6C :  {   /* Get Queue Job Entry old */
+
+     case 0x6C:     /* Get Queue Job Entry old */
+     case 0x7A:   { /* Read Queue Job Entry */
                     uint32 q_id = GET_BE32(rdata);
                     int job_id  = GET_BE16(rdata+4);
                      /* added by nwconn */
                     uint32 fhandle = GET_BE32(rdata+8);
                     int result=nw_get_q_job_entry(q_id, job_id, fhandle,
-                                   responsedata, 1);
+                                   responsedata, ufunc==0x6c);
                     if (result > -1) 
                       data_len=result;
                     else completition=(uint8)-result;
@@ -1342,7 +1344,18 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
+#if 1
+     case 0x7B:   /* Change Queue Job Entry */
+                  {
+                    uint32 q_id   = GET_BE32(rdata);
+     		    uint32 job_id = GET_BE16(rdata+4);
+                    int result    = nw_change_queue_job_entry(q_id, rdata+4);
+                    if (result < 0)  
+                      completition=(uint8)-result;
+                  }
+                  break;
 
+#endif
      case 0x7d :  { /* Read Queue Current Status, new */
                    struct XDATA {
                      uint8  id[4];     /* queue id */
