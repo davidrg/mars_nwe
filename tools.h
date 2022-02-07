@@ -59,6 +59,7 @@ extern uint8 up_char(uint8 ch);
 extern uint8 *downstr(uint8 *ss);
 extern uint8 *upstr(uint8 *ss);
 
+extern char *hex_str(char *buf, uint8 *s, int len);
 
 extern int nw_debug;
 #if DO_DEBUG

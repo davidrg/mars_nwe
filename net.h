@@ -36,6 +36,7 @@
 #include <time.h>
 #include <sys/wait.h>
 #include <utmp.h>
+#include <grp.h>
 
 #include <sys/errno.h>
 extern int errno;
@@ -211,6 +212,18 @@ extern int errno;
 #  define IPX_MAX_DATA       546
 #endif
 
+#ifndef DO_TESTING
+# define DO_TESTING            0
+#endif
+
+#if !DO_TESTING
+# undef _MAR_TESTS_
+#endif
+
+#ifndef _MAR_TESTS_
+# define _MAR_TESTS_           0
+#endif
+
 #ifdef LINUX
 # ifdef IN_NWROUTED
 #  undef   INTERNAL_RIP_SAP
@@ -362,6 +375,7 @@ typedef struct S_OWN_DATA      OWN_DATA;
 #define SOCK_RIP         0x0453  /* Routing Information Packet     */
 #define SOCK_NETBIOS     0x0455  /* NET BIOS Packet                */
 #define SOCK_DIAGNOSE    0x0456  /* Diagnostic Packet              */
+#define SOCK_PSERVER     0x8060  /* Print Server's Socket          */
 #define SOCK_NVT         0x8063  /* NVT (Network Virtual Terminal) */
 
 /* PACKET TYPES */

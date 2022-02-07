@@ -132,6 +132,10 @@ static int new_dir_handle(ino_t inode, NW_PATH *nwpath)
     fh->vol_options = nw_volumes[fh->volume].options;
     fh->inode       = inode;
     fh->timestamp   = akttime;
+
+    fh->sequence    = 0;
+    fh->dirpos      = (off_t)0;
+
     if (fh->vol_options & VOL_OPTION_REMOUNT) {
       closedir(fh->f);
       fh->f = NULL;
@@ -219,10 +223,11 @@ static int x_str_match(uint8 *s, uint8 *p)
     switch (state){
       case 0 :
       switch  (pc) {
-        case 255:   if (*p == '*' || *p == '?' || *p==0xaa || *p==0xae) continue;
+        case 255:   if (*p == '*' || *p == '?'
+                     || *p==0xaa  || *p==0xae || *p=='.') continue;
                     break;
 
-        case '\\': /* beliebiges Folgezeichen */
+        case '\\': /* any following char */
                     if (*p++ != *s++) return(0);
                     break;
 
@@ -394,7 +399,8 @@ static int get_dir_entry(NW_PATH *nwpath,
   char           xkpath[256];
   uint8          entry[256];
   int            volume = nwpath->volume;
-  int          soptions;
+  int            soptions;
+  int            akt_sequence=0;
   if (volume < 0 || volume >= used_nw_volumes) return(0); /* something wrong */
   else  soptions = nw_volumes[volume].options;
   strcpy((char*)entry,  (char*)nwpath->fn);
@@ -409,10 +415,17 @@ static int get_dir_entry(NW_PATH *nwpath,
     char *kpath=xkpath+strlen(xkpath);
     *kpath++ = '/';
     if (*sequence == MAX_U16) *sequence = 0;
-    else seekdir(f, (long)*sequence);
+
+    while (akt_sequence++ < *sequence) {
+      if (NULL == readdir(f)) {
+        closedir(f);
+        return(0);
+      }
+    }
 
     while ((dirbuff = readdir(f)) != (struct dirent*)NULL){
       okflag = 0;
+      (*sequence)++;
       if (dirbuff->d_ino) {
         uint8 *name=(uint8*)(dirbuff->d_name);
         okflag = (name[0] != '.' &&
@@ -436,7 +449,6 @@ static int get_dir_entry(NW_PATH *nwpath,
         XDPRINTF((6,0, "NAME=:%s: OKFLAG %d", name, okflag));
       }  /* if */
     } /* while */
-    *sequence = (int) telldir(f);
     closedir(f);
   } /* if */
   return(okflag);
@@ -477,13 +489,30 @@ static int get_dh_entry(DIR_HANDLE *dh,
 
     if (dh->vol_options & VOL_OPTION_DOWNSHIFT)   downstr(entry);
     if ( (uint16)*sequence == MAX_U16)  *sequence = 0;
-    seekdir(f, (long) *sequence);
 
-    XDPRINTF((5,0,"get_dh_entry attrib=0x%x path:%s:, entry:%s:",
-                attrib, dh->unixname, entry));
+    if (*sequence < dh->sequence) {
+      dh->dirpos   = (off_t)0;
+      dh->sequence = 0;
+    }
+    seekdir(f, dh->dirpos);
+
+    if (dh->sequence != *sequence) {
+      while (dh->sequence < *sequence) {
+        if (NULL == readdir(f)) {
+          dh->dirpos = telldir(f);
+          release_dh_f(dh);
+          return(0);
+        }
+        dh->sequence++;
+      }
+      dh->dirpos = telldir(f);
+    }
+    XDPRINTF((5,0,"get_dh_entry seq=x%x, attrib=0x%x path:%s:, entry:%s:",
+                *sequence, attrib, dh->unixname, entry));
 
     while ((dirbuff = readdir(f)) != (struct dirent*)NULL){
       okflag = 0;
+      dh->sequence++;
       if (dirbuff->d_ino) {
         uint8 *name=(uint8*)(dirbuff->d_name);
         okflag = (name[0] != '.' && (
@@ -508,9 +537,12 @@ static int get_dh_entry(DIR_HANDLE *dh,
         }
       }  /* if */
     } /* while */
+
     dh->kpath[0] = '\0';
-    *sequence = (int) telldir(f);
+    *sequence  = dh->sequence;
+    dh->dirpos = telldir(f);
     release_dh_f(dh);
+
   } /* if */
   return(okflag);
 }
@@ -1294,7 +1326,7 @@ int nw_open_dir_handle( int        dir_handle,
        *volume         = fh->volume;
        *dir_id         = completition;
        *searchsequence = MAX_U16;
-       completition    = 0xff; /* Alle Rechte */
+       completition    = 0xff;       /* all rights */
      }
      XDPRINTF((5,0,"NW_OPEN_DIR_2: completition = 0x%x",
                     completition));
@@ -1414,7 +1446,6 @@ static int s_nw_scan_dir_info(int dir_handle,
   if (rights > -1) {
     DIR_HANDLE *dh = &(dir_handles[dir_id-1]);
     struct stat stbuff;
-    int    searchsequence = MAX_U16;
     uint16 dirsequenz     = GET_BE16(subnr);
     uint16 aktsequenz     = 0;
     uint8  dirname[256];

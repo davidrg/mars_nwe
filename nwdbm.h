@@ -180,6 +180,11 @@ extern int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key);
 extern int nw_test_unenpasswd(uint32 obj_id, uint8 *password);
 extern int nw_set_passwd(uint32 obj_id, char *password, int dont_ch);
 
+extern int nw_keychange_passwd(uint32 obj_id,
+                               uint8 *cryptkey,  uint8 *oldpass,
+			       int   cryptedlen, uint8 *newpass,
+			       uint32 act_id);
+
 extern int nw_get_q_dirname(uint32 q_id, uint8 *buff);
 extern int nw_get_q_prcommand(uint32 q_id, uint8 *buff);
 

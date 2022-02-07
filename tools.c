@@ -426,3 +426,12 @@ uint8 *downstr(uint8 *ss)
   return(ss);
 }
 
+char *hex_str(char *buf, uint8 *s, int len)
+{
+  char *pp=buf;
+  while (len--) {
+    int i = sprintf(pp, "%02x ", *s++);
+    pp += i;
+  }
+  return(buf);
+}

@@ -5,15 +5,20 @@
 
 typedef struct {
   int      fd;          /* filehandle from system open/creat */
-  long   offd;          /* aktuell file offset               */
+  long   offd;          /* actual file offset                */
   time_t tmodi;         /* modification TIME                 */
   FILE_PIPE *f;         /* for PIPE                          */
-  int    flags;         /* 2 = PIPE                          */
+  int fh_flags;         /* 2 = PIPE                          */
                         /* 4 = don't reuse after close       */
                         /* 0x20 = readonly                   */
   char   fname[256];    /* UNIX filename                     */
 } FILE_HANDLE;
-#define FILE_IS_READONLY   0x20
+
+/* fh_flags */
+#define FH_IS_PIPE           0x01
+#define FH_IS_PIPE_COMMAND   0x02
+#define FH_DO_NOT_REUSE      0x04
+#define FH_IS_READONLY       0x20
 
 extern void init_file_module(void);
 

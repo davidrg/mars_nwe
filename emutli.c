@@ -26,6 +26,7 @@
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <linux/config.h>
 #include <linux/sockios.h>
 #include "net.h"
 #include <linux/if.h>
@@ -61,7 +62,7 @@ void ipx2sockadr(struct sockaddr_ipx *so, ipxAddr_t *i)
    memcpy(&so->sipx_port,    i->sock, 2);
 }
 
-void set_emu_tli()
+void set_emu_tli(void)
 {
   int i = get_ini_int(100);
   if (i > -1) locipxdebug = i;

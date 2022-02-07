@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "08-May-96"
+#define REVISION_DATE "19-Jun-96"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -374,20 +374,20 @@ static void handle_fxx(int gelen, int func)
                        uint8 maxconnections[2];
                        uint8 connection_in_use[2];
                        uint8 max_volumes[2];
-                       uint8 os_revision;
-                       uint8 sft_level;
-                       uint8 tts_level;
+                       uint8 os_revision;  /* 0 */
+                       uint8 sft_level;    /* 2 */
+                       uint8 tts_level;    /* 1 */
                        uint8 peak_connection[2];
-                       uint8 accounting_version;
-                       uint8 vap_version;
-                       uint8 queuing_version;
-                       uint8 print_server_version;
-                       uint8 virtual_console_version;
-                       uint8 security_level;
-                       uint8 internet_bridge_version;
+                       uint8 accounting_version;  /* 1 */
+                       uint8 vap_version;         /* 1 */
+                       uint8 queuing_version;     /* 1 */
+                       uint8 print_server_version;  /* 0 */
+                       uint8 virtual_console_version; /* 1 */
+                       uint8 security_level;          /* 1 */
+                       uint8 internet_bridge_version;  /* 1 */
                        uint8 reserved[60];
                      } *xdata = (struct XDATA*) responsedata;
-                     int k, i;
+                     int k, i, h;
                      memset(xdata, 0, sizeof(struct XDATA));
                      strcpy(xdata->servername, my_nwname);
                      if (!tells_server_version) {
@@ -401,13 +401,30 @@ static void handle_fxx(int gelen, int func)
                      }
 
                      i=0;
+                     h=0;
                      for (k=0; k < MAX_CONNECTIONS; k++) {
-                       if (connections[k].active) i++;
+                       if (connections[k].active) {
+                         i++;
+                         h = k+1;
+                       }
                      }
                      U16_TO_BE16(i, xdata->connection_in_use);
                      U16_TO_BE16(MAX_CONNECTIONS, xdata->maxconnections);
-                     U16_TO_BE16(MAX_CONNECTIONS, xdata->peak_connection);
+                     U16_TO_BE16(h,               xdata->peak_connection);
                      U16_TO_BE16(MAX_NW_VOLS,     xdata->max_volumes);
+#ifdef _MAR_TESTS_1
+                     xdata->security_level=1;
+                     xdata->sft_level=2;
+                     xdata->tts_level=1;
+
+                     xdata->accounting_version=1;
+                     xdata->vap_version=1;
+                     xdata->queuing_version=1;
+
+                     xdata->virtual_console_version=1;
+                     xdata->security_level=1;
+                     xdata->internet_bridge_version=1;
+#endif
                      data_len = sizeof(struct XDATA);
                    }
                    break;
@@ -539,12 +556,8 @@ static void handle_fxx(int gelen, int func)
                     uint8 *p   = act_c->crypt_key;
                     uint8 *pp  = responsedata;
                     data_len   = k;
-                    while (k--) *pp++ = *p++ =
-#ifndef _MAR_TESTS_
-                      (uint8) rand();
-#else
-                      (uint8) k;
-#endif
+                    while (k--) *pp++ = *p++ = (uint8) rand();
+
                     /* if all here are same (1 or 2) then the resulting key is */
                     /* 00000000  */
                     if (password_scheme & PW_SCHEME_GET_KEY_FAIL)
@@ -1030,7 +1043,6 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
-#ifdef _CHANGE_PASSWD_TESTING_
      case 0x4b :  { /* keyed change pasword  */
                     uint8  *p     =  rdata+sizeof(act_c->crypt_key);
                     NETOBJ obj;
@@ -1039,26 +1051,21 @@ static void handle_fxx(int gelen, int func)
                     p+=2;
                     strmaxcpy((char*)obj.name, (char*)(p+1), *p);
                     upstr(obj.name);
-                    p += (*p+1);  /* here is now password-type ?? 0x60,0x66 */
 
+                    /* from Guntram Blohm  */
+                    p += (*p+1); /* here is crypted password length */
                     if (0 == (result = find_obj_id(&obj, 0)))  {
-                      internal_act = 1;
-                      result=nw_test_passwd(obj.id, act_c->crypt_key, rdata);
-                      internal_act = 0;
-                    }
-#if 0
-                    if (result > -1) {
-                      internal_act = 1;
-                      result=nw_set_enpasswd(obj.id, p+1);
-                      internal_act = 0;
-                    }
-#endif
+		      internal_act=1;
+		      result=nw_keychange_passwd(obj.id, act_c->crypt_key,
+				rdata, (int)*p, p+1, act_c->object_id);
+		      internal_act = 0;
+		    }
+
                     if (result< 0) completition = (uint8) -result;
-                    XDPRINTF((1, 0, "Keyed Change PW from OBJECT='%s', result=0x%x",
+                    XDPRINTF((2, 0, "Keyed Change PW from OBJECT='%s', result=0x%x",
                       obj.name, result));
                   }
                   break;
-#endif
 
      case 0x4c :  { /* List Relations of an Object  */
                    XDPRINTF((1, 0, "TODO:List Relations of an Object"));

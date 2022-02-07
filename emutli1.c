@@ -33,6 +33,7 @@
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <linux/config.h>
 #include <linux/sockios.h>
 #include "net.h"
 #include <linux/if.h>
@@ -243,7 +244,8 @@ int init_ipx(uint32 network, uint32 node, int ipx_debug)
 # endif
 #endif
   if ((sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX)) < 0) {
-    errorp(1, "EMUTLI:init_ipx", NULL);
+    errorp(1,  "EMUTLI:init_ipx", NULL);
+    errorp(10, "Problem", "probably kernel-IPX is not setup correctly");
     exit(1);
   } else {
     ipx_config_data cfgdata;
@@ -252,7 +254,7 @@ int init_ipx(uint32 network, uint32 node, int ipx_debug)
         auto_interfaces = cfgdata.ipxcfg_auto_create_interfaces;
     set_sock_debug(sock);
     result=0;
-    /* makes new internal net */
+    /* build new internal net */
     if (network) {
       struct sockaddr_ipx ipxs;
       memset((char*)&ipxs, 0, sizeof(struct sockaddr_ipx));

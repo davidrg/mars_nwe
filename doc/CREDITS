@@ -5,6 +5,7 @@ Michael Beddow <m.beddow@servelan.co.uk>
 
 Guntram Blohm  <gbl%th7csun1@str.daimler-benz.com>
         testing router code on token ring
+        wrote the 'crypted change password' routines !
 
 Uwe Bonnes <bon@elektron.ikp.physik.th-darmstadt.de>
         many testings+notes
@@ -14,6 +15,9 @@ Hardy Buchholz <hardy@kool.f.eunet.de>
 
 Ales Dryak <A.Dryak@sh.cvut.cz>
         his linware gave the kick
+
+Fritz Elfert <fritz@wuemaus.franken.de>
+        gives Bugreport and Patches
 
 Volker Lendecke <lendecke@math.uni-goettingen.de>
         helps distributing
@@ -26,4 +30,5 @@ Jiri A. Randus <Jiri.Randus@vslib.cz>
 
 Winfried Truemper <truemper@mi.uni-koeln.de>:
         re-wrote `INSTALL' and added explanations to `nw.ini'
+
 

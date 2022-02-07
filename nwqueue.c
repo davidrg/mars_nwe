@@ -159,8 +159,6 @@ int ext_pclose(FILE_PIPE *fp)
     waitpid(fp->command_pid, &status, 0);
   }
   kill(fp->command_pid, SIGKILL);
-
-
   signal(SIGINT,   intsave);
   signal(SIGQUIT,  quitsave);
   signal(SIGHUP,   hupsave);

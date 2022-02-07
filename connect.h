@@ -7,8 +7,11 @@ typedef struct {
   ino_t  inode;         /* Unix Inode                */
   time_t timestamp;     /* fÅr letzte Allocierung    */
   char   *kpath;        /* Ein Zeichen nach unixname */
-  int    vol_options;   /* Suchoptions               */
+  int    vol_options;   /* searchoptions             */
   int    volume;        /* Volume Number	     */
+
+  int    sequence;      /* Search sequence           */
+  off_t  dirpos;        /* Current pos in unix dir   */
 } DIR_HANDLE;
 
 typedef struct {

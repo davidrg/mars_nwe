@@ -1,5 +1,5 @@
 Sorry, this is in German only.
-Aenderungen in mars_nwe bis zum : 07-May-96
+Aenderungen in mars_nwe bis zum : 20-Jun-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -127,6 +127,17 @@ Erste 'oeffentliche' Version
 - Zugriffsrechte Bindery erweitert und korrigiert.
 - Volume option -r fuer readonly eingebaut.
 <----- ^^^^^^^^^^ pl4 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- setgroups u. initgroups in set_guid() eingebaut.
+<----- ^^^^^^^^^^ pl5 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- SIG_PIPE wird nun in nwconn abgefangen.
+<----- ^^^^^^^^^^ pl6 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Die Message Calls unter optimierten Kernel Mode wieder
+  zum Laufen gebracht.
+- Routine 'get vol restriction' korrigiert.
+  Lieferte immer 0 als freien Userspeicherplatz zurueck.
+- Bug beim Listen von grossen Direktories korrigiert. (Fritz Elfert)
+- CRYPTED CHANGE PASSWORD Routine implementiert. (Guntram Blohm)
+<----- ^^^^^^^^^^ pl7 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 

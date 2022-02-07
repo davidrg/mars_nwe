@@ -40,6 +40,10 @@ int           anz_net_devices=0;
 NW_NET_DEVICE *net_devices[MAX_NET_DEVICES];
 
 uint16  ipx_sock_nummern[]={ SOCK_AUTO    /* WDOG */
+#ifdef PSERVER_SLOT
+                             ,SOCK_PSERVER
+#endif
+
 #if INTERNAL_RIP_SAP
                              ,SOCK_SAP
 #else

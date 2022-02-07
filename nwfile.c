@@ -36,7 +36,7 @@ static int new_file_handle(uint8 *unixname)
   FILE_HANDLE  *fh=NULL;
   while (++rethandle < anz_fhandles) {
     FILE_HANDLE  *fh=&(file_handles[rethandle]);
-    if (fh->fd == -1 && !(fh->flags & 4)) { /* empty slot */
+    if (fh->fd == -1 && !(fh->fh_flags & FH_DO_NOT_REUSE)) { /* empty slot */
       rethandle++;
       break;
     } else fh=NULL;
@@ -52,7 +52,7 @@ static int new_file_handle(uint8 *unixname)
   fh->offd    = 0L;
   fh->tmodi   = 0L;
   strcpy((char*)fh->fname, (char*)unixname);
-  fh->flags   = 0;
+  fh->fh_flags   = 0;
   fh->f       = NULL;
   XDPRINTF((5, 0, "new_file_handle=%d, anz_fhandles=%d, fn=%s",
        rethandle, anz_fhandles, unixname));
@@ -65,12 +65,12 @@ static int free_file_handle(int fhandle)
   if (fhandle > 0 && (fhandle <= anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
-      if (fh->flags & 2) {
+      if (fh->fh_flags & FH_IS_PIPE_COMMAND) {
         if (fh->f) ext_pclose(fh->f);
         fh->f = NULL;
       } else close(fh->fd);
-      if (fh->tmodi > 0L && !(fh->flags & 2)
-                         && !(fh->flags & FILE_IS_READONLY)) {
+      if (fh->tmodi > 0L && !(FH_IS_PIPE_COMMAND & fh->fh_flags)
+                         && !(FH_IS_READONLY     & fh->fh_flags) ) {
       /* now set date and time */
         struct utimbuf ut;
         ut.actime = ut.modtime = fh->tmodi;
@@ -79,11 +79,11 @@ static int free_file_handle(int fhandle)
       }
     }
     fh->fd = -1;
-    if (fhandle == anz_fhandles && !(fh->flags & 4)) {
+    if (fhandle == anz_fhandles && !(fh->fh_flags & FH_DO_NOT_REUSE)) {
       /* was last */
       anz_fhandles--;
       while (anz_fhandles && file_handles[anz_fhandles-1].fd == -1
-        && !(file_handles[anz_fhandles-1].flags & 4) )
+        && !(file_handles[anz_fhandles-1].fh_flags & FH_DO_NOT_REUSE) )
           anz_fhandles--;
     }
     result=0;
@@ -129,9 +129,10 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          fh->f  = ext_popen(pipecommand, geteuid(), getegid());
          fh->fd = (fh->f) ? fileno(fh->f->fildes[1]) : -1;
          if (fh->fd > -1) {
-           fh->flags |= 2;
+           fh->fh_flags |= FH_IS_PIPE;
+           fh->fh_flags |= FH_IS_PIPE_COMMAND;
            if (!dowrite) stbuff->st_size = 0x7fffffff;
-           if (creatmode & 4) fh->flags |= 4;
+           if (creatmode & 4) fh->fh_flags |= FH_DO_NOT_REUSE;
            return(fhandle);
          }
        }
@@ -162,10 +163,14 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
        } else {
          int statr = stat(fh->fname, stbuff);
          int acm  = (access & 2) ? (int) O_RDWR : (int)O_RDONLY;
-         if ( (!statr && (stbuff->st_mode & S_IFMT) != S_IFDIR)
+         if ( (!statr && !S_ISDIR(stbuff->st_mode))
               || (statr && (acm & O_CREAT))){
-            XDPRINTF((5,0,"OPEN FILE with attrib:0x%x, access:0x%x, fh->fname:%s: fhandle=%d",attrib,access, fh->fname, fhandle));
+            if ((!statr) && S_ISFIFO(stbuff->st_mode)){
+              acm |= O_NONBLOCK;
+              fh->fh_flags |= FH_IS_PIPE;
+            }
             fh->fd = open(fh->fname, acm, 0777);
+            XDPRINTF((5,0,"OPEN FILE with attrib:0x%x, access:0x%x, fh->fname:%s: fhandle=%d",attrib,access, fh->fname, fhandle));
             fh->offd = 0L;
             if (fh->fd > -1) {
               if (statr) stat(fh->fname, stbuff);
@@ -173,7 +178,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          }
        }
        if (fh->fd > -1) {
-         if (creatmode & 4) fh->flags |= 4;
+         if (creatmode & 4) fh->fh_flags |= FH_DO_NOT_REUSE;
          return(fhandle);
        }
      } /* else (NOT DEVICE) */
@@ -188,7 +193,7 @@ int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
   if (fhandle > 0 && (--fhandle < anz_fhandles) ) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
-      if (!(fh->flags & FILE_IS_READONLY)) {
+      if (!(fh->fh_flags & FH_IS_READONLY)) {
         fh->tmodi = nw_2_un_time(datum, zeit);
         return(0);
       } else return(-0x8c);
@@ -203,11 +208,11 @@ int nw_close_datei(int fhandle, int reset_reuse)
      fhandle, anz_fhandles));
   if (fhandle > 0 && (fhandle <= anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
-    if (reset_reuse) fh->flags &= (~4);
+    if (reset_reuse) fh->fh_flags &= (~FH_DO_NOT_REUSE);
     if (fh->fd > -1) {
       int result = 0;
       int result2;
-      if (fh->flags & 2) {
+      if (fh->fh_flags & FH_IS_PIPE_COMMAND) {
         if (fh->f) {
           result=ext_pclose(fh->f);
           if (result > 0) result = 0;
@@ -215,8 +220,8 @@ int nw_close_datei(int fhandle, int reset_reuse)
         fh->f = NULL;
       } else result=close(fh->fd);
       fh->fd = -1;
-      if (fh->tmodi > 0L && !(fh->flags&2)
-                         && !(fh->flags & FILE_IS_READONLY)) {
+      if (fh->tmodi > 0L && !(fh->fh_flags & FH_IS_PIPE)
+                         && !(fh->fh_flags & FH_IS_READONLY)) {
         struct utimbuf ut;
         ut.actime = ut.modtime = fh->tmodi;
         utime(fh->fname, &ut);
@@ -248,8 +253,17 @@ int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
   if (fhandle > 0 && (--fhandle < anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
-      if (fh->flags & 2) { /* PIPE */
-        size = fread(data, 1, size, fh->f->fildes[1]);
+      if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
+        if (fh->fh_flags & FH_IS_PIPE_COMMAND)
+          size = fread(data, 1, size, fh->f->fildes[1]);
+        else {
+          size = read(fh->fd, data, size);
+          if (size < 0) {
+            int k=5;
+            while (size < 0 && --k /* && errno == EAGAIN */)
+               size = read(fh->fd, data, size);
+          }
+        }
       } else {
         if (fh->offd != (long)offset) {
           fh->offd=lseek(fh->fd, offset, SEEK_SET);
@@ -265,6 +279,7 @@ int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
           }
         } else size = -1;
       }
+      if (size == -1) size=0;
       return(size);
     }
   }
@@ -276,7 +291,7 @@ int nw_seek_datei(int fhandle, int modus)
   if (fhandle > 0 && (--fhandle < anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
-      if (fh->flags & 2) { /* PIPE */
+      if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
         return(0x7fffffff);
       } else {
         int size=-0xfb;
@@ -297,11 +312,13 @@ int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
   if (fhandle > 0 && (--fhandle < anz_fhandles)) {
     FILE_HANDLE *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
-      if (fh->flags & FILE_IS_READONLY) return(-0x94);
-      if (fh->flags & 2) { /* PIPE */
-        if (size)
-          return(fwrite(data, 1, size, fh->f->fildes[0]));
-        return(0);
+      if (fh->fh_flags & FH_IS_READONLY) return(-0x94);
+      if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
+        if (size) {
+          if (fh->fh_flags & FH_IS_PIPE_COMMAND)
+            return(fwrite(data, 1, size, fh->f->fildes[0]));
+          return(write(fh->fd, data, size));
+        } return(0);
       } else {
         if (fh->offd != (long)offset)
             fh->offd = lseek(fh->fd, offset, SEEK_SET);
@@ -345,7 +362,7 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
     if (fhq->fd > -1 && fhz->fd > -1) {
       char buff[2048];
       int  wsize;
-      if (fhz->flags & FILE_IS_READONLY) return(-0x94);
+      if (fhz->fh_flags & FH_IS_READONLY) return(-0x94);
       if (lseek(fhq->fd, qoffset, SEEK_SET) > -1L &&
           lseek(fhz->fd, zoffset, SEEK_SET) > -1L) {
         retsize = 0;
@@ -384,7 +401,7 @@ int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
     if (fh->fd > -1) {
       struct flock flockd;
       int result;
-      if (fh->flags & 2) return(0);
+      if (fh->fh_flags & FH_IS_PIPE) return(0);
       flockd.l_type   = (do_lock) ? F_WRLCK : F_UNLCK;
       flockd.l_whence = SEEK_SET;
       flockd.l_start  = offset;

@@ -1,4 +1,4 @@
-/* nwdbm.c  13-May-96  data base for mars_nwe */
+/* nwdbm.c  20-Jun-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,7 +17,7 @@
  */
 
 /*
- * This code is only called from the process 'ncpserv'
+ * This code is only called from the process 'nwbind'
  * So, there is no need for locking or something else.
  */
 
@@ -41,8 +41,8 @@
 
 #define DBM_REMAINS_OPEN  1
 
-int        tells_server_version=0;
-int        password_scheme=PW_SCHEME_CHANGE_PW;
+int tells_server_version=0;
+int password_scheme=PW_SCHEME_CHANGE_PW;
 
 static datum key;
 static datum data;
@@ -174,7 +174,10 @@ int find_obj_id(NETOBJ *o, uint32 last_obj_id)
   return(result);
 }
 
-static int loc_delete_property(uint32 obj_id, uint8 *prop_name, uint8 prop_id)
+static int loc_delete_property(uint32 obj_id,
+                               uint8 *prop_name,
+                               uint8 prop_id,
+                               int   ever)  /* ever means no access tests */
 /* deletes Object property or properties */
 /* wildcards allowed in property name  */
 {
@@ -191,7 +194,7 @@ static int loc_delete_property(uint32 obj_id, uint8 *prop_name, uint8 prop_id)
 	  p = (NETPROP*)data.dptr;
           if (p != NULL && name_match(p->name, prop_name)){
 	    XDPRINTF((2,0, "found prop: %s, id=%d for deleting", p->name, (int)p->id));
-            if (!b_acc(obj_id, p->security, 0x13)) {
+            if (ever || !b_acc(obj_id, p->security, 0x13)) {
 	      if ((int)(p->id) > result) result = (int)(p->id);
 	      xset[p->id]++;
             } else if (result < 0) result = -0xf6; /* no delete priv. */
@@ -252,7 +255,7 @@ static int loc_delete_obj(uint32 objid, int security)
 {
   int result = b_acc(objid, 0x33, 0x03); /* only supervisor or intern */
   if (result) return(result); /* no object delete priv */
-  (void)loc_delete_property(objid, (uint8*)"*", 0);
+  (void)loc_delete_property(objid, (uint8*)"*", 0, 1);
   if (!dbminit(FNOBJ)){
     key.dptr  = (char*)&objid;
     key.dsize = NETOBJ_KEY_SIZE;
@@ -633,7 +636,7 @@ int nw_delete_property(int object_type,
       obj.name, prop_name_x, object_type));
   obj.type    = (uint16) object_type;
   if ((result = find_obj_id(&obj, 0)) == 0){
-    result = loc_delete_property(obj.id, prop_name_x, 0);
+    result = loc_delete_property(obj.id, prop_name_x, 0, 0);
   }
   return(result);
 }
@@ -875,6 +878,7 @@ int nw_obj_has_prop(NETOBJ *obj)
 static int nw_create_obj_prop(NETOBJ *obj, NETPROP *prop)
 {
   int result = b_acc(obj->id, obj->security, 0x12);
+  XDPRINTF((3, 0, "create property='%s' objid=0x%x", prop->name, obj->id));
   if (result) return(result);
   if (!dbminit(FNPROP)){
     uint8   founds[256];
@@ -997,7 +1001,7 @@ static MYPASSWD *nw_getpwnam(uint32 obj_id)
   if (nw_get_prop_val_str(obj_id, "UNIX_USER", buff) > 0){
     struct passwd *pw = getpwnam(buff);
     if (NULL != pw) {
-      if (obj_id != 1 && pw->pw_uid == 1)
+      if (obj_id != 1 && !pw->pw_uid)
         return(NULL);  /* only supervisor -> root */
       pwstat.pw_uid = pw->pw_uid;
       pwstat.pw_gid = pw->pw_gid;
@@ -1064,26 +1068,42 @@ static int crypt_pw_ok(uint8 *password, char *passwd)
   return( (strcmp(p, passwd)) ? 0 : 1 );
 }
 
+static int loc_nw_test_passwd(uint8 *keybuff, uint8 *stored_passwd,
+                              uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
+{
+  if (nw_get_prop_val_str(obj_id, "PASSWORD", stored_passwd) > 0) {
+    nw_encrypt(vgl_key, stored_passwd, keybuff);
+    return (memcmp(akt_key, keybuff, 8) ? -0xff : 0);
+  } else { /* now we build an empty password */
+    uint8 buf[8];
+    uint8 s_uid[4];
+    U32_TO_BE32(obj_id, s_uid);
+    shuffle(s_uid, buf, 0, stored_passwd);
+    nw_encrypt(vgl_key, stored_passwd, keybuff);
+    return(1);
+  }
+}
+
+
 int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
 /* returns 0, if password ok and -0xff if not ok */
 {
-  char buf[200];
-  if (nw_get_prop_val_str(obj_id, "PASSWORD", buf) > 0) {
-    uint8 keybuff[8];
-    memcpy(keybuff, vgl_key, sizeof(keybuff));
-    nw_encrypt(keybuff, buf, keybuff);
-    return (memcmp(akt_key, keybuff, sizeof(keybuff)) ? -0xff : 0);
-  } else {
-    if (obj_id == 1) return(-0xff);
-    if (password_scheme & PW_SCHEME_LOGIN) {
-      if (!(password_scheme & PW_SCHEME_ALLOW_EMPTY_PW)) {
-        MYPASSWD *pw = nw_getpwnam(obj_id);
-        if (pw && *(pw->pw_passwd) && !crypt_pw_ok(NULL, pw->pw_passwd))
-          return(-0xff);
-      }
+  uint8 keybuff[8];
+  uint8 stored_passwd[200];
+  int result=loc_nw_test_passwd(keybuff, stored_passwd,
+                                obj_id, vgl_key, akt_key);
+  if (result < 1) return(result);
+
+  if (obj_id == 1) return(-0xff);  /* SUPERVISOR */
+
+  if (password_scheme & PW_SCHEME_LOGIN) {
+    if (!(password_scheme & PW_SCHEME_ALLOW_EMPTY_PW)) {
+      MYPASSWD *pw = nw_getpwnam(obj_id);
+      if (pw && *(pw->pw_passwd) && !crypt_pw_ok(NULL, pw->pw_passwd))
+        return(-0xff);
     }
-    return(0); /* no password */
   }
+  return(0); /* no password */
 }
 
 int nw_test_unenpasswd(uint32 obj_id, uint8 *password)
@@ -1122,7 +1142,7 @@ static int nw_set_enpasswd(uint32 obj_id, uint8 *passwd, int dont_ch)
   	                prop_name, P_FL_STAT|P_FL_ITEM,  0x44,
 	                passwd, 16);
   } else if (!dont_ch)
-    (void)loc_delete_property(obj_id, prop_name, 0);
+    (void)loc_delete_property(obj_id, prop_name, 0, 1);
   return(0);
 }
 
@@ -1133,7 +1153,7 @@ int nw_set_passwd(uint32 obj_id, char *password, int dont_ch)
     uint8 s_uid[4];
     U32_TO_BE32(obj_id, s_uid);
     shuffle(s_uid, password, strlen(password), passwd);
-#if 1
+#if 0
     XDPRINTF((2,0, "password %s->0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x",
        password,
        (int)passwd[0],
@@ -1158,6 +1178,53 @@ int nw_set_passwd(uint32 obj_id, char *password, int dont_ch)
     return(nw_set_enpasswd(obj_id, NULL, dont_ch));
 }
 
+
+/* main work from Guntram Blohm
+ * no chance for unix password support here - can't get real password
+ * from ncp request
+ */
+int nw_keychange_passwd(uint32 obj_id, uint8 *cryptkey, uint8 *oldpass,
+			 int cryptedlen, uint8 *newpass, uint32 act_id)
+{
+  uint8 storedpass[200];
+  uint8 keybuff[8];
+  char  buf[100];
+  int   len;
+  int   result = loc_nw_test_passwd(keybuff, storedpass,
+                                  obj_id, cryptkey, oldpass);
+
+  XDPRINTF((5, 0, "Crypted change password: id=%lx, oldpresult=0x%x",
+                    obj_id, result));
+
+  len=(cryptedlen ^ storedpass[0] ^ storedpass[1])&0x3f;
+  XDPRINTF((5, 0, "real len of new pass = %d", len));
+
+  XDPRINTF((5, 0, "stored:  %s", hex_str(buf, storedpass,  16)));
+  XDPRINTF((5, 0, "crypted: %s", hex_str(buf, keybuff,      8)));
+  XDPRINTF((5, 0, "ncp old: %s", hex_str(buf, oldpass,      8)));
+
+  if (result < 0) {     /* wrong passwd */
+    if (1 == act_id) {  /* supervisor is changing passwd   */
+      uint8 buf[8];
+      uint8 s_uid[4];
+      U32_TO_BE32(obj_id, s_uid);
+      shuffle(s_uid, buf, 0, storedpass);
+      nw_encrypt(cryptkey, storedpass, keybuff);
+      len=(cryptedlen ^ storedpass[0] ^ storedpass[1])&0x3f;
+      XDPRINTF((5, 0, "N real len of new pass = %d", len));
+      XDPRINTF((5, 0, "N stored:  %s", hex_str(buf, storedpass,  16)));
+      XDPRINTF((5, 0, "N crypted: %s", hex_str(buf, keybuff,  8)));
+      if (memcmp(oldpass, keybuff, 8))
+         return(-0xff);  /* if not BLANK then error */
+    } else return(-0xff);
+  }
+  XDPRINTF((5, 0, "ncp new: %s", hex_str(buf,newpass,     16)));
+  nw_decrypt_newpass(storedpass,   newpass,   newpass);
+  nw_decrypt_newpass(storedpass+8, newpass+8, newpass+8);
+  XDPRINTF((5, 0, "realnew: %s", hex_str(buf,newpass,     16)));
+  nw_set_enpasswd(obj_id, newpass, 0);
+  return(0);
+}
 
 int prop_add_new_member(uint32 obj_id, int prop_id, uint32 member_id)
 /* addiert member to set, if member not in set */
@@ -1201,6 +1268,7 @@ static void create_nw_db(char *fn, int allways)
   }
   chmod(fname, 0600);
 }
+
 
 static void add_pr_queue(uint32 q_id,
                          char *q_name, char *q_directory,
@@ -1342,12 +1410,13 @@ static uint8 *test_add_dir(uint8 *unixname, uint8 *pp, int shorten,
 
 
 int nw_fill_standard(char *servername, ipxAddr_t *adr)
-/* fills the Standardproperties */
+/* fills the standardproperties */
 {
   char   serverna[MAX_SERVER_NAME+2];
   uint32 su_id    = 0x00000001;
   uint32 ge_id    = 0x01000001;
   uint32 serv_id  = 0x03000001;
+  uint32 pserv_id = 0L;
   uint32 q1_id    = 0x0E000001;
 #if 0
   uint32 guest_id = 0x02000001;
@@ -1370,7 +1439,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
     while (0 != (what =get_ini_entry(f, 0, (char*)buff, sizeof(buff)))) {
       if (1 == what && !*sysentry) {
         xstrcpy(sysentry, buff);
-      } else if (6 == what) {  /* Server Version */
+      } else if (6 == what) {  /* server Version */
         tells_server_version = atoi(buff);
       } else if (7 == what) {  /* password_scheme */
         int pwscheme     = atoi(buff);
@@ -1445,27 +1514,40 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
     } /* while */
     fclose(f);
   }
+
   if (servername && adr) {
     strmaxcpy(serverna, servername, MAX_SERVER_NAME);
     upstr(serverna);
-    nw_new_obj_prop(serv_id, serverna,       0x4,      O_FL_DYNA, 0x40,
+    nw_new_obj_prop(serv_id, serverna,       0x4,      O_FL_DYNA,  0x40,
 	               "NET_ADDRESS",         P_FL_ITEM | P_FL_DYNA, 0x40,
 	                (char*)adr,  sizeof(ipxAddr_t));
+
+#if _MAR_TESTS_
+    nw_new_obj_prop(pserv_id, serverna,      0x47,    O_FL_DYNA, 0x31,
+	               "NET_ADDRESS",     P_FL_ITEM | P_FL_DYNA, 0x40,
+	                (char*)adr,  sizeof(ipxAddr_t));
+#endif
   }
   if (auto_ins_user) {
+    /* here Unix users will be inserted automaticly as mars_nwe users */
     struct passwd *pw;
     upstr(auto_ins_passwd);
     while (NULL != (pw=getpwent())) {
-      if ( (pw->pw_passwd[0] != '*' && pw->pw_passwd[0] != 'x')
-           || pw->pw_passwd[1] != '\0') {
-        char nname[100];
-        xstrcpy(nname, pw->pw_name);
-        upstr(nname);
-        add_user(0L, ge_id, nname, pw->pw_name, auto_ins_passwd,
-          (auto_ins_user == 99) ? 0 : 99);
+      if (pw->pw_uid) {
+        if ( (pw->pw_passwd[0] != '*' && pw->pw_passwd[0] != 'x')
+             || pw->pw_passwd[1] != '\0') {
+          char nname[100];
+          xstrcpy(nname, pw->pw_name);
+          upstr(nname);
+          add_user(0L, ge_id, nname, pw->pw_name, auto_ins_passwd,
+            (auto_ins_user == 99) ? 0 : 99);
+        } else {
+          XDPRINTF((1,0, "Unix User:'%s' not added because passwd='%s'",
+             pw->pw_name, pw->pw_passwd));
+        }
       } else {
-        XDPRINTF((1,0, "Unix User:'%s' not added because passwd='%s'",
-           pw->pw_name, pw->pw_passwd));
+        XDPRINTF((1,0, "Unix User:'%s' not added because uid=0 (root)",
+                         pw->pw_name));
       }
     }
     endpwent();
@@ -1572,7 +1654,7 @@ int nw_init_dbm(char *servername, ipxAddr_t *adr)
     }
   }
   dbmclose();
-  while (anz--) loc_delete_property(objs[anz], (char*)NULL, props[anz]);  /* now delete */
+  while (anz--) loc_delete_property(objs[anz], (char*)NULL, props[anz], 1);  /* now delete */
   anz = nw_fill_standard(servername, adr);
   sync_dbm();
   return(anz);

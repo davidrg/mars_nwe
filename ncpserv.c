@@ -143,8 +143,9 @@ static int open_ipx_sockets(void)
 }
 
 typedef struct {
-   int        fd;           /* writepipe                       */
-                            /* or if CALL_NWCONN_OVER_SOCKET then sock_nr of nwconn */
+   int        fd;           /* writepipe                      */
+                            /* or if CALL_NWCONN_OVER_SOCKET  */
+                            /* then sock_nr of nwconn 	      */
    int        pid;          /* pid from son          */
    ipxAddr_t  client_adr;   /* address client        */
    int        sequence;     /* previous sequence     */
@@ -499,6 +500,8 @@ static void handle_ncp_request(void)
 {
   if (t_rcvudata(ncp_fd, &ud, &rcv_flags) > -1){
     int type;
+    int compl;
+    int cstat;
     in_len = ud.udata.len;
     time(&akttime);
     XDPRINTF((20, 0, "NCPSERV-LOOP von %s", visable_ipx_adr(&from_addr)));
@@ -518,6 +521,7 @@ static void handle_ncp_request(void)
               if (diff_time > 50) /* after max. 50 seconds */
                  nwserv_reset_wdog(connection);
                  /* tell the wdog there's no need to look */
+
 #if !CALL_NWCONN_OVER_SOCKET
               if (ncprequest->sequence == c->sequence
                   && !c->retry++) {
@@ -568,12 +572,22 @@ static void handle_ncp_request(void)
       XDPRINTF((1,0, "GOT 0x%x connection=%d of %d conns not OK",
           type, ncprequest->connection, anz_connect));
 
+      if (type == 0x5555 || (type == 0x2222 && ncprequest->function == 0x19)) {
+        compl = 0;
+        cstat = 0;
+      } else {
+        compl = 0;
+        cstat = 1;
+      }
+
       ncp_response(0x3333, ncprequest->sequence,
     	               ncprequest->connection,
-    	               0,    /* task         */
-    	               0xfe, /* completition */
-    	               0xf0, /* conn status  */
+    	               1,     /* task         */
+    	               compl, /* completition */
+    	               cstat, /* conn status  */
     	               0);
+
+
 
 #if !CALL_NWCONN_OVER_SOCKET
     /* here comes a call from nwbind */
@@ -615,6 +629,13 @@ static void handle_ncp_request(void)
        && IPXCMPNET (from_addr.net,  my_addr.net)) {
       /* comes from nwserv  */
       handle_ctrl();
+#if _MAR_TESTS_
+    } else if (type == 0xc000) {
+      /* rprinter */
+      int connection     = (int)ncprequest->connection;
+      int sequence       = (int)ncprequest->sequence;
+      ncp_response(0x3333, sequence, connection, 1, 0x0, 0, 0);
+#endif
     } else {
       int connection     = (int)ncprequest->connection;
       int sequence       = (int)ncprequest->sequence;

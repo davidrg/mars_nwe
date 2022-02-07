@@ -221,6 +221,9 @@ static int handle_ncp_serv(void)
 	             }
 	             break;
 
+	 case 0x15 :
+	             return(-1); /* nwbind must do this call */
+
 
 	 case 0x16 : {
 	               /* uint8 len = *(requestdata+1); */
@@ -330,7 +333,7 @@ static int handle_ncp_serv(void)
 	                 int result = nw_get_volume_name((int)*(p+1), xdata->name);
 	                 if (result > -1) {
 	                   xdata->namelen = (uint8) result;
-	                   data_len       = sizeof(struct XDATA);
+	                   data_len       = result+1;
 	                 } else completition = (uint8) -result;
 	               } else if (*p == 0xa){ /* legt Verzeichnis an */
 	           /******** Create Dir *********************/
@@ -575,11 +578,13 @@ static int handle_ncp_serv(void)
                           uint8  volnr = *(p+1);
                           uint32 id    = GET_BE32(p+2);
 	                  struct XDATA {
-	                    uint8 weisnicht[8];  /* ?????? */
+                            uint8 restriction[4];
+                            uint8 inuse[4];
 	                  } *xdata = (struct XDATA*) responsedata;
                           XDPRINTF((5,0, "Get vol restriction vol=%d, id=0x%lx",
                                    (int)volnr, id));
-                          memset(xdata, 0, sizeof(struct XDATA));
+                          U32_TO_32(0x40000000, xdata->restriction);
+                          U32_TO_32(0x0,        xdata->inuse);
                           data_len=sizeof(struct XDATA);
 	               } else  if (*p == 0x2a){
 	                  /* Get Eff. Rights of DIR's and Files  ??*/
@@ -795,6 +800,7 @@ static int handle_ncp_serv(void)
 	 case 0x18 : /* End of Job */
                      nw_free_handles((ncprequest->task > 0) ?
                                       (int) (ncprequest->task) : 1);
+
                      break;
 
 	 case 0x19 : /* logout, some of this call is handled in ncpserv. */
@@ -1296,7 +1302,7 @@ static int handle_ncp_serv(void)
                      break;
 #endif
 
-#ifdef _MAR_TESTS_
+#ifdef _MAR_TESTS_XX
 	 case 0x5f : { /* ????????????? UNIX Client */
 	               struct INPUT {
 	                 uint8   header[7];  /* Requestheader */
@@ -1480,12 +1486,6 @@ static void set_sig(void)
 
 int main(int argc, char **argv)
 {
-#if CALL_NWCONN_OVER_SOCKET
-  uint8      i_ipx_pack_typ;
-  ipxAddr_t  x_from_addr;
-  ipxAddr_t  client_addr;
-  struct     t_unitdata iud;
-#endif
   if (argc != 5) {
     fprintf(stderr, "usage nwconn PID FROM_ADDR Connection nwbindsock\n");
     exit(1);
@@ -1496,13 +1496,10 @@ int main(int argc, char **argv)
   init_tools(NWCONN, atoi(*(argv+3)));
   memset(saved_readbuff, 0, sizeof(saved_readbuff));
 
-  XDPRINTF((2, 0, "FATHER PID=%d, ADDR=%s CON:%s", father_pid, *(argv+2), *(argv+3)));
+  XDPRINTF((2, 0, "FATHER PID=%d, ADDR=%s CON:%s",
+                  father_pid, *(argv+2), *(argv+3)));
 
   adr_to_ipx_addr(&from_addr,   *(argv+2));
-
-#if CALL_NWCONN_OVER_SOCKET
-  adr_to_ipx_addr(&client_addr, *(argv+2));
-#endif
 
   if (nw_init_connect()) exit(1);
 
@@ -1513,6 +1510,7 @@ int main(int argc, char **argv)
 #endif
   last_sequence = -9999;
   if (get_ipx_addr(&my_addr)) exit(1);
+
 #if CALL_NWCONN_OVER_SOCKET
 # if 1
 #  ifdef SIOCIPXNCPCONN
@@ -1535,35 +1533,19 @@ int main(int argc, char **argv)
   ud.addr.maxlen   = sizeof(ipxAddr_t);
   ud.addr.buf      = (char*)&from_addr;
   ud.udata.buf     = (char*)&ipxdata;
+
   U16_TO_BE16(0x3333, ncpresponse->type);
   ncpresponse->task           = (uint8) 1;    /* allways 1 */
   ncpresponse->reserved       = (uint8) 0;    /* allways 0 */
   ncpresponse->connection     = (uint8) atoi(*(argv+3));
 
-#if CALL_NWCONN_OVER_SOCKET
-  iud.opt.len       = sizeof(i_ipx_pack_typ);
-  iud.opt.maxlen    = sizeof(i_ipx_pack_typ);
-  iud.opt.buf       = (char*)&i_ipx_pack_typ; /* gets actual Typ */
-
-  iud.addr.len      = sizeof(ipxAddr_t);
-  iud.addr.maxlen   = sizeof(ipxAddr_t);
-  iud.addr.buf      = (char*)&x_from_addr;
-
-  iud.udata.len     = IPX_MAX_DATA;
-  iud.udata.maxlen  = IPX_MAX_DATA;
-  iud.udata.buf     = (char*)readbuff;
-#endif
-
   set_sig();
 
   while (1) {
-#if CALL_NWCONN_OVER_SOCKET
-    int rcv_flags = 0;
-    int data_len = (t_rcvudata(0, &iud, &rcv_flags) > -1)
-                            ? iud.udata.len : -1;
-#else
     int data_len = read(0, readbuff, sizeof(readbuff));
-#endif
+    /* this read is a pipe or a socket read,
+     * depending on CALL_NWCONN_OVER_SOCKET
+     */
     ncpresponse->connect_status = (uint8) 0;
 
     if (fl_get_int) {
@@ -1574,9 +1556,12 @@ int main(int argc, char **argv)
     if (data_len > 0) {
       XDPRINTF((99, 0,  "NWCONN GOT DATA len = %d",data_len));
       if ((ncp_type = (int)GET_BE16(ncprequest->type)) == 0x3333) {
+        /* this is a response packet */
         data_len -= sizeof(NCPRESPONSE);
-        if (saved_sequence > -1 && ((int)(ncprequest->sequence) == saved_sequence)
+        if (saved_sequence > -1
+            && ((int)(ncprequest->sequence) == saved_sequence)
             && !ncprequest->function) {
+          /* comes from nwbind */
           handle_after_bind();
         } else {
           /* OK for direct sending */
@@ -1589,11 +1574,15 @@ int main(int argc, char **argv)
                        (int)(ncprequest->function), data_len);
         }
         saved_sequence = -1;
-      } else { /* this calls I must handle */
+      } else { /* this calls I must handle, it is a request */
         int result;
         requestlen  = data_len - sizeof(NCPREQUEST);
         if (0 != (result = handle_ncp_serv()) ) {
-          if (result == -2) {  /* here the actual call must be saved */
+          if (result == -2) {
+            /* here the actual call must be saved
+             * because we need it later, when the request to nwbind
+             * returns.
+             */
             memcpy(saved_readbuff, readbuff, data_len);
             saved_sequence = (int)(ncprequest->sequence);
           } else saved_sequence = -1;
