@@ -1271,7 +1271,8 @@ static void free_dir_stuff(struct stat *stb, int complete)
     if (dh && dh->dev == stb->st_dev && dh->inode == stb->st_ino) {
       if (complete)
         free_dir_handle(j+1);
-      else { /* only close directories */
+      else if (dh->f) { /* only close directories */
+        /* needed to ask for null pointer, hint from Boris Popov, 21-Feb-99 */
         closedir(dh->f);
         dh->f = (DIR*)NULL;
       }

@@ -1,4 +1,4 @@
-/* nwconn.c 10-Nov-98       */
+/* nwconn.c 12-Jan-99       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -2269,7 +2269,7 @@ static int  fl_get_int=0;
 static void sig_quit(int rsig)
 {
   XDPRINTF((2, 0, "Got Signal=%d", rsig));
-  fl_get_int=-1;
+  fl_get_int |= 1;
 }
 
 static void sig_pipe(int rsig)
@@ -2280,14 +2280,25 @@ static void sig_pipe(int rsig)
 
 static void sig_hup(int rsig)
 {
-  if (!fl_get_int) fl_get_int=1;
+  fl_get_int |= 2;
   signal(SIGHUP,   sig_hup);
+}
+
+static void sig_usr1(int rsig)
+{
+  fl_get_int |= 4;
 }
 
 static void get_new_debug(void)
 {
   get_ini_debug(3);
-  if (fl_get_int > 0) fl_get_int=0;
+  fl_get_int &= ~2;
+}
+
+static void handle_extern_command(void)
+{
+  fl_get_int &= ~4;
+  signal(SIGUSR1, sig_usr1);
 }
 
 static void set_sig(void)
@@ -2297,6 +2308,7 @@ static void set_sig(void)
   signal(SIGINT,   sig_quit);
   signal(SIGPIPE,  sig_pipe);
   signal(SIGHUP,   sig_hup);
+  signal(SIGUSR1,  sig_usr1);
   if (use_mmap)
      signal(SIGBUS,   sig_bus_mmap);  /* in nwfile.c */
 }
@@ -2360,7 +2372,7 @@ int main(int argc, char **argv)
 
   set_sig();
 
-  while (fl_get_int >= 0) {
+  while ( !(fl_get_int&1) ) {
     int data_len = read(0, readbuff, sizeof(readbuff));
 
     /* this read is a pipe or a socket read,
@@ -2368,8 +2380,11 @@ int main(int argc, char **argv)
      */
 
     if (fl_get_int) {
-      if (fl_get_int == 1) get_new_debug();
-      else if (fl_get_int < 0) break;
+      if (fl_get_int & 1) break;
+      if (fl_get_int & 2)
+        get_new_debug();
+      if (fl_get_int & 4) 
+        handle_extern_command();
     }
 
     if (data_len > 0) {

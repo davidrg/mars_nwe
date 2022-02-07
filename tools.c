@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <syslog.h>
 
+#if 0
 #ifndef LINUX
  extern int   _sys_nerr;
  extern char *_sys_errlist[];
@@ -29,6 +30,12 @@
 #   define _sys_nerr    sys_nerr
 #   define _sys_errlist sys_errlist
 # endif
+#endif
+#else
+# ifndef __USE_GNU
+extern int   _sys_nerr;
+extern char *_sys_errlist[];
+#  endif
 #endif
 
 int    nw_debug=0;
@@ -80,7 +87,7 @@ char *xmalloc(uint size)
 {
   if (size) {
     char *p = (char *)malloc(size);
-    if (!p) { 
+    if (!p) {
       int tries=0;
       do {
         sleep(1);
@@ -90,12 +97,12 @@ char *xmalloc(uint size)
         errorp(1, "xmalloc", "not enough core, need %d Bytes\n", size);
         exit(1);
       } else {
-        XDPRINTF((1, 0, "Warning:could not alloc %d Bytes for %d tries", 
+        XDPRINTF((1, 0, "Warning:could not alloc %d Bytes for %d tries",
           size, tries+1));
       }
     }
     return(p);
-  } else 
+  } else
     return(NULL);
 }
 
@@ -174,7 +181,7 @@ static char *buffered=NULL;
       }
       if (!(mode & 2)) {
         char identstr[200];
-        sprintf(identstr, "%s %d %3d", get_debstr(0), 
+        sprintf(identstr, "%s %d %3d", get_debstr(0),
                            act_connection, act_ncpsequence);
         openlog(identstr, LOG_CONS, LOG_DAEMON);
         syslog(LOG_DEBUG, buf);
@@ -187,7 +194,7 @@ static char *buffered=NULL;
       xfree(buf);
     } else {
       if (!(mode & 1))
-        fprintf(logfile, "%s %d %3d:", get_debstr(1), 
+        fprintf(logfile, "%s %d %3d:", get_debstr(1),
           act_connection, act_ncpsequence);
       if (p) {
         va_start(ap, p);
@@ -243,10 +250,10 @@ void errorp(int mode, char *what, char *p, ...)
     lologfile=stderr;
   }
   while (1) {
-    if (mode==1) 
-      fprintf(lologfile, "\n!! %s %d %3d:PANIC !!\n", 
+    if (mode==1)
+      fprintf(lologfile, "\n!! %s %d %3d:PANIC !!\n",
               get_debstr(1), act_connection, act_ncpsequence);
-    fprintf(lologfile, "%s %d %3d:%s:%s\n", get_debstr(1), act_connection,  
+    fprintf(lologfile, "%s %d %3d:%s:%s\n", get_debstr(1), act_connection,
          act_ncpsequence, what, errstr);
     if (p) {
       va_start(ap, p);
@@ -392,6 +399,7 @@ int get_ini_int(int what)
 static void sig_segv(int isig)
 {
   errorp(11, "!!! SIG_SEGV !!!", "at pid=%d, ncp_sequence=%d", my_pid, act_ncpsequence);
+  exit(1);
 #ifndef LINUX
   exit(1);
 #endif
@@ -545,7 +553,7 @@ void init_tools(int module, int options)
        use_syslog=1;
 
     if (NWSERV == module) {
-      fprintf(stdout, "\n\nMars_nwe V%d.%02dpl%d started using %s.\n", 
+      fprintf(stdout, "\n\nMars_nwe V%d.%02dpl%d started using %s.\n",
          _VERS_H_, _VERS_L_, _VERS_P_, FILENAME_NW_INI);
       fprintf(stdout, "If you have problems, please read mars_nwe/doc/BUGS !\n");
       if (use_syslog==1) {
@@ -652,7 +660,7 @@ int octtoi(char *buf)
     }
     if (*buf == 0 || 1 != sscanf(buf, "%o", &i))
       i=0;
-    else if (m) 
+    else if (m)
       i=-i;
   }
   return(i);

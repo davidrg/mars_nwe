@@ -484,7 +484,16 @@ Erste 'oeffentliche' Version
 - nwfile.c. Filehandle can now be used for more than one open.
   Don't know whether this is correct. Under W95 client the dos 
   programm 'blinker' needs it.
-- nw_rmdir() in connect.c now returns correct value if directory
+- nw_rmdir() in connect.c now returns correct error code if directory
   cannot be removed because it is not empty.
 <----- ^^^^^^^^^^ pl14 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- doc/PIPE-FS.ger with new examples from Sascha Herrmann
+- added '#define _SVID_SOURCE' and '#define _XOPEN_SOURCE' 
+  in net.h to let mars_nwe work with glibc.
+- connect.c, free_dir_stuff(), correcting error when recursively deleting a 
+  largish directory tree, hint from Boris Popov, 21-Feb-99.
+- Get Queue Job List (new) now returns info in right byte order.
+  Error appeared under Win9x with Novell Client32 when printing. 
+  ( segmentation error in spool32 ) bug corrected by georg@globaltrading.net.
+<----- ^^^^^^^^^^ pl15 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

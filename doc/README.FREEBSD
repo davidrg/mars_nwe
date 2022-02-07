@@ -3,12 +3,14 @@ UnixWare to FreeBSD. An original program was written by Martin Stover,
 Marburg, Germany. Port to FreeBSD was made by Boris Popov (bp@butya.kz).
 
 	Notes given below related only to FreeBSD. For full description
-of Mars_nwe, please read README file.
+ of Mars_nwe, please read README file.
 
-	1. Kernel configuration
-	
-	To enable kernel support for IPX protol you must include
-keyword "options  IPX" and rebuild kernel.
+	Additional info available at http://www.dixi.ml.org/bp/
+
+ 	1. Kernel configuration
+ 	
+	To enable kernel support for IPX protocol you must include
+ keyword "options  IPX" and rebuild kernel.
 
 
 	2. Interface configuration
@@ -74,9 +76,8 @@ for that and for now select same net number which assigned to interface.
 	Section 4 are completly ignored.
 	
 
-	6. Problems
-	
-	Because this is first release for FreeBSD you can encounter
-different problems with compilation, configuration, etc. Please send
-questions and suggestions to bp@butya.kz.
+ 	6. Problems
+ 	
+If you have any questions do not hesitate to contact me, Boris Popov at 
+bp@butya.kz.
 

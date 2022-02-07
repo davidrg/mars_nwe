@@ -1,4 +1,4 @@
-last updated: 14-Jul-97
+last updated: 21-Feb-99
 
 Q: Which DOS programs from the real Netware do I need?
 A: For a minimal configuration you only need LOGIN.EXE.
@@ -9,6 +9,10 @@ A: For a minimal configuration you only need LOGIN.EXE.
 
    There is also a DOS client program in development, which will allow
    the use of mars_nwe without the original Novell DOS tools.
+
+Q: Do I need a device called '/dev/ipx', because I found references in mars_nwe
+A: When you use Linux, no. These references are only used under OS-es with
+   TLI interfaces like UnixWare (tm)
 
 Q: I don't exactly understand the meaning of some points in nw.ini:
    12,13

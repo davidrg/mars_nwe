@@ -38,6 +38,7 @@ static int usage(char *s)
 int main(int argc, char *argv[])
 {
   init_tools(0, 0);
+  nw_debug=5;
   if (argc < 2)             return(usage(argv[0]));
   if      (*argv[1] == 'e') return(do_export_dbm(argv[2]));
   else if (*argv[1] == 'i') return(do_import_dbm(argv[2]));

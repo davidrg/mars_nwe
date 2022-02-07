@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 11-Jul-98
+# mk.li 21-Feb-99
 # please edit this file !
 
 mk()
@@ -109,7 +109,7 @@ fi
      NSLLIB=""
      MAKE=make
      TMP=/tmp
-     INSTALL=install
+     INSTALL="install -c"
      ;;
 
    *) echo "mk.li: Unknown or not supported OS, probably you must set \$UNX"

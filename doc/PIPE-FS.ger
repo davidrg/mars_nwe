@@ -1,4 +1,7 @@
 /* PIPE- Filesystem */
+
+1. Was sind PIPEs?
+
 das 'PIPE Filesystem' entstand urspruenglich aus der Frage heraus:
 Wie kann ich ein Linux System oder Teile davon ueber/auf einen
 DOS-Rechner oder Novell Fileserver sichern.
@@ -15,6 +18,10 @@ je nach Modus des ersten Zugriffes (Read oder Write).
 Das 'PIPE-Filesystem' bietet damit eine direkte Schnittstelle
 zwischen Client Anwendungen und Linux Programmen.
 
+2.  Beispiele
+
+2.1 Dos->Linux, Linux->Dos Backup
+
 Die Loesung des obigen Problems ergab sich dann mit folgendem einfachen
 Shell Script, welches im PIPE-Filesystem hinterlegt wurde.
 
@@ -29,13 +36,15 @@ case "$1" in
         # save directory /u3/mar
         ;;
 *)
-	;;
+        ;;
 esac
 
 Unter DOS kann nun diese 'Pipe Datei' mit dem Copy Befehl in eine
 lokale Datei 'kopiert' werden ( -> Sichern ) bzw. es
 kann die lokale Datei auf diese 'Pipe Datei' kopiert werden.
 ( -> Ruecksichern )
+
+2.2 Drucken ueber Pipes
 
 Ein einfaches Drucken kann z.B. mit folgendem Mini Script realisiert werden.
 Anstatt des Scriptes reicht in diesem Fall natuerlich auch ein link auf
@@ -45,6 +54,93 @@ Anstatt des Scriptes reicht in diesem Fall natuerlich auch ein link auf
 /usr/bin/lpr
 
 Dadurch kann ein capture unter DOS/Windows entfallen.
+
+2.3 Private Windowsinstallation fuer jeden Netzbenutzer
+
+(Beispiel von Sascha Herrmann <sascha@system.rhein-main.de>)
+
+Die Idee fuer diesen Script, war auf einem Netz mit Diskless PCs, die ueber
+mars-nwe ihr Dos/Windows System bekommen, fuer jeden einzelnen Benutzer eine
+eigene Windowsconfiguration zu bekommen.
+Hierfuer habe ich einen kleinen Shellscript geschrieben, der diese Aufgabe
+bisher recht gut erledigt, ohne viel Speicherplatz zu verschwenden.
+
+Fuer den Skript muss zunaechst einmal Windows in mehrere Teile aufgesplittet
+werden, einen gemeinsamen Teil, auf den kein Schreibzugriff noetig ist
+(*.exe, *.dll etc.) und einen Teil auf den Schreibzugriff noetig ist (*.ini
+etc.). Windows bringt mit der Serverinstallation schon eine moeglichkeit die
+Installation in zwei Teile aufzuspalten. setup /a erzeugt ein Verzeichnis,
+das von allen Benutzern gemeinsam benutzt werden kann und setup /n erzeugt
+dann eine Benutzerinstallation, die nur noch ca. 500kb gross ist. Das so
+erzeugte Verzeichnis wird nun auf den Server kopiert und dort nochmal in
+zwei Teile aufgeteilt (nach dem oben beschriebenen Schema).
+
+Der Skript kopiert und linkt nun einfach die Dateien aus dem mit setup /n
+installierten Dateien in ~/windows/windows. Wenn man nun auf den Dosclient
+das Volume \\SERVER\HOMEDIR\WINDOWS auf Laufwerk d: und das mit setup /a
+erzeugte Verzeichnis auf ein anderes Laufwerk einbindet hat man eine
+funktionierende Windowsinstallation, die pro Benutzer grade einmal 80kb
+Plattenplatz wegnimmt.
+
+Der Skript wird nach jedem login von dem Dosclient durch einen type auf die
+Datei ausgefuehrt und kopiert alle Dateien mit cp -au (u steht fuer Update,
+daher nur neuere Dateien werden kopiert) aus $TEMPLATE/dynamic nach
+~/windows/windows und legt fuer jede Datei aus $TEMPLATE/static einen
+symbolischen link in ~/windows/windows an. Damit kann man die mit setup -n
+erstellten Dateien noch einmal in einen Teil mit und einem ohne
+Schreibzugriff unterteilen.
+Leider setzt mars-nwe (zumindest in 0.99.pl4) in Pipescripts die
+umgebungsvariable $HOME immer auf /root, daher lese ich das Heimatverzeichnis
+mit dem gethomedir.pl script aus /etc/passwd aus.
+
+--------------------------------------------------------------------
+#!/bin/sh
+# mkwin Pipeskript
+#
+# !!!!ACHTUNG!!!!
+# Wenn in $home/ eine Datei windows oder windows/windows exestiert,
+# wird diese ohne nachfrage geloescht
+PATH="/bin:/usr/bin"
+
+TEMPLATE="/var/spool/nwserv/windows/template"
+home=`/var/spool/nwserv/pipe/gethomedir.pl $UID`
+case "$1" in
+ 'READ')
+         if ! test -d $home/windows ; then
+          rm -rf $home/windows
+         fi
+         if ! test -d $home/windows/windows ; then
+          rm -rf $home/windows/windows > /dev/null
+          mkdir -pm 0700 $home/windows/windows
+         fi
+         for i in $TEMPLATE/static/* ; do
+          ln -s $i $home/windows/windows
+         done
+         cp -au $TEMPLATE/dynamic/* $home/windows/windows
+        ;;
+esac
+-----------------------------------------------------------------
+#!/usr/bin/perl
+#
+# File: gethomedir.pl
+#
+print "$1\n";
+open(PW, "/etc/passwd");
+while ($line=<PW>) {
+ chop($line);
+ ($uid, $home) = ($line=~
+/[^\:]*\:[^\:]*\:([\d]*)\:[^\:]*\:[^\:]*\:([^\:]*)\:/
+);
+
+ if ($uid == $ARGV[0]) {
+  print "$home";
+ }
+
+}
+close(PW);
+------------------------------------------------------------------
+
+2.4 andere Beispiele
 
 In dem Verzeichnis examples gibt es als zusaetzliches Beispiel
 die Programmpaare unxcomm<->comm und sendm<->unxsendm.
@@ -56,3 +152,4 @@ Ueber weitere dokumentierte Anwendungen bzw. Anregungen zu dem
 PIPE-Filesystem wuerde ich mich freuen.
 
 Martin
+

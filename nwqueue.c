@@ -580,8 +580,14 @@ int nw_get_queue_job_list(uint32 q_id, uint32 offset, uint8 *responsedata)
       }
       qj=qj->next;
     }
+#if 0
     U32_TO_BE32(fullcount, responsedata);  
     U32_TO_BE32(count,     responsedata+4); 
+#else
+    /* georg@globaltrading.net */
+    U32_TO_32(fullcount, responsedata);  
+    U32_TO_32(count,     responsedata+4); 
+#endif
     result=8+count*4;
   }
   return(result);

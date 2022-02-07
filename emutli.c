@@ -20,25 +20,15 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
+#include "net.h"
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
-#if 0
-# include <linux/sockios.h>
-#endif
-#include "net.h"
-#if 0
-# include <linux/if.h>
-# include <linux/route.h>
-# include <linux/in.h>
-#else
-# include <net/if.h>
-# include <net/route.h>
-# include <netinet/in.h>
-#endif
+#include <net/if.h>
+#include <net/route.h>
+#include <netinet/in.h>
+
 #include <errno.h>
 
 #ifndef DO_IPX_SEND_TEST 

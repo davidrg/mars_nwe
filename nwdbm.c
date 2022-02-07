@@ -20,7 +20,6 @@
  * This code is only called from the process 'nwbind'
  * So, there is no need for locking or something else.
  */
-
 #include "net.h"
 #include "nwdbm.h"
 #include "nwcrypt.h"
@@ -122,7 +121,7 @@ static int dbminit(int what_dbm)
 #else
   return(x_dbminit(dbm_fn[what_dbm]));
 #endif
-  if (result) 
+  if (result)
     errorp(0, "dbminit", "on %s", dbm_fn[what_dbm]);
   return(result);
 }
@@ -162,7 +161,6 @@ void sync_dbm()
 #endif
 }
 
-
 #ifdef USE_GDBM
 static datum firstkey(void)
 {
@@ -190,6 +188,7 @@ static datum fetch(datum key)
   last_dptr=result.dptr;
   return(result);
 }
+
 #  define delete(key)         gdbm_delete(my_dbm, key)
 #  define store(key, content) gdbm_store(my_dbm,  key, content, GDBM_REPLACE)
 #else
@@ -435,10 +434,10 @@ static int prop_delete_member(uint32 obj_id, int prop_id, int prop_security,
 	    memcpy(&val, v, sizeof(NETVAL));
 #else       /* new since 0.99.pl7 */
 	    memcpy(&val, v,  p - (uint8*)v);
-            if (k<32) 
+            if (k<32)
               memcpy(&val.value[(k-1)*4], p+4, (32-k) * 4);
             memset(&val.value[124], 0, 4);
-#endif	    
+#endif
 	    data.dptr = (char*)&val;
 	    if (store(key, data)) result=-0xff;
 	    else result=0;
@@ -654,7 +653,6 @@ static int loc_change_prop_security(NETPROP *p, uint32 obj_id)
   return(result);
 }
 
-
 static int loc_get_prop_val(uint32 obj_id, int prop_id, int prop_security,
              int segment, uint8 *property_value, uint8 *more_segments)
 {
@@ -764,9 +762,9 @@ static int prop_add_member(uint32 obj_id, int prop_id,  int prop_security,
 	  if (store(key, data)) result=-0xff;
 	  goto L1;
         }
-      } else 
+      } else
         /* no more free cells, perhaps we need better result code */
-        result=-0xff; 
+        result=-0xff;
     } /* while */
   } else result = -0xff;
 L1:
@@ -1254,10 +1252,10 @@ uint32 nw_new_obj_prop(uint32 wanted_id,
 /* some property names */
 /*STANDARD NOVELL properties */
 static uint8 *pn_password=(uint8*)        "PASSWORD";
-static uint8 *pn_login_control=(uint8*)   "LOGIN_CONTROL"; 
-static uint8 *pn_security_equals=(uint8*) "SECURITY_EQUALS"; 
-static uint8 *pn_groups_i_m_in=(uint8*)   "GROUPS_I'M_IN"; 
-static uint8 *pn_group_members=(uint8*)   "GROUP_MEMBERS"; 
+static uint8 *pn_login_control=(uint8*)   "LOGIN_CONTROL";
+static uint8 *pn_security_equals=(uint8*) "SECURITY_EQUALS";
+static uint8 *pn_groups_i_m_in=(uint8*)   "GROUPS_I'M_IN";
+static uint8 *pn_group_members=(uint8*)   "GROUP_MEMBERS";
 
 
 /* OWN properties */
@@ -1318,7 +1316,7 @@ int get_groups_i_m_in(uint32 id, uint32 *gids)
   uint8 buff[128];
   uint8 more_segments=0;
   uint8 property_flags;
-  int   result=nw_get_prop_val_by_obj_id(id, 1, 
+  int   result=nw_get_prop_val_by_obj_id(id, 1,
                   pn_groups_i_m_in, strlen(pn_groups_i_m_in),
                   buff, &more_segments, &property_flags);
   if (!result) {
@@ -1388,7 +1386,7 @@ int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
                                 obj_id, vgl_key, akt_key);
   if (result < 1) return(result);
 
-  if (obj_id == 1) return(-0xff); 
+  if (obj_id == 1) return(-0xff);
   /* the real SUPERVISOR must use netware passwords */
 
   if (password_scheme & PW_SCHEME_LOGIN) {
@@ -1622,7 +1620,7 @@ static int nw_new_add_prop_member(uint32 obj_id, char *propname,
   prop.flags    = (uint8) (propflags | P_FL_SET); /* always SET */
   prop.security = (uint8) propsecurity;
   result = nw_create_obj_prop(obj_id, &prop);
-  
+
   if (!result || result == -0xed) {  /* created or exists */
     if (-0xea == (result=prop_find_member(obj_id, prop.id, prop.security,  member_id)))
       return(prop_add_member(obj_id, prop.id, prop.security,  member_id));
@@ -1802,7 +1800,7 @@ extern int test_allow_password_change(uint32 id)
                    buff, &more_segments, &property_flags);
   if (result > -1 && (GET_BE32(buff) & 1))
     return(-0xff);
-  
+
   /* hint from <root@cs.imi.udmurtia.su> (Mr. Charlie Root) */
   result=nw_get_prop_val_by_obj_id(id, segment,
                      pn_login_control, strlen(pn_login_control),
@@ -1811,7 +1809,7 @@ extern int test_allow_password_change(uint32 id)
   /* can user change password ? */
   if (result > -1 && (buff[62] & 1) ) /* Restriction Mask */
     return(-0xff);
-  
+
   return(0);
 }
 
@@ -1834,9 +1832,13 @@ static void add_user_g(uint32 u_id,   uint32 g_id,
                   int flags, int set_flags)
 {
                                       /*   Typ    Flags  Security */
+#if 0  /* perhaps Compiler BUG ? problem since gcc 2.7.2.3, 29-Jan-99 */
   dont_ch = (nw_new_obj(&u_id,  name,              0x1  , 0x0,  0x31)
               && dont_ch);
-
+#else
+  if (!nw_new_obj(&u_id,  name,              0x1  , 0x0,  0x31))
+    dont_ch = 0;
+#endif
   if (dont_ch) return;
 
   XDPRINTF((1, 0, "Add/Change User='%s', UnixUser='%s'",
@@ -1972,7 +1974,7 @@ static void correct_user_dirs(uint32 objid, uint8 *objname, int uid, int gid)
     upstr(buf1);
   }
 
-  if (sys_has_trustee) 
+  if (sys_has_trustee)
     mask = 0700; /* other rights may be given via trustees */
   else
     mask = 0733; /* everybody should be able to write */
@@ -1980,7 +1982,7 @@ static void correct_user_dirs(uint32 objid, uint8 *objname, int uid, int gid)
   (void)mkdir(fndir, mask);
   (void)chmod(fndir, mask);
   (void)chown(fndir, uid, gid);
-  
+
   if ((f=opendir(fndir)) != (DIR*)NULL) {
     struct dirent* dirbuff;
     *pp='/';
@@ -1995,7 +1997,7 @@ static void correct_user_dirs(uint32 objid, uint8 *objname, int uid, int gid)
           fprintf(f, "REM auto created by mars_nwe\r\n");
           fclose(f);
           (void)chown(fndir, uid, gid);
-          chmod(fndir, 0600); 
+          chmod(fndir, 0600);
         }
       }
     }
@@ -2006,8 +2008,8 @@ static void correct_user_dirs(uint32 objid, uint8 *objname, int uid, int gid)
         uint8 *name=(uint8*)(dirbuff->d_name);
         if (name[0] != '.' && name[1] != '.' && name[1] != '\0') {
           strcpy(pp+1, name);
-          if (  !lstat(fndir, &lstatb) 
-             && !S_ISLNK(lstatb.st_mode) && 
+          if (  !lstat(fndir, &lstatb)
+             && !S_ISLNK(lstatb.st_mode) &&
               lstatb.st_uid != 0 && lstatb.st_gid != 0
               && lstatb.st_uid != uid) {
             (void)chown(fndir, uid, gid);
@@ -2066,21 +2068,21 @@ static void check_compress_bindery()
   int    propok    = 0;
   uint32 objs[LOC_MAX_OBJS];
   int    ocount    = 0;
-  
+
   /* for deleting props */
   uint32 d_prop_oid[LOC_MAX_OBJS];
   uint8  d_props[LOC_MAX_OBJS];
   int    d_pcount  = 0;
-  
+
   uint32 *prop_oid = NULL;
   uint8  *props    = NULL;
   uint8  *props_fl = NULL;
   int    pcount    = 0;
   long   tstart    = time(NULL);
-  
+
   sync_dbm();
   XDPRINTF((1,0, "%s starts...", errstr));
-  
+
   if (!dbminit(FNOBJ)){
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);
@@ -2096,15 +2098,15 @@ static void check_compress_bindery()
     }
     qsort(objs, (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32);
     XDPRINTF((1,0, "%s after qsort", errstr));
-    
+
     /* we test whether qsort/bsearch will work fine */
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);
       if (data.dptr) {
         NETOBJ *obj=(NETOBJ*)data.dptr;
-        if (NULL == bsearch(&obj->id, objs, 
+        if (NULL == bsearch(&obj->id, objs,
              (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32)) {
-          errorp(10, errstr, "bsearch failed at id 0x%lx.", 
+          errorp(10, errstr, "bsearch failed at id 0x%lx.",
                             (unsigned long)obj->id);
           dbmclose();
           return;
@@ -2112,7 +2114,7 @@ static void check_compress_bindery()
       }
     }
     dbmclose();
-    
+
     /* handle all properties */
     if (!dbminit(FNPROP)){
       propok++;
@@ -2124,7 +2126,7 @@ static void check_compress_bindery()
         data = fetch(key);
         if (data.dptr) {
 	  NETPROP *prop=(NETPROP*)data.dptr;
-          if (NULL == bsearch(&prop->obj_id, objs, 
+          if (NULL == bsearch(&prop->obj_id, objs,
              (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32)) {
             XDPRINTF((1,0, "will delete property %s for obj_id 0x%lx",
                            prop->name, prop->obj_id));
@@ -2143,15 +2145,15 @@ static void check_compress_bindery()
           }
         }
       }  /* for */
-    } 
+    }
     dbmclose();
     /* now delete properties which aere not assigned to an object */
-    while (d_pcount--) 
-       loc_delete_property(d_prop_oid[d_pcount], (char*)NULL, 
+    while (d_pcount--)
+       loc_delete_property(d_prop_oid[d_pcount], (char*)NULL,
                             d_props[d_pcount], 1);
 
     XDPRINTF((1,0, "%s after deleting props, propok=%d", errstr, propok));
-    
+
     if (propok) {  /* correct/compress propertie values */
       int  fd=-1;
       char tmpfn[300];
@@ -2173,11 +2175,11 @@ static void check_compress_bindery()
             uint8   *ep    = valexp.value;
             val.obj_id     = prop_oid[i];
             val.prop_id    = props[i];
-            val.segment    = (uint8)0;  
+            val.segment    = (uint8)0;
             if (is_set) {
               memset(&valexp, 0, sizeof(NETVAL));
-              valexp.obj_id  = val.obj_id;  
-              valexp.prop_id = val.prop_id; 
+              valexp.obj_id  = val.obj_id;
+              valexp.prop_id = val.prop_id;
               valexp.segment = 1;
               d_pcount       = 0;
             }
@@ -2191,7 +2193,7 @@ static void check_compress_bindery()
                   while (k++ < 32){
 	            uint32 id = GET_BE32(p);
                     if (id) {
-                      if (NULL != bsearch(&id, objs, 
+                      if (NULL != bsearch(&id, objs,
                         (size_t)ocount, (size_t)sizeof(uint32), cmp_uint32)) {
                         int l=-1;
                         while (++l < d_pcount) {
@@ -2202,7 +2204,7 @@ static void check_compress_bindery()
                         }
                       } else id=(uint32)0;
                     }
-                    if (id) {  
+                    if (id) {
                       d_prop_oid[d_pcount++] = id;
                       if (eitems > 31) {
                         if (sizeof(NETVAL) != write(fd, &valexp, sizeof(NETVAL))){
@@ -2230,7 +2232,7 @@ static void check_compress_bindery()
                 }
               }
             } /* while */
-            
+
             if (is_set && eitems) {
               if (sizeof(NETVAL) != write(fd, &valexp, sizeof(NETVAL))){
                 errorp(1, errstr, "writeerror on %s", tmpfn);
@@ -2263,7 +2265,7 @@ static void check_compress_bindery()
             }
           } /* while */
         } else {
-          errorp(1, errstr, "fatal error bindery file %s saved.", 
+          errorp(1, errstr, "fatal error bindery file %s saved.",
              dbm_fn[FNVAL]);
           exit(1);
         }
@@ -2273,7 +2275,7 @@ static void check_compress_bindery()
       }
     }
     dbmclose();
-  } 
+  }
   sync_dbm();
   xfree(prop_oid);
   xfree(props);
@@ -2299,12 +2301,12 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   int  make_tests    = 1;
   char sysentry[256];
   sysentry[0] = '\0';
-  
+
   if (is_nwe_start) {
     int i = get_ini_int(16);
     if (i > -1) make_tests=i;
-    if (make_tests > 1) 
-      check_compress_bindery();   
+    if (make_tests > 1)
+      check_compress_bindery();
   }
 
   ge_id = nw_new_obj_prop(ge_id, "EVERYONE",        0x2,   0x0,  0x31,
@@ -2560,7 +2562,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
         if (obj.type == 1) {
           int gid;
           int uid;
-          if (!get_guid(&gid, &uid, obj.id, NULL)) 
+          if (!get_guid(&gid, &uid, obj.id, NULL))
             correct_user_dirs(obj.id, obj.name, uid, gid);
           else
             errorp(10, "Cannot get unix uid/gid", "User=`%s`", obj.name);
@@ -2581,9 +2583,9 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
             errorp(10, "Cannot get queue dir", "Queue=%s", obj.name);
         }
       }
-    
+
     }
-    
+
     if (is_nwe_start)  {
       /* do only init_queues when starting nwserv */
       init_queues(entry18_flags);  /* nwqueue.c */
@@ -2605,12 +2607,12 @@ static void nw_init_dbm_1(char *servername, ipxAddr_t *adr)
   int     anz=0;
   uint32  objs[LOC_MAX_OBJS];
   uint8   props[LOC_MAX_OBJS];
-  
+
   create_nw_db(dbm_fn[FNOBJ],  0);
   create_nw_db(dbm_fn[FNPROP], 0);
   create_nw_db(dbm_fn[FNVAL],  0);
   create_nw_db(dbm_fn[FNIOBJ], 0);
-  
+
   if (!dbminit(FNOBJ)){
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);

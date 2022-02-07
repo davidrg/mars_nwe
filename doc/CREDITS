@@ -40,6 +40,12 @@ Fritz Elfert <fritz@wuemaus.franken.de>
 Peter Gerhard <pgerhard@jpn.tuv.com>
         testings, bugreport, patches.
 
+Georg  <georg@globaltrading.net>
+        fixed bug with print queue handling.
+
+Sascha Herrmann <sascha@system.rhein-main.de>
+        docs, scripts
+
 Victor Khimenko <khim@mccme.ru>
         cyrillic filename patches
 
@@ -63,6 +69,9 @@ James B. MacLean <macleajb@ednet.ns.ca>
 
 Louis Zammit Mangion <lzamm@phys.um.edu.mt>
         testings+bugfixes
+
+Mendel Mobach <mendel@mobach.nl>
+        some doku
 
 Norbert Nemec <nobbi@cheerful.com>
         some patches
