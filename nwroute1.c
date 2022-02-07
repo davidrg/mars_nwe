@@ -150,11 +150,9 @@ void send_sap_rip_broadcast(int mode)
   IPX_DATA    ipx_data;
   ipxAddr_t   wild;
   memset(&wild, 0, sizeof(ipxAddr_t));
+  memset(wild.node, 0xFF, IPX_NODE_SIZE); /* broadcast */
 #ifdef FREEBSD
-  U32_TO_BE32(internal_net, wild.net);  /* tell ONLY to IPXrouted  */
-  memcpy(wild.node, my_server_adr.node, IPX_NODE_SIZE);
-#else
-  memset(wild.node, 0xFF, IPX_NODE_SIZE);
+  U32_TO_BE32(internal_net, wild.net); /* there is no default net */
 #endif
   U16_TO_BE16(SOCK_SAP,   wild.sock);
   memset(&ipx_data, 0, sizeof(ipx_data.sip));
@@ -169,6 +167,16 @@ void send_sap_rip_broadcast(int mode)
                  sizeof(ipx_data.sip),
                  (char *)&(ipx_data.sip),
                  &wild, "SIP Broadcast");
+#ifdef FREEBSD
+  U32_TO_BE32(internal_net, wild.net);
+  memcpy(wild.node, my_server_adr.node, IPX_NODE_SIZE);
+  /* tell to IPXrouted for single server case */
+  send_ipx_data(sockfd[SAP_SLOT],
+                 4,  /* this is the official packet typ for SAP's */
+                 sizeof(ipx_data.sip),
+                 (char *)&(ipx_data.sip),
+                 &wild, "SIP Broadcast");
+#endif
   if (!mode) get_servers();
   if (mode == 1) {
     U16_TO_BE16(SOCK_SAP,   wild.sock);

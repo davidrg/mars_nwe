@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "04-Jun-98"
+#define REVISION_DATE "25-Oct-98"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message and queue handling */
 
@@ -1096,8 +1096,8 @@ static void handle_fxx(int gelen, int func)
                       internal_act = 0;
                     }
                     if (result < 0) completition = (uint8) -result;
-                    XDPRINTF((2,0, "Keyed Verify PW from OBJECT='%s', result=%d",
-                       obj.name, result));
+                    XDPRINTF((2,0, "Keyed Verify PW from OBJECT='%s', type=0x%x, result=%d",
+                       obj.name, obj.type,  result));
                   }
                   break;
 
@@ -1124,8 +1124,8 @@ static void handle_fxx(int gelen, int func)
 		    }
 
                     if (result< 0) completition = (uint8) -result;
-                    XDPRINTF((2, 0, "Keyed Change PW from OBJECT='%s', result=0x%x",
-                      obj.name, result));
+                    XDPRINTF((2, 0, "Keyed Change PW from OBJECT='%s', type=0x%x, result=0x%x",
+                      obj.name, obj.type, result));
                   }
                   break;
 
@@ -1200,6 +1200,20 @@ static void handle_fxx(int gelen, int func)
                      data_len=sizeof(struct XDATA)-1+5*servers;
                    } else
                      completition=(uint8)-result;
+                  }
+                  break;
+
+     case 0x67 :    /* Set Queue Current Status,old */
+     case 0x7e :  { /* Set Queue Current Status   */
+                    uint32 q_id =  GET_BE32(rdata);
+                    int  status =  *(rdata+4);
+                    int result  =  
+                      (act_c->id_flags&1)  /*  TODO BETTER */
+                        ? nw_set_queue_status(q_id, status)
+                        : -0xd3;  /* no rights */
+                    if (result< 0) 
+                      completition=(uint8)-result;
+                    /* NO REPLY */
                   }
                   break;
 
@@ -1396,16 +1410,20 @@ static void handle_fxx(int gelen, int func)
                   } break;
 
      case 0x81 :  { /* Get Queue Job List */
-                   NETOBJ    obj;
+                   uint32 q_id     = GET_BE32(rdata);
+                   uint32 offset   = GET_BE32(rdata+4); 
+#if 0                   
                    struct XDATA {
                       uint8 total_jobs[4];
-                      uint8 reply_numbers[4];
-                      uint8 job_list[4]; /* this is repeated */
+                      uint8 reply_numbers[4]; /* max. 125 replies */
+                      uint8 job_list[4];      /* this is repeated */
                    } *xdata = (struct XDATA*) responsedata;
-                   obj.id =  GET_BE32(rdata);
-                   XDPRINTF((2, 0, "TODO:GET QUEUE JOB List of Q=0x%lx", obj.id));
-                   memset(xdata, 0, sizeof(struct XDATA));
-                   data_len=sizeof(struct XDATA);
+#endif                   
+                   int result=nw_get_queue_job_list(q_id, offset, responsedata);
+                   if (result > -1) 
+                     data_len=result;
+                   else
+                     completition=(uint8)-result;
                   }break;
 
      case 0x72:      /* finish servicing queue job  (old)*/
@@ -1750,6 +1768,7 @@ int main(int argc, char *argv[])
     if (t_rcvudata(ncp_fd, &ud, &rcv_flags) > -1){
       time(&akttime);
       XDPRINTF((10, 0, "NWBIND-LOOP from %s", visable_ipx_adr(&from_addr)));
+      act_ncpsequence = (int)ncprequest->sequence;
       if ( ncprequest->type[0] == 0x22
         && ncprequest->type[1] == 0x22) {
         act_connection  = (int)ncprequest->connection
@@ -1770,8 +1789,10 @@ int main(int argc, char *argv[])
              visable_ipx_adr(&from_addr), act_connection));
           }
         } else {
-          XDPRINTF((1, 0, "NWBIND-LOOP connection=%d is wrong",
-            act_connection));
+          XDPRINTF((1, 0, "NWBIND-LOOP connection=%d,adr=%s is wrong",
+            act_connection,
+            visable_ipx_adr(&from_addr)
+            ));
         }
       } else if ( ncprequest->type[0] == 0xee
                && ncprequest->type[1] == 0xee

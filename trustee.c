@@ -1,4 +1,4 @@
-/* trustee.c 13-May-98 */
+/* trustee.c 31-Jul-98 */
 /* (C)opyright (C) 1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -85,8 +85,6 @@ static int un_nw_rights(int voloptions, uint8 *unixname, struct stat *stb)
     } else if ((!acc||is_dir||is_pipe_command) && !(acc&X_OK)) {
       norights = rights;
     } else if (is_pipe_command) {
-      if (acc & X_OK)
-        acc &= W_OK;
       norights |= TRUSTEE_E; /* no erase  right */
       norights |= TRUSTEE_M; /* no modify rights */
       norights |= TRUSTEE_C; /* no creat  rights */
@@ -249,10 +247,10 @@ static int find_id_trustee(FILE_TRUSTEE_NODE *tr, uint32 id)
 static int     grps_count=0;
 static uint32 *grps_grps=NULL;
 
-static int cmp_uint32(const uint32 *e1, const uint32 *e2)
+static int cmp_uint32(const void *e1, const void *e2)
 {
-  if (*e1 < *e2) return(-1);
-  if (*e1 > *e2) return(1);
+  if (*((uint32*)e1) < *((uint32*)e2)) return(-1);
+  if (*((uint32*)e1) > *((uint32*)e2)) return(1);
   return(0);
 }
 
@@ -398,16 +396,20 @@ void tru_free_file_trustees_from_disk(int volume, int dev, ino_t inode)
 
 int tru_del_trustee(int volume, uint8 *unixname, struct stat *stb, uint32 id)
 {
+  int result=-0x85; /* we say no privileges */
   int voloptions     = get_volume_options(volume);
   if (  (voloptions & VOL_OPTION_TRUSTEES) && 
         ( (tru_get_eff_rights(volume, unixname, stb) & TRUSTEE_A) 
      || (act_id_flags&1)) )  {
-    int result=del_trustee_from_disk(volume, stb->st_dev, stb->st_ino, id);
+    result=del_trustee_from_disk(volume, stb->st_dev, stb->st_ino, id);
     if (!result)
       tru_vol_sernum(volume, 1);  /* trustee sernum needs updated */
-    return(result);
   }
-  return(-0x85); /* we say no privileges */
+  MDEBUG(D_TRUSTEES, {
+    xdprintf(1,0, "tru_del_trustee: id=%08lx, volume=%d, file=`%s`, result=-0x%x", 
+      id, volume, unixname, -result);
+  })
+  return(result); 
 }
 
 static FILE_TRUSTEE_NODE *create_trustee_node(int volume, int dev, 
@@ -522,12 +524,13 @@ int tru_add_trustee_set(int volume, uint8 *unixname,
 {
   int voloptions     = get_volume_options(volume);
   int own_eff_rights;
+  int result=-0x85; /* we say no privileges */
   if (  (voloptions & VOL_OPTION_TRUSTEES) && 
      (  ((own_eff_rights=tru_get_eff_rights(volume, unixname, stb)) & TRUSTEE_A) 
      || (act_id_flags&1) ))  {
     FILE_TRUSTEE_NODE *tr=find_trustee_node(volume, stb->st_dev, stb->st_ino);
     if (tr && (!(tr->mode_flags&0x18) || !act_uid)) {
-      int unixnamlen = get_volume_unixname(volume, NULL);
+      int volumenamelen = get_volume_unixname(volume, NULL);
       uint8  ufnbuf[2];
       uint8  *ufn;
       seteuid(0);
@@ -537,10 +540,18 @@ int tru_add_trustee_set(int volume, uint8 *unixname,
           if (nwoic->trustee&TRUSTEE_S)
             nwoic->trustee&=~TRUSTEE_S;
         }
-        put_trustee_to_disk(volume, stb->st_dev, stb->st_ino, nwoic->id, nwoic->trustee);
+        result=put_trustee_to_disk(volume, stb->st_dev, stb->st_ino, nwoic->id, nwoic->trustee);
+        MDEBUG(D_TRUSTEES, {
+          xdprintf(1,0, "tru_add_trustee_set: id=%08lx, trustee=0x%04x, volume=%d, file=`%s`, result=-0x%x", 
+              nwoic->id, nwoic->trustee, volume,  unixname, -result);
+        })
+        if (result){ 
+          reseteuid();
+          goto func_err;
+        }
         nwoic++;
       }
-      ufn=unixname+unixnamlen;
+      ufn=unixname+min(strlen(unixname), volumenamelen);
       if (!*ufn) { /* is volume direct */
         ufn=ufnbuf;
         *ufn='.';
@@ -552,10 +563,11 @@ int tru_add_trustee_set(int volume, uint8 *unixname,
       return(0);
     }
   }
-  XDPRINTF((1,0, "user %x tried to add trustees to %s", 
-             act_obj_id, unixname));
+func_err:
+  XDPRINTF((1,0, "user %08x tried to add trustees to %s, result=-0x%x", 
+             act_obj_id, unixname, -result));
   tru_free_cache(-1);
-  return(-0x85); /* we say no privileges */
+  return(result); /* we say no privileges */
 }
 
 int tru_get_trustee_set(int volume, uint8 *unixname, 

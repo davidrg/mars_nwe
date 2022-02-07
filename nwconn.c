@@ -481,9 +481,9 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            uint8   path[2];
                          } *input = (struct INPUT *) (ncprequest);
                          int result = nw_add_trustee(
-                             input->dir_handle, 
-                             input->path, input->pathlen, 
-                             GET_BE32(input->trustee_id),    
+                             input->dir_handle,
+                             input->path, input->pathlen,
+                             GET_BE32(input->trustee_id),
                              (int)input->trustee_right_mask,
                              0);
                          if (result) completition = (uint8) -result;
@@ -493,14 +493,14 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            uint8   div[3];            /* 0x0, dlen, ufunc  */
                            uint8   dir_handle;        /* Handle            */
                            uint8   trustee_id[4];     /* Trustee Object ID */
-                           uint8   reserved;        
+                           uint8   reserved;
                            uint8   pathlen;
                            uint8   path[2];
                          } *input = (struct INPUT *) (ncprequest);
                          int result = nw_del_trustee(
-                             input->dir_handle, 
-                             input->path, input->pathlen, 
-                             GET_BE32(input->trustee_id),    
+                             input->dir_handle,
+                             input->path, input->pathlen,
+                             GET_BE32(input->trustee_id),
                              0); /* normal */
                          if (result) completition = (uint8) -result;
                        } else  if (*p == 0xf){ /* rename dir */
@@ -606,9 +606,9 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            uint8   path[2];
                          } *input = (struct INPUT *) (ncprequest);
                          int result = nw_set_dir_info(
-                             input->dir_handle, 
-                             input->path, input->pathlen, 
-                             GET_BE32(input->owner_id),    
+                             input->dir_handle,
+                             input->path, input->pathlen,
+                             GET_BE32(input->owner_id),
                              (int)input->new_max_rights,
                              input->creation_date,
                              input->creation_time);
@@ -629,7 +629,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
 #endif
                          completition = 0xfb;  /* !!!!! TODO !!!! */
                        } else  if (*p == 0x1e){
-                         /* SCAN a Directory */
+                         /* SCAN a Directory, e.g. used by ndir.exe */
                          struct INPUT {
                            uint8   header[7];        /* Requestheader */
                            uint8   div[3];            /* 0x0, dlen, ufunc */
@@ -697,8 +697,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          struct INPUT {
                            uint8   header[7];        /* Requestheader */
                            uint8   div[3];            /* 0x0, dlen, ufunc */
-                           uint8   dir_handle;       
-                           uint8   attrib;        
+                           uint8   dir_handle;
+                           uint8   attrib;
                            NW_SET_DIR_INFO f;
                          } *input = (struct INPUT *) (ncprequest);
                          int result = nw_set_a_directory_entry(
@@ -736,7 +736,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            memset(xdata, 0, sizeof(*xdata));
                            xdata->entries = result;
                            while(++i < result) {
-                             U32_TO_BE32(ids[i],      idsp); 
+                             U32_TO_BE32(ids[i],      idsp);
                              idsp+=4;
                              U16_TO_16(trustees[i], trp); /* LO - HI */
                              trp+=2;
@@ -754,9 +754,9 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            uint8   path[2];
                          } *input = (struct INPUT *) (ncprequest);
                          int result = nw_add_trustee(
-                             input->dir_handle, 
-                             input->path, input->pathlen, 
-                             GET_BE32(input->trustee_id),    
+                             input->dir_handle,
+                             input->path, input->pathlen,
+                             GET_BE32(input->trustee_id),
                              GET_16(input->trustee_rights),
                              1); /* extended */
                          if (result) completition = (uint8) -result;
@@ -820,14 +820,14 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            uint8   div[3];            /* 0x0, dlen, ufunc  */
                            uint8   dir_handle;        /* Handle            */
                            uint8   trustee_id[4];     /* Trustee Object ID */
-                           uint8   reserved;      
+                           uint8   reserved;
                            uint8   pathlen;
                            uint8   path[2];
                          } *input = (struct INPUT *) (ncprequest);
                          int result = nw_del_trustee(
-                             input->dir_handle, 
-                             input->path, input->pathlen, 
-                             GET_BE32(input->trustee_id),    
+                             input->dir_handle,
+                             input->path, input->pathlen,
+                             GET_BE32(input->trustee_id),
                              1); /* extended */
                          if (result) completition = (uint8) -result;
                        } else  if (*p == 0x2c){
@@ -1031,7 +1031,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                     struct INPUT {
                       uint8   header[7];     /* Requestheader     */
                       uint8   div[3];        /* 0x0, dlen, ufunc  */
-                      uint8   volume;     
+                      uint8   volume;
                       uint8   sequence[2];   /* trustee searchsequence */
                       uint8   id[4];         /* Trustee Object ID */
                     } *input = (struct INPUT *) (ncprequest);
@@ -1406,7 +1406,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          uint8   fhandle[4];     /* filehandle */
                        } *input = (struct INPUT *)ncprequest;
                        uint32 fhandle = GET_32(input->fhandle);
-                       completition = (uint8)(-nw_close_file(fhandle, 
+                       completition = (uint8)(-nw_close_file(fhandle,
                                  0, (int)(ncprequest->task)));
 
 #if TEST_FNAME

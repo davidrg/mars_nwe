@@ -70,9 +70,9 @@ extern  NW_NET_DEVICE **net_devices;
 
 #if INTERNAL_RIP_SAP
 # define RIP_SLOT           (SAP_SLOT   +1)
+# define ROUTE_SLOT         (RIP_SLOT   +1)
+# define DIAG_SLOT          (ROUTE_SLOT +1)
 # if 0
-#   define ROUTE_SLOT       (RIP_SLOT   +1)
-#   define DIAG_SLOT        (ROUTE_SLOT +1)
 #   define ECHO_SLOT        (DIAG_SLOT  +1)
 #   define ERR_SLOT         (ECHO_SLOT  +1)
 # endif

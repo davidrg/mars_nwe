@@ -113,7 +113,8 @@ static int open_creat_queue_file(int mode, uint8
            chmod(unixname, 0600);
       } else if (mode == 1) { /* open ro */
          result=file_creat_open(result, (uint8*)unixname,
-                            &stbuff, 0x6, 0x9, 4|8, 0);
+                            &stbuff, 0x6, 0x9, 8, 0);
+                            /* ...............^^^...not &4 !... */
       } else if (mode == 2) { /* open rw  */
          result=file_creat_open(result, (uint8*)unixname,
                             &stbuff, 0x6, 0x6, 4|8, 0);
@@ -186,7 +187,7 @@ int close_queue_job(uint32 q_id, int job_id)
     nw_close_file(jo->fhandle, 0, jo->task);
     result=0;
   }
-  XDPRINTF((5,0,"close_queue_job Q=0x%x, job=%d, result=%d",
+  XDPRINTF(( (result<0) ? 1 :5 ,0,"close_queue_job Q=0x%x, job=%d, result=%d",
         q_id, job_id, result));
   return(result);
 }
@@ -197,7 +198,6 @@ int close_queue_job2(uint32 q_id, int job_id,
 {
   int result = -0xff;
   INT_QUEUE_JOB *jo=find_queue_job(q_id, job_id);
-  XDPRINTF((5,0,"close_queue_job2, Q=0x%x, job=%d", q_id, job_id));
   if (jo) {
     if (prc_len) {
       char unixname[300];
@@ -226,7 +226,7 @@ int close_queue_job2(uint32 q_id, int job_id,
         }
         if (NULL != f) {
           int  is_ok = 0;
-          FILE_PIPE *fp = ext_popen(printcommand, geteuid(), getegid());
+          FILE_PIPE *fp = ext_popen(printcommand, geteuid(), getegid(), 1);
           if (fp) {
             int  k;
             is_ok++;
@@ -259,6 +259,7 @@ int close_queue_job2(uint32 q_id, int job_id,
     }
     free_queue_job(q_id, job_id);
   }
+  XDPRINTF(((result<0)?1:5,0,"close_queue_job2, Q=0x%x, job=%d", q_id, job_id));
   return(result);
 }
 

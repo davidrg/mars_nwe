@@ -1,4 +1,4 @@
-/* tools.c  24-May-98 */
+/* tools.c  21-Oct-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -60,6 +60,20 @@ static char  *modnames[] =
 static char *get_modstr(void)
 {
   return(modnames[in_module]);
+}
+
+static char *get_debstr(int with_time)
+{
+  static char debuf[20];
+  if (with_time) {
+    time_t actualtime=time(NULL);
+    struct tm *ptm=localtime(&actualtime);
+    int l=strftime(debuf, sizeof(debuf)- 4, "%m:%d,%H:%M:%S ", ptm);
+    strmaxcpy(debuf+l, get_modstr(), 3);
+  } else {
+    sprintf(debuf, "%-8s" , get_modstr());
+  }
+  return(debuf);
 }
 
 char *xmalloc(uint size)
@@ -160,7 +174,7 @@ static char *buffered=NULL;
       }
       if (!(mode & 2)) {
         char identstr[200];
-        sprintf(identstr, "%-8s %d %3d", get_modstr(), 
+        sprintf(identstr, "%s %d %3d", get_debstr(0), 
                            act_connection, act_ncpsequence);
         openlog(identstr, LOG_CONS, LOG_DAEMON);
         syslog(LOG_DEBUG, buf);
@@ -173,7 +187,7 @@ static char *buffered=NULL;
       xfree(buf);
     } else {
       if (!(mode & 1))
-        fprintf(logfile, "%-8s %d %3d:", get_modstr(), 
+        fprintf(logfile, "%s %d %3d:", get_debstr(1), 
           act_connection, act_ncpsequence);
       if (p) {
         va_start(ap, p);
@@ -221,7 +235,7 @@ void errorp(int mode, char *what, char *p, ...)
       vsprintf(buf+l, p, ap);
       va_end(ap);
     }
-    sprintf(identstr, "%-8s %d %3d", get_modstr(), act_connection, act_ncpsequence);
+    sprintf(identstr, "%s %d %3d", get_debstr(0), act_connection, act_ncpsequence);
     openlog(identstr, LOG_CONS, LOG_DAEMON);
     syslog(prio, buf);
     closelog();
@@ -230,9 +244,9 @@ void errorp(int mode, char *what, char *p, ...)
   }
   while (1) {
     if (mode==1) 
-      fprintf(lologfile, "\n!! %-8s %d %3d:PANIC !!\n", 
-              get_modstr(), act_connection, act_ncpsequence);
-    fprintf(lologfile, "%-8s %d %3d:%s:%s\n", get_modstr(), act_connection,  
+      fprintf(lologfile, "\n!! %s %d %3d:PANIC !!\n", 
+              get_debstr(1), act_connection, act_ncpsequence);
+    fprintf(lologfile, "%s %d %3d:%s:%s\n", get_debstr(1), act_connection,  
          act_ncpsequence, what, errstr);
     if (p) {
       va_start(ap, p);

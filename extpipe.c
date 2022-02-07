@@ -1,4 +1,4 @@
-/* extpipe.c 08-Aug-97       */
+/* extpipe.c 03-Aug-98       */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -19,7 +19,7 @@
 #include "net.h"
 #include "extpipe.h"
 
-static char **build_argv(char *buf, int bufsize,  char *command)
+static char **build_argv(char *buf, int bufsize,  char *command, int flags)
 /* routine returns **argv for use with execv routines */
 /* buf will contain the path component 	     	      */
 {
@@ -43,7 +43,7 @@ static char **build_argv(char *buf, int bufsize,  char *command)
           *(++pp)=p;
           i++;
         }
-      } else if (!i && c == '/') {  /* here i must get argv[0] */
+      } else if (!i && (flags&1) && c == '/') {  /* here i must get argv[0] */
         *pp=p;
       }
     }
@@ -73,13 +73,13 @@ static void close_piped(int piped[3][2])
   }
 }
 
-static int x_popen(char *command, int uid, int gid, FILE_PIPE *fp)
+static int x_popen(char *command, int uid, int gid, FILE_PIPE *fp, int flags)
 {
   int piped[3][2];
   int lpid=-1;
   int j=3;
   char buf[300];
-  char **argv=build_argv(buf, sizeof(buf), command);
+  char **argv=build_argv(buf, sizeof(buf), command, flags);
   if (argv == NULL) return(-1);
   while (j--){
     int k=2;
@@ -113,7 +113,10 @@ static int x_popen(char *command, int uid, int gid, FILE_PIPE *fp)
       if (gid > -1) setegid(gid);
       if (uid > -1) seteuid(uid);
     }
-    execvp(buf, argv);
+    if (flags&1)
+      execvp(buf, argv);
+    else
+      execv(buf, argv);
     exit(1);    /* Never reached I hope */
   }
   j=-1;
@@ -134,12 +137,18 @@ int ext_pclose(FILE_PIPE *fp)
   void (*quitsave)(int) = signal(SIGQUIT, SIG_IGN);
   void (*hupsave) (int) = signal(SIGHUP,  SIG_IGN);
   int j = 3;
+  int tries=5;
   while (j--) close(fp->fds[j]);
-  if (fp->command_pid != waitpid(fp->command_pid, &status, 0)) {
-    kill(fp->command_pid, SIGTERM);
-    waitpid(fp->command_pid, &status, 0);
+  while (fp->command_pid != waitpid(fp->command_pid, &status, WNOHANG) 
+       && tries>0) {
+    --tries;
+    XDPRINTF((10,0, "ext_pclose, tries=%d", tries));
+    if (tries==2 || tries==1) 
+      kill(fp->command_pid, SIGTERM);
+    else if (!tries)
+      kill(fp->command_pid, SIGKILL);
+    sleep(1);
   }
-  kill(fp->command_pid, SIGKILL);
   signal(SIGINT,   intsave);
   signal(SIGQUIT,  quitsave);
   signal(SIGHUP,   hupsave);
@@ -147,13 +156,14 @@ int ext_pclose(FILE_PIPE *fp)
   return(status);
 }
 
-FILE_PIPE *ext_popen(char *command, int uid, int gid)
+FILE_PIPE *ext_popen(char *command, int uid, int gid, int flags)
+/* flags & 1 use path version of exec */
 {
   FILE_PIPE *fp=(FILE_PIPE*) xcmalloc(sizeof(FILE_PIPE));
   void (*intsave) (int) = signal(SIGINT,  SIG_IGN);
   void (*quitsave)(int) = signal(SIGQUIT, SIG_IGN);
   void (*hupsave) (int) = signal(SIGHUP,  SIG_IGN);
-  if ((fp->command_pid  = x_popen(command, uid, gid, fp)) < 0) {
+  if ((fp->command_pid  = x_popen(command, uid, gid, fp, flags)) < 0) {
     xfree(fp);
     fp=NULL;
     XDPRINTF((1, 0x10, "ext_popen failed:uid=%d, gid=%d,command='%s'", 

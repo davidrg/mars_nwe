@@ -1,4 +1,4 @@
-/* nwfile.c  04-May-98 */
+/* nwfile.c  21-Oct-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -41,6 +41,7 @@ void sig_bus_mmap(int rsig)
   XDPRINTF((2,0, "Got sig_bus"));
   signal(SIGBUS, sig_bus_mmap);
 }
+
 
 static FILE_HANDLE  file_handles[MAX_FILE_HANDLES_CONN];
 #define    HOFFS        0
@@ -176,6 +177,12 @@ void init_file_module(int task)
     while (k++ < count_fhandles) {
       FILE_HANDLE  *fh=&(file_handles[k-1]);
       if (fh->task == task && fh->fd>-1) {
+        MDEBUG(D_FH_OPEN, {
+          char fname[200];
+          int r=fd_2_fname(k, fname, sizeof(fname));
+          xdprintf(1,0,"init_file_m fd=%3d, task=%d, fn=`%s`,r=%d", 
+                   k, task, fname, r);
+        })
         free_file_handle(k);
       }
     }
@@ -338,17 +345,24 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
       if (exist) {
         if (S_ISFIFO(stbuff->st_mode)) { /* named pipes */
           fh->fh_flags |= FH_IS_PIPE;
-          fh->fd = open_with_root_access(fh->fname, O_NONBLOCK|dowrite ? O_RDWR 
-                                                          : O_RDONLY);
+          fh->fd = open_with_root_access(fh->fname, O_NONBLOCK  
+                                                       | (dowrite 
+                                                          ? O_WRONLY 
+                                                          : O_RDONLY));
           if (fh->fd < 0) 
             completition=-0x9c;
         } else if (voloptions & VOL_OPTION_IS_PIPE) {  /* 'pipe' volume */
           fh->fh_flags |= FH_IS_PIPE;
           fh->fh_flags |= FH_IS_PIPE_COMMAND;
           fh->fd=-3;
+#if 0
+          stbuff->st_mtime = (time(NULL)-255)+(rand()&0xff);
           if (!dowrite)
               stbuff->st_size = 0x7fff0000 | (rand() & 0xffff);
-          stbuff->st_mtime = (time(NULL)-255)+(rand()&0xff);
+#else   /* 03-Aug-98 better  ? */
+          stbuff->st_mtime = time(NULL)+1000;
+          stbuff->st_size  = 0x70000000|(stbuff->st_mtime&0xfffffff);
+#endif
           stbuff->st_atime = stbuff->st_mtime;
         } else { /* 'normal' file */
           int acm = (dowrite) ? O_RDWR : O_RDONLY;
@@ -441,8 +455,9 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
     char fname[200];
     if (!fd_2_fname(fhandle, fname, sizeof(fname))){
       FILE_HANDLE *fh=fd_2_fh(fhandle);
-      xdprintf(1,0,"Open/creat fd=%d, fn=`%s`, openmode=%s",
-          fhandle, fname, (fh && (fh->fh_flags &FH_OPENED_RO)) ? "RO" : "RW" );
+      xdprintf(1,0,"Open/creat fd=%3d, task=%d, fn=`%s`, openmode=%s, access=0x%x, no reuse=%d",
+          fhandle, task, fname, (fh && (fh->fh_flags &FH_OPENED_RO)) ? "RO" : "RW", 
+          access, fh->fh_flags & FH_DO_NOT_REUSE ? 1 :0 );
     }
   })
 
@@ -482,17 +497,30 @@ int nw_close_file(int fhandle, int reset_reuse, int task)
   MDEBUG(D_FH_OPEN, {
     char fname[200];
     int r=fd_2_fname(fhandle, fname, sizeof(fname));
-    xdprintf(1,0,"nw_close_file: fd=%d, fn=`%s`,r=%d", fhandle, fname, r);
+    xdprintf(1,0,"nw_close_f fd=%3d, task=%d, fn=`%s`,r=%d, rreuse=%d", 
+             fhandle, task, fname, r, reset_reuse);
   })
 
   if (fhandle > HOFFS && (fhandle <= count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (reset_reuse) fh->fh_flags &= (~FH_DO_NOT_REUSE);
-    else if (fh->task != task) 
-        return(0); /* 24-May-98 , 0.99.pl9 */
+    else if (fh->task != task) {
     /* if close file's task is wrong the file will not be closed.   
      * I hope this is right !?
      */
+       char fname[200];
+       int r=fd_2_fname(fhandle, fname, sizeof(fname));
+       xdprintf(2, 0,"close_file of fd=%3d, task=%d differs fh->task=%d, fn=`%s`", 
+             fhandle, task, fh->task, fname);
+    
+    /*  21-Oct-98: I think file must be closed always,
+     *  got problem with pserver which opens the file with task =0
+     *  and closes it with task <> 0.
+     */
+#if 0                 
+       return(0); /* 24-May-98 , 0.99.pl9 */
+#endif
+    }
 
     if (fh->fd > -1 || (fh->fd == -3 && fh->fh_flags & FH_IS_PIPE_COMMAND)) {
       int result = 0;
@@ -613,7 +641,7 @@ static void open_pipe_command(FILE_HANDLE *fh, int dowrite)
                         fh->fname,
                         dowrite ? "WRITE" : "READ",
                         act_connection, act_pid);
-    fh->f  = ext_popen(pipecommand, geteuid(), getegid());
+    fh->f  = ext_popen(pipecommand, geteuid(), getegid(), 0);
   }
   fh->fd = (fh->f) ? fh->f->fds[dowrite ? 0 : 1] : -3;
 }
@@ -628,6 +656,18 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
         int readsize=size;
 #if 1
+        fd_set fdin;
+        struct timeval t;
+        int result;
+        FD_ZERO(&fdin);
+        FD_SET(fh->fd, &fdin);
+        t.tv_sec  = 5;  /* should be enough */
+        t.tv_usec = 0;
+        size = select(fh->fd+1, &fdin, NULL, NULL, &t);
+        if (size > 0)
+          size = read(fh->fd, data, readsize);
+        if (size == -1) size=0;
+#elif 1
         if (-1 == (size = read(fh->fd, data, readsize)) )  {
           int k=2;
           do {

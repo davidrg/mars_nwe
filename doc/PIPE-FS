@@ -41,13 +41,14 @@ A simple print operation can be achieved with the following script:
 
 This allows you to print under dos/windows without capturing.
 
-In the examples dir exist the two programpairs comm<->unxcomm
-and sendm<->unxsendm as additional examples for using 'PIPE-filesystem'.
-With comm/unxcomm it is very easy to start simple Linux programs
-by your client.
-for examples: ps, lpq, lprm ...
+In the examples directory there are two pairs of programs,
+comm<->unxcomm und sendm<->unxsendm, that provide further examples
+of how to use the PIPE-filesystem.
+Using comm/unxcomm it is very easy to invoke simple Linux programs
+from the client, e.g. ps, lpq, lprm ..
 
-I would appreciate hearing about further documented applications of
-the PIPE filesystem or suggestions for other ways of using it.
+If anyone has other documented applications of the PIPE-filesystem,
+or any suggestions about other ways it might be used, I'd be very glad
+to hear from them.
 
 Martin

@@ -1,4 +1,4 @@
-/* extpipe.h 08-Aug-97 */
+/* extpipe.h 31-Jul-98 */
 
 #ifndef _EXTPIPE_H_
 #define _EXTPIPE_H_
@@ -11,6 +11,6 @@ typedef struct {
 } FILE_PIPE;
 
 extern int        ext_pclose(FILE_PIPE *fp);
-extern FILE_PIPE *ext_popen(char *command, int uid, int gid);
+extern FILE_PIPE *ext_popen(char *command, int uid, int gid, int flags);
 
 #endif

@@ -1828,95 +1828,104 @@ static int func_search_entry(DIR_BASE_ENTRY *dbe, int namespace,
 {
   int result=-0xff;
   FUNC_SEARCH    fs_local;
-  DIR_SEARCH_STRUCT *ds=(DIR_SEARCH_STRUCT*) xcmalloc(sizeof(DIR_SEARCH_STRUCT));
   if (!fs) {
     fs        = &fs_local;
     fs->ubuf  = NULL;
   }
   fs->searchattrib = searchattrib;
-  ds->unixname     = (uint8*)alloc_nwpath2unix_big(&(dbe->nwpath), 2);
- 
-  if (!tru_eff_rights_exists(dbe->nwpath.volume, ds->unixname,
-          &(dbe->nwpath.statb), TRUSTEE_F)) {
-    if (NULL == (ds->fdir = opendir(ds->unixname)) ) {
-      seteuid(0);
-      ds->fdir = opendir(ds->unixname);
-      reseteuid();
+  if (!len && ( !dbe->nwpath.path[0] 
+            || (dbe->nwpath.path[0]=='/' && dbe->nwpath.path[1]=='\0'))) {
+    /* volume path */
+    if (searchattrib & (W_SEARCH_ATTR_DIR | FILE_ATTR_DIR)) {
+      int res = (*fs_func)(dbe, fs);
+      if (res < 0) result=res;
+      else result=0;
     }
-  } else ds->fdir=NULL;
-  if (NULL != ds->fdir) {
-    uint8          entry[257];
-    uint8          *pe=entry;
-    int            have_wild    = 0; /* do we have a wildcard entry */
-    int            inode_search = 0;
-    uint8          *is_ap   = NULL;      /* one after point */
-    struct dirent  *dirbuff = NULL;
-    int vol_options  = get_volume_options(dbe->nwpath.volume);
-    ds->kpath        = ds->unixname+strlen(ds->unixname);
-    *(ds->kpath)     = '/';
-    *(++(ds->kpath)) = '\0';
-    dbe->locked++;   /* lock dbe */
-
-    while (len--) {
-      uint8 c=*path++;
-      *pe++=c;
-      if (!have_wild) {
-        if (c==0xff) {
-          if (*path == '?' || *path == '*'
-                   || *path == 0xae || *path == 0xbf || *path==0xaa)
-            have_wild++;
-        } else if (c == '.') is_ap=pe;
+  } else {
+    DIR_SEARCH_STRUCT *ds=(DIR_SEARCH_STRUCT*) xcmalloc(sizeof(DIR_SEARCH_STRUCT));
+    ds->unixname     = (uint8*)alloc_nwpath2unix_big(&(dbe->nwpath), 2);
+    if (!tru_eff_rights_exists(dbe->nwpath.volume, ds->unixname,
+            &(dbe->nwpath.statb), TRUSTEE_F)) {
+      if (NULL == (ds->fdir = opendir(ds->unixname)) ) {
+        seteuid(0);
+        ds->fdir = opendir(ds->unixname);
+        reseteuid();
       }
-    }
-    *pe='\0';
+    } else ds->fdir=NULL;
+    if (NULL != ds->fdir) {
+      uint8          entry[257];
+      uint8          *pe=entry;
+      int            have_wild    = 0; /* do we have a wildcard entry */
+      int            inode_search = 0;
+      uint8          *is_ap   = NULL;      /* one after point */
+      struct dirent  *dirbuff = NULL;
+      int vol_options  = get_volume_options(dbe->nwpath.volume);
+      ds->kpath        = ds->unixname+strlen(ds->unixname);
+      *(ds->kpath)     = '/';
+      *(++(ds->kpath)) = '\0';
+      dbe->locked++;   /* lock dbe */
 
-    if ((!have_wild) && is_ap && pe - is_ap == 3 && *is_ap== '_'
-      && *(is_ap+1) == '_'  && *(is_ap+2) == '_') {
-      *(is_ap -1) = '\0';
-      inode_search=atoi(entry);
-      *(is_ap -1) = '.';
-    }
-
-    if ( (namespace == NAME_DOS || namespace == NAME_OS2)
-        && !(vol_options & VOL_OPTION_IGNCASE) )  {
-      if (vol_options & VOL_OPTION_DOWNSHIFT) {
-        down_fn(entry);
-      } else {
-        up_fn(entry);
-      }
-    }
-
-    while (NULL != (dirbuff=readdir(ds->fdir))) {
-      uint8 dname[257];
-      if (search_match( dirbuff,
-                        vol_options,
-                        namespace,
-                        inode_search,
-                        entry,
-                        searchattrib,
-                        dname,
-                        ds)) {
-        int dest_entry = get_add_new_entry(dbe, namespace, dname, 0);
-        if (dest_entry > -1) {
-          int res = (*fs_func)(dir_base[dest_entry], fs);
-          if (res < 0) {
-            result=res;
-            break;
-          } else
-            result=0;
-        } else {
-          XDPRINTF((2, 0, "func_search_entry:Cannot add entry '%s'", entry));
+      while (len--) {
+        uint8 c=*path++;
+        *pe++=c;
+        if (!have_wild) {
+          if (c==0xff) {
+            if (*path == '?' || *path == '*'
+                     || *path == 0xae || *path == 0xbf || *path==0xaa)
+              have_wild++;
+          } else if (c == '.') is_ap=pe;
         }
       }
-    } /* while  */
-    *(ds->kpath) = '\0';
-    dbe->locked=0;
-    closedir(ds->fdir);
-  } else {  /* if NULL != ds->fdir */
-    XDPRINTF((5, 0, "func_search_entry:could not opendir=`%s`", ds->unixname));
+      *pe='\0';
+
+      if ((!have_wild) && is_ap && pe - is_ap == 3 && *is_ap== '_'
+        && *(is_ap+1) == '_'  && *(is_ap+2) == '_') {
+        *(is_ap -1) = '\0';
+        inode_search=atoi(entry);
+        *(is_ap -1) = '.';
+      }
+
+      if ( (namespace == NAME_DOS || namespace == NAME_OS2)
+          && !(vol_options & VOL_OPTION_IGNCASE) )  {
+        if (vol_options & VOL_OPTION_DOWNSHIFT) {
+          down_fn(entry);
+        } else {
+          up_fn(entry);
+        }
+      }
+
+      while (NULL != (dirbuff=readdir(ds->fdir))) {
+        uint8 dname[257];
+        if (search_match( dirbuff,
+                          vol_options,
+                          namespace,
+                          inode_search,
+                          entry,
+                          searchattrib,
+                          dname,
+                          ds)) {
+          int dest_entry = get_add_new_entry(dbe, namespace, dname, 0);
+          if (dest_entry > -1) {
+            int res = (*fs_func)(dir_base[dest_entry], fs);
+            if (res < 0) {
+              result=res;
+              break;
+            } else
+              result=0;
+          } else {
+            XDPRINTF((2, 0, "func_search_entry:Cannot add entry '%s'", entry));
+          }
+        }
+      } /* while  */
+      *(ds->kpath) = '\0';
+      dbe->locked=0;
+      closedir(ds->fdir);
+    } else {  /* if NULL != ds->fdir */
+      XDPRINTF((5, 0, "func_search_entry:could not opendir=`%s`", ds->unixname));
+    }
+    xfree(ds->unixname);
+    xfree(ds);
   }
-  xfree(ds->unixname);
-  xfree(ds);
   return(result);
 }
 
@@ -2015,7 +2024,7 @@ static int nw_add_trustee_set(int namespace, int searchattrib,
        fs.ubuf=(uint8*)&st;
        while (count--) {
          nwoic->id=GET_BE32(oic);
-         oic+=2;
+         oic += 4;
          if (trustee_rights == -1)
            nwoic->trustee=GET_16(oic);
          else
@@ -2035,6 +2044,93 @@ static int nw_add_trustee_set(int namespace, int searchattrib,
   return(result);
 }
 
+typedef struct {
+  int    count; /* count oic */
+  uint32 *ids;
+} S_DEL_TRUSTEE_SET;
+
+static int del_trustee_set(DIR_BASE_ENTRY *dbe, FUNC_SEARCH *fs)
+/* callbackroutine */
+{
+  uint8  *unname=(uint8*)nwpath_2_unix(&(dbe->nwpath), 2);
+  int    result=0;
+  S_DEL_TRUSTEE_SET *st=(S_DEL_TRUSTEE_SET*)fs->ubuf;
+  int    k=st->count;
+  uint32 *ids=st->ids;
+  while (k--) {
+    int res=tru_del_trustee(dbe->nwpath.volume, unname,
+                              &(dbe->nwpath.statb), *ids);
+    if (res < 0) {
+      result=res;
+      break;
+    }
+    ids++;
+  }
+  return(result);
+}
+
+static int nw_del_trustee_set(int namespace, 
+                                     NW_HPATH *nwp,
+                                     int count, uint8 *did)
+{
+  uint8 search_entry[258];
+  int result = build_base(namespace, nwp, nwp->pathes, 1, search_entry);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    if (get_volume_options(dbe->nwpath.volume) &
+       VOL_OPTION_READONLY) result = -0x8a;
+    else {
+       FUNC_SEARCH fs;
+       S_DEL_TRUSTEE_SET st;
+       uint32 *ids=st.ids=(uint32*)xmalloc(sizeof(uint32)*count);
+       st.count=0;
+       fs.ubuf=(uint8*)&st;
+       while (count--) {
+         *ids=GET_BE32(did);
+         if (*ids) {
+           st.count++;
+           ids++;
+         }
+         did+=4;
+       }
+       result  = func_search_entry(dbe, namespace,
+          search_entry, strlen(search_entry), W_SEARCH_ATTR_ALL,
+         del_trustee_set, &fs);
+       xfree(st.ids);
+    }
+  }
+  return(result);
+}
+
+static int nw_get_trustee_set(int namespace, int searchattrib,
+                                     NW_HPATH *nwp,
+                                     uint32 *scansequence,
+                                     uint8  *oic)
+{
+  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    char *unixname = alloc_nwpath2unix(&(dbe->nwpath), 2);
+    uint32   ids[20];
+    int trustees[20];
+    nwp_stat(&(dbe->nwpath), "nw_get_trustee_set");
+    result=tru_get_trustee_set(dbe->nwpath.volume, unixname,
+                            &(dbe->nwpath.statb),
+                      (int)*scansequence, 20, ids, trustees);
+    if (result > 0) {
+      int k=-1;
+      while (++k < result){
+        U32_TO_BE32(ids[k],    oic);
+        oic += 4;
+        U16_TO_16(trustees[k], oic);
+        oic += 2;
+      }
+      (*scansequence)++;
+    } 
+    xfree(unixname);
+  }
+  return(result);
+}
 
 
 static int nw_get_full_path_cookies(int namespace,
@@ -2343,6 +2439,29 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
       }
       break;
 
+    case  0x05 :  /* Scan File/Dir for Trustees */
+      {
+#if 0
+        int      reserved      = (int) *(p+1);
+#endif        
+        int      searchattrib  = (int) GET_16(p+2); /* LOW-HI */
+        uint32   scansequence  = GET_32(p+4);       /* LOW-HI */
+        NW_HPATH *nwpathstruct = (NW_HPATH *) (p+8);
+        result = nw_get_trustee_set(namespace, searchattrib, 
+                                            nwpathstruct,
+                                           &scansequence,
+                                           responsedata+6);
+        U32_TO_32(scansequence, responsedata);
+        if (result > -1) {
+          U16_TO_16(result, responsedata+4); /* count */
+          result=(result*6)+6;
+        } else {
+          U16_TO_16(0, responsedata+4); /* count */
+        }
+      }
+      break;
+
+
     case  0x06 :  /* Obtain File or Subdir Info */
       {
 #if 0
@@ -2410,30 +2529,27 @@ static int code = 0;
         int trustee_rights = (int) GET_16(p+4);    /* LO-HI */
         /* if trustee_rights == 0xffff, use trustee from OIC structure */
         int count          = (int) GET_16(p+6);    /* LO-HI */
-        NW_HPATH *nwp = (NW_HPATH *)(p+8);
+        NW_HPATH *nwp      = (NW_HPATH *)(p+8);
         if (trustee_rights==0xffff) trustee_rights=-1;
+        p+=315;
         result = nw_add_trustee_set(namespace, searchattrib, nwp,
                      trustee_rights,
-                     count, 
-                     p+316); 
-            /* OIC structure { uint8 id[4]; uint8 trusttee[2]  LO-HI } */
+                     count, p); 
+        /* OIC structure { uint8 id[4]; uint8 trusttee[2]  LO-HI } */
         /* NO REPLY Packet */
       }
       break;
     
-#if 0
     case  0x0b : /* delete trustee set from file or dir */
       {       
         int    count  = (int) GET_16(p+2);   
         NW_HPATH *nwp = (NW_HPATH *)(p+4);
-        result = nw_delete_trustee_set(namespace, nwp,
-                       count, 
-                       p+312);
+        p+=311;
+        result = nw_del_trustee_set(namespace, nwp, count, p);
             /* object id's   */
         /* NO REPLY Packet */
       }
       break;
-#endif
 
     case  0x0c : /* alloc short dir Handle */
       {

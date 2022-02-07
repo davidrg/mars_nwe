@@ -1,12 +1,21 @@
-/* unxcomm.c 08-Jun-97 */
-/* simple UNX program to work together with 'comm'   */
-/* to demonstrate usage of pipefilesystem */
+/* unxcomm.c 22-Oct-98 
+ * simple UNX program to work together with 'comm'  
+ * to demonstrate usage of pipefilesystem
+ * needs mars_nwe version >= 0.99.pl13 !
+ * comm and unxcomm must be same version  !  
+ * 'run' directory must exist and must have  
+ * read and write permission for every user.
+ */
 
 #include <stdio.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <sys/time.h>
 #include <sys/types.h>
-
+#include <sys/stat.h>
+#include <string.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 static char **build_argv(int bufsize, char *command, int len)
 /* routine returns **argv for use with execv routines */
@@ -51,8 +60,8 @@ int bl_read(int fd, void *buf, int size)
   int result;
   FD_ZERO(&fdin);
   FD_SET(fd, &fdin);
-  t.tv_sec   = 0;   
-  t.tv_usec  = 100; /* 100 msec should be enough */
+  t.tv_sec   =   1; 
+  t.tv_usec  =   0; 
   result = select(fd+1, &fdin, NULL, NULL, &t);
   if (result > 0)
     result=read(fd, buf, size);
@@ -61,15 +70,49 @@ int bl_read(int fd, void *buf, int size)
 
 int main(int argc, char *argv[])
 {
-  int size=0;
-  int l;
+  int  size=-1;
+  int  pid=getpid();
   char buf[MAXARGLEN+1024];
+  char fifopath[257];
+  char *p;
+  
   close(2);
   dup2(1,2);
   
-  while (0 < (l=bl_read(0, buf+size, MAXARGLEN-size)))
-    size+=l;
-
+  if (argc > 3) {
+    strcpy(fifopath, argv[0]);
+    p=strrchr(fifopath, '/');
+    if (p) {
+      ++p;
+      sprintf(p, "run/%08x.in",  pid);
+      if (mkfifo(fifopath, 0600)) {
+        perror("mkfifo"); 
+        fprintf(stderr, "unxcomm:fifo.in=`%s`\n", fifopath);
+      } else {
+        fprintf(stdout, "#%08x\n", pid);
+        fflush(stdout);
+        size=0;
+      }
+    }
+  }
+  if (!size) {
+    int  tries=0;
+    int  fd = open(fifopath, O_RDONLY);
+    if (fd > -1) {
+      while (tries++ < 5) {
+        int  l;
+        while (0 < (l=bl_read(fd, buf+size, MAXARGLEN-size))) {
+          size+=l;
+        }
+        if (size && buf[size-1] == '\0') break;
+      }
+      close(fd);
+    } else {
+      perror("open fifo");
+      size=-1;
+    }
+    unlink(fifopath);
+  }  
   if ( 0 < size) {
     char **argvv=build_argv(sizeof(buf), buf, size);
     if (argvv) {

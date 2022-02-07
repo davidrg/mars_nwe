@@ -72,7 +72,7 @@ int unx_xrmdir(char *unixname)
 /* removes complete directory if possible */
 {
   DIR *d = opendir(unixname);
-  if (NULL != (d = opendir(unixname))) {
+  if (NULL != d) {
     struct dirent *dirbuff;
     int    len   = strlen(unixname);
     char   *buf  = xmalloc(len + 300);

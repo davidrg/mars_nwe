@@ -15,9 +15,12 @@ extern int nw_close_queue_job(uint32 q_id, int job_id,
 extern int nw_get_queue_status(uint32 q_id,  int *status, int *entries, 
                  int *servers, int server_ids[], int server_conns[]);
 
+extern int nw_set_queue_status(uint32 q_id,  int status);
+
 extern int nw_get_q_job_entry(uint32 q_id, int job_id,  uint32 fhandle,
                        uint8 *responsedata, int old_call);
 extern int nw_get_queue_job_list_old(uint32 q_id, uint8 *responsedata);
+extern int nw_get_queue_job_list(uint32 q_id, uint32 offset, uint8 *responsedata);
 extern int nw_get_queue_job_file_size(uint32 q_id, int job_id);
 extern int nw_change_queue_job_entry(uint32 q_id, uint8 *qjstruct);
 

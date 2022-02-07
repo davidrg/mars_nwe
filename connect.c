@@ -463,6 +463,16 @@ int fn_dos_match(uint8 *s, uint8 *p, int options)
   uint8 *ss=s;
   int   len=0;
   int   pf=0;
+  uint8 p_buff[200];
+  uint8 *pp=p_buff;
+  
+  for (; *p; p++){
+    if (*p != 0xff)
+      *pp++=*p;
+  }
+  *pp='\0';
+  p=p_buff;
+
   for (; *ss; ss++){
     if (*ss == '.') {
       if (pf++) return(0); /* no 2. point */
@@ -684,6 +694,9 @@ static int get_dir_entry(NW_PATH *nwpath,
                   ||    ( ( (statb->st_mode & S_IFMT) != S_IFDIR) && !(attrib & 0x10))))
                   ? 0 : -0xff;
             if (!okflag){
+              if (soptions & VOL_OPTION_IS_PIPE)  {
+                statb->st_size  = 0x70000000|(statb->st_mtime&0xfffffff);
+              }
               strcpy((char*)nwpath->fn, (char*)dname);
               XDPRINTF((5,0,"FOUND=:%s: attrib=0x%x", nwpath->fn, statb->st_mode));
               break; /* ready */
@@ -1919,6 +1932,8 @@ int nw_dir_search(uint8 *info,
          get_dir_attrib((NW_DIR_INFO*)info, unixname,  &stbuff,
               &nwpath);
        } else {
+         if (dh->vol_options & VOL_OPTION_IS_PIPE)
+           stbuff.st_size  = 0x70000000|(stbuff.st_mtime&0xfffffff);
          get_file_attrib((NW_FILE_INFO*)info, unixname, &stbuff,
               &nwpath);
        }

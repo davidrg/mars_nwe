@@ -93,9 +93,7 @@ static uint16        sock_nummern [NEEDED_SOCKETS];
 
 int                  sockfd       [NEEDED_SOCKETS];
 static struct        pollfd  polls[NEEDED_POLLS];
-#if 0
 static uint16        spx_diag_socket;    /* SPX DIAGNOSE SOCKET       */
-#endif
 static int           ipxdebug       =  0;
 static int           pid_ncpserv    = -1;
 static int           fd_ncpserv_in  = -1;  /* ctrl-pipe in from ncpserv */
@@ -593,10 +591,21 @@ static void handle_sap(int fd,
 static void response_ipx_diag(int fd, int ipx_pack_typ,
                          ipxAddr_t *to_addr)
 {
-  IPX_DATA           ipxdata;
-  DIAGRESP           *dia = &ipxdata.diaresp;
-  uint8              *p   = (uint8*) (dia+1);
-  int datalen   =    sizeof(DIAGRESP);  /* erstmal */
+  IPX_DATA      ipxdata;
+  DIAGRESP      *dia = &ipxdata.diaresp;
+  uint8         *p   = (uint8*) (dia+1);
+  uint8		*net_count;
+  FILE		*f;
+  char		buff[200];
+  int		i;
+  unsigned int	b;
+  uint32	rnet;
+  uint8		dname[25];
+  char		node[20];	
+  int		flags;
+  int		fframe;
+  int           datalen = sizeof(DIAGRESP);
+  
   dia->majorversion = 1;
   dia->minorversion = 1;
   U16_TO_BE16(spx_diag_socket, dia->spx_diag_sock);
@@ -608,15 +617,41 @@ static void response_ipx_diag(int fd, int ipx_pack_typ,
   /* now extended */
   *p++              = 6; /* Fileserver/Bridge (internal) */
   datalen++;
-  *p++              = 1; /* Anz. Networks */
+  net_count  = p++;
+  *net_count = 0;
   datalen++;
-  *p++              = 0; /* LAN BOARD */
-  datalen++;
-  memcpy(p, my_server_adr.net, IPX_NET_SIZE);
-  p       += IPX_NET_SIZE;
-  datalen += IPX_NET_SIZE;
-  memcpy(p, my_server_adr.node, IPX_NODE_SIZE);
-  datalen += IPX_NODE_SIZE;
+  /* --- Code by  Valeri Bourak ----- */
+  if (internal_net) {
+    (*net_count)++;
+    *p++ = 1;          /* virtual board */
+    datalen++;
+    U32_TO_BE32(internal_net, p);
+    p       += IPX_NET_SIZE;
+    datalen += IPX_NET_SIZE;
+    memcpy(p, my_server_adr.node, IPX_NODE_SIZE);
+    p       += IPX_NODE_SIZE;
+    datalen += IPX_NODE_SIZE;
+  }
+  if (NULL != (f=fopen("/proc/net/ipx_interface", "r"))) {
+    while (fgets((char*)buff, sizeof(buff), f) != NULL){
+      fframe = read_interface_data((uint8*) buff, &rnet, node, &flags, dname);
+      if (fframe < 0) continue;
+      if (rnet > 0L && !(flags & 2)) { /* not internal */
+        (*net_count)++;
+        *p++ = 0;          /* LAN board */
+        datalen++;
+        U32_TO_BE32(rnet, p);
+        p += IPX_NET_SIZE;
+        datalen += IPX_NET_SIZE;
+        for (i = 0; i < 12 ; i += 2) {
+	  sscanf(&node[i], "%2x", &b);
+          *p++ = (uint8)b;
+        }
+        datalen += IPX_NODE_SIZE;
+      }
+    }
+    fclose(f);
+  }
   send_ipx_data(fd, ipx_pack_typ,
                     datalen,
                     (char*)&ipxdata,
@@ -659,8 +694,6 @@ static void handle_extern_call(int fd,
     memcpy(&auth_addr, from_addr, sizeof(ipxAddr_t));
     is_auth=0;
   }
-
-
 }
 #endif
 

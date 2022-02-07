@@ -376,7 +376,11 @@ static int fill_q_job_entry(INT_QUEUE_JOB *jo,
 {
   memset(job->record_in_use,   0xff, 2);
   memset(job->record_previous, 0, 4);
-  memset(job->record_next,     0, 4);
+  
+  if (jo->next)	{ /* (Alexey) we _must_ set id of next job in job-list */
+    U32_TO_32(jo->next->job_id, job->record_next);
+  } else  
+    memset(job->record_next,     0, 4);
   
   U32_TO_32(jo->client_connection, job->client_connection);
   U32_TO_32(jo->client_task, job->client_task);
@@ -457,13 +461,14 @@ int nw_creat_queue_job(int connection, int task, uint32 object_id,
 int nw_close_queue_job(uint32 q_id, int job_id, 
                    uint8 *responsedata)
 {
+  int result=-0xd8; /* queue not active */
   NWE_QUEUE *que=find_queue(q_id);
   if (que) {
     INT_QUEUE_JOB *jo=find_queue_job(que, job_id);
     if (jo) {
-      int result=sizeof(jo->client_area);
       int i;
       QUEUE_PRINT_AREA *qpa=(QUEUE_PRINT_AREA*)jo->client_area;
+      result=sizeof(jo->client_area);
       if (entry18_flags&0x1) { /* always suppress banner */
         qpa->print_flags[1] &= ~0x80;
       }
@@ -477,11 +482,12 @@ int nw_close_queue_job(uint32 q_id, int job_id,
       } else 
         *(responsedata+result)=0;
       ++result;
-      return(result);
-    }
-    return(-0xff);
-  }
-  return(-0xd8);  /* queue not active */
+    } else 
+     result=-0xff;
+  } 
+  XDPRINTF(((result<0) ? 1 : 5, 0, "nw_close_queue_job, q=%lx, job=%d, result=%d", 
+            q_id, job_id, result));
+  return(result);  
 }
 
 int nw_get_queue_status(uint32 q_id,  int *status, int *entries, 
@@ -500,6 +506,16 @@ int nw_get_queue_status(uint32 q_id,  int *status, int *entries,
     return(0);
   }
   return(-0xff);
+}
+
+int nw_set_queue_status(uint32 q_id, int status)
+{
+  NWE_QUEUE *q=find_queue(q_id);
+  if (q) {
+    q->status=status;
+    return(0);
+  }
+  return(-0xd3); /* no rights */
 }
 
 int nw_get_q_job_entry(uint32 q_id, int job_id,  uint32 fhandle,
@@ -543,6 +559,36 @@ int nw_get_queue_job_list_old(uint32 q_id, uint8 *responsedata)
   return(result);
 }
 
+int nw_get_queue_job_list(uint32 q_id, uint32 offset, uint8 *responsedata)
+{
+  int result   = -0xff;
+  NWE_QUEUE *q = find_queue(q_id);
+  if (q) {
+    INT_QUEUE_JOB *qj=q->queue_jobs;
+    uint8 *p=responsedata+8;
+    int fullcount=0;
+    int count=0;
+    if (offset == MAX_U32)
+      offset = 0;
+    while (qj) {   
+      if (++fullcount > offset && count < 125) { /* max. 125 entries */
+        ++count;
+        U16_TO_BE16(qj->job_id, p);
+        p+=2;
+        *p++=0;
+        *p++=0;
+      }
+      qj=qj->next;
+    }
+    U32_TO_BE32(fullcount, responsedata);  
+    U32_TO_BE32(count,     responsedata+4); 
+    result=8+count*4;
+  }
+  return(result);
+}
+
+
+
 static int get_qj_file_size(NWE_QUEUE *q, INT_QUEUE_JOB  *qj)
 {
   if (q && qj) {
@@ -567,7 +613,7 @@ int nw_get_queue_job_file_size(uint32 q_id, int job_id)
 
 int nw_change_queue_job_entry(uint32 q_id, uint8 *qjstruct)
 {
-   /*       machen */
+   /*  TODO */
 
    return(-0xfb);
 }
@@ -700,62 +746,64 @@ int nw_service_queue_job(uint32 user_id, int connection, int task,
   if (q && q->qserver 
         && q->qserver->user_id    == user_id
         && q->qserver->connection == connection) {
-    uint8 *fulldirname  = (old_call) ? responsedata+sizeof(QUEUE_JOB_OLD)
-                                     : responsedata+sizeof(QUEUE_JOB);
-    int len             = nw_get_q_dirname(q_id, fulldirname+1);
-    
-    if (len > 0) {
-      INT_QUEUE_JOB *qj=q->queue_jobs;
-      INT_QUEUE_JOB *fqj=NULL;
-      time_t acttime=time(NULL);
-      *fulldirname=(uint8) len++;
-      *(fulldirname+len)=0; /* for testprints only */
-      while(qj) {
-        if (  (!qj->server_id)
-           && !(qj->job_control_flags&0x20)  /* not actual queued */
-           && qj->execute_time <= acttime 
-           && (qj->target_id == MAX_U32 || qj->target_id == user_id)
-           && (qj->job_typ == MAX_U16 || job_typ==MAX_U16 
-                                      || qj->job_typ == job_typ)) {
-          if (get_qj_file_size(q, qj) > 0) {
-            fqj=qj;
-            break;
-          } else {
-            if (time(NULL) - qj->entry_time > 60) {  /* ca. 1 min */
-              XDPRINTF((1, 0, "Queue job of size 0 automaticly removed"));
-              (void)remove_queue_job_file(q, qj);
-              free_queue_job(q, qj->job_id);
-              qj=q->queue_jobs;
-              continue;
+    if ( !(q->status & 4) ) {  /* not stopped printing */
+      uint8 *fulldirname  = (old_call) ? responsedata+sizeof(QUEUE_JOB_OLD)
+                                       : responsedata+sizeof(QUEUE_JOB);
+      int len             = nw_get_q_dirname(q_id, fulldirname+1);
+      
+      if (len > 0) {
+        INT_QUEUE_JOB *qj=q->queue_jobs;
+        INT_QUEUE_JOB *fqj=NULL;
+        time_t acttime=time(NULL);
+        *fulldirname=(uint8) len++;
+        *(fulldirname+len)=0; /* for testprints only */
+        while(qj) {
+          if (  (!qj->server_id)
+             && !(qj->job_control_flags&0x20)  /* not actual queued */
+             && qj->execute_time <= acttime 
+             && (qj->target_id == MAX_U32 || qj->target_id == user_id)
+             && (qj->job_typ == MAX_U16 || job_typ==MAX_U16 
+                                        || qj->job_typ == job_typ)) {
+            if (get_qj_file_size(q, qj) > 0) {
+              fqj=qj;
+              break;
+            } else {
+              if (time(NULL) - qj->entry_time > 60) {  /* ca. 1 min */
+                XDPRINTF((1, 0, "Queue job of size 0 automaticly removed"));
+                (void)remove_queue_job_file(q, qj);
+                free_queue_job(q, qj->job_id);
+                qj=q->queue_jobs;
+                continue;
+              }
             }
+          } else {
+            XDPRINTF((6, 0, "Queue job ignored: station=%d, target_id=0x%x,job_typ=0x%x, %s",
+               qj->server_station, qj->target_id, qj->job_typ,  
+               (qj->execute_time > acttime) ? "execute time not reached" : ""));
           }
-        } else {
-          XDPRINTF((6, 0, "Queue job ignored: station=%d, target_id=0x%x,job_typ=0x%x, %s",
-             qj->server_station, qj->target_id, qj->job_typ,  
-             (qj->execute_time > acttime) ? "execute time not reached" : ""));
+          qj=qj->next;
         }
-        qj=qj->next;
-      }
-      if (fqj) {
-        fqj->server_id      = user_id;
-        fqj->server_station = connection;
-        fqj->server_task    = task;
-        if (old_call) {
-          QUEUE_JOB_OLD *job=(QUEUE_JOB_OLD*)responsedata;
-          result=fill_q_job_entry_old(fqj, job, 1);
+        if (fqj) {
+          fqj->server_id      = user_id;
+          fqj->server_station = connection;
+          fqj->server_task    = task;
+          if (old_call) {
+            QUEUE_JOB_OLD *job=(QUEUE_JOB_OLD*)responsedata;
+            result=fill_q_job_entry_old(fqj, job, 1);
+          } else {
+            QUEUE_JOB *job=(QUEUE_JOB*)responsedata;
+            result=fill_q_job_entry(fqj, job, 1);
+          }
+          result+=len;
+          XDPRINTF((3, 0, "nw service queue job dirname=`%s`", fulldirname+1));
         } else {
-          QUEUE_JOB *job=(QUEUE_JOB*)responsedata;
-          result=fill_q_job_entry(fqj, job, 1);
+          XDPRINTF((3, 0, "No queue job found for q_id=0x%x, user_id=0x%x,job_typ=0x%x", 
+               q_id, user_id, job_typ));
         }
-        result+=len;
-        XDPRINTF((3, 0, "nw service queue job dirname=`%s`", fulldirname+1));
       } else {
-        XDPRINTF((3, 0, "No queue job found for q_id=0x%x, user_id=0x%x,job_typ=0x%x", 
-             q_id, user_id, job_typ));
+        XDPRINTF((1, 0, "Could not get queuedir of q_id=0x%x", q_id));
       }
-    } else {
-      XDPRINTF((1, 0, "Could not get queuedir of q_id=0x%x", q_id));
-    }
+    } /* if */
   } else {
     XDPRINTF((1, 0, "Could not find qserver q_id=0x%x, user_id=0x%x, connect=%d",
             q_id, user_id, connection));

@@ -1,4 +1,4 @@
-/* nwdbm.c  15-Jun-98  data base for mars_nwe */
+/* nwdbm.c  29-Sep-98  data base for mars_nwe */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -2052,10 +2052,10 @@ void test_ins_unx_user(uint32 id)
   }
 }
 
-static int cmp_uint32(const uint32 *e1, const uint32 *e2)
+static int cmp_uint32(const void *e1, const void *e2)
 {
-  if (*e1 < *e2) return(-1);
-  if (*e1 > *e2) return(1);
+  if (*((uint32*)e1) < *((uint32*)e2)) return(-1);
+  if (*((uint32*)e1) > *((uint32*)e2)) return(1);
   return(0);
 }
 
@@ -2401,6 +2401,10 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
         int  flags=0;
         int  set_flags=0;
         int  anz=sscanf((char*)buff, "%s %s %s %s", nname, uname, password, flagsstr);
+        if (anz == 1) {
+          strcpy(uname, nname);
+          anz++;
+        }
         if (anz > 1) {
           upstr(nname);
           if (anz > 2) {

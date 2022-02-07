@@ -1,6 +1,6 @@
 Sorry, beginning is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 27-May-98
+Aenderungen in mars_nwe bis zum : 25-Oct-98
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -455,5 +455,25 @@ Erste 'oeffentliche' Version
 <----- ^^^^^^^^^^ pl10 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - ncp call 0x7a (read queue job entry (new)) is now availible.
 <----- ^^^^^^^^^^ pl11 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
+- changed default bindery directory location:
+  /etc  -> /var/nwserv/db  ( section 45 ) 
+- possibility to unset the print banner flag.
+  ( some strange W95 printer drivers always set banner flag to TRUE )
+- port to FreeBSD by Boris Popov <bp@butya.kz>
+<----- ^^^^^^^^^^ pl12 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- small FreeBSD patch from Boris Popov. (nwroute1.c)
+- added diagnostic-answers routine from Valeri Bourak. (nwserv.c)
+- small pipe-filesystem patches.
+- changed example programs (unxcomm/comm) for pipe-filesystem access.
+- BUG in unx_xrmdir(),unxfile.c removed, opendir() was called twice.
+- added namespace calls (0x57) add,delete trustee routines.
+- new function 'Get Queue Job List' (0x17,0x81) added.
+- new function 'Set Queue Status' (0x17,0x67/0x7e) added.
+- debug/log file now with date/time
+- nw_close_file() now closes files again which were opened
+  with different task. ( was inserted in pl9 )
+- open_creat_queue_file() routine only sets the file noreuse flag
+  if file is opened for writing.  
+- fn_dos_match routine corrected, was broken in pl7. ( ndir.exe works again )
+<----- ^^^^^^^^^^ pl13 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
