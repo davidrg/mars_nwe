@@ -425,4 +425,26 @@ Erste 'oeffentliche' Version
   new dos search routine from Andrew did not work with this calls.
   ( xcopy32 *.* did not work for for non OS/2 namespace volumes )
 <----- ^^^^^^^^^^ pl8 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- nwqconn.c:open_creat_queue_file(): insert missing nw_free_dir_handle()
+- nwdbm.c: enhanced section 22, now normal user/client may act as print-
+  qserver.
+- nwfile.c: removed bug in file read routine when reading a pipe.
+- nwqueue.c: nw_service_queue_job()
+  queue files of length 0 are now deleted automaticly 1 minute
+  after creation, if they are serviced by a queue server.
+- nwqueue.c: new: nw_close_connection_jobs() 
+- nwqconn.c: new: free_connection_task_jobs()
+- added first simple trustee routines. ( new volume switch 't' )
+  see doc/TRUSTEES
+- added supervisor security equals handling.
+- changed device configurator a little bit so that running
+  ipx programs like ncpmount will not be killed by a
+  starting or stopping nwserv.
+- changed default attrib/trustee location from /var/lib/nwserv -> /var/nwserv
+- some cleanings to make UnixWare happy.
+- close_file() only closes file if task correspond with file opened task.
+  Do not know whether this is ok, but it seems so.
+  Programs like Visual C linker (Borland,MS) now work correct.
+<----- ^^^^^^^^^^ pl9 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 

@@ -1,4 +1,4 @@
-/*  tools.h : 08-Jun-97    */
+/*  tools.h : 24-May-98    */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -71,6 +71,11 @@ extern int find_station_match(int entry, ipxAddr_t *addr);
 
 extern int    nw_debug;
 extern uint32 debug_mask;
+
+extern int act_ncpsequence; /* for debugging */
+extern int act_connection;  /* which connection (nwconn, nwbind) */
+extern time_t act_time;     /* actual time */
+
 #include "debmask.h"
 #if DO_DEBUG
 #  define XDPRINTF(x) xdprintf x
@@ -80,6 +85,12 @@ extern uint32 debug_mask;
 #  define XDPRINTF(x) /* */
 #  define D()         /* */
 #  define MDEBUG(mask, x)    /* */
+#endif
+
+
+#ifndef LINUX
+extern int fixed_sprintf(char *buf, char *p, ...);
+#define sprintf fixed_sprintf
 #endif
 
 #endif /* _TOOLS_H_ */

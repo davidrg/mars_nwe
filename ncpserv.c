@@ -418,6 +418,10 @@ static void close_all(void)
 {
   int k=0;
   while (k++ < count_connections) clear_connection(k);
+  kill_connections();
+  k=0;
+  while (k++ < count_connections) clear_connection(k);
+  kill_connections();
   if (ncp_fd > -1) {
     t_unbind(ncp_fd);
     t_close(ncp_fd);

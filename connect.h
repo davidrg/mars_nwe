@@ -1,28 +1,6 @@
-/* connect.h 14-Feb-98 */
+/* connect.h 08-May-98 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
-
-/* some TRUSTEE defines */
-#define TRUSTEE_R    0x01  /* Read Rights */
-#define TRUSTEE_W    0x02  /* Write Rights */
-#define TRUSTEE_O    0x04  /* Open, not used ?? by Novell */
-#define TRUSTEE_C    0x08  /* Creat */
-#define TRUSTEE_E    0x10  /* Erase */
-#define TRUSTEE_A    0x20  /* Access Control */
-#define TRUSTEE_F    0x40  /* File Scan      */
-#define TRUSTEE_M    0x80  /* Modify         */
-/* ........................................ */
-#define TRUSTEE_S   0x100  /* Supervisor     */
-
-
-/* <-------------- File Attributes -------------> */
-#define FILE_ATTR_NORMAL    0x00000000
-#define FILE_ATTR_R         0x00000001
-#define FILE_ATTR_H         0x00000002
-#define FILE_ATTR_S         0x00000004
-#define FILE_ATTR_DIR       0x00000010
-#define FILE_ATTR_A         0x00000020
-#define FILE_ATTR_SHARE     0x00000080
 
 typedef struct {
   uint8 path[256];      /* directory        */
@@ -33,8 +11,7 @@ typedef struct {
 
 typedef struct {
   uint8   name[14];              /* filename in DOS format */
-  uint8   attrib;                /* Attribute  */
-  uint8   ext_attrib;            /* File Execute Type */
+  uint8   attrib[2];             /* LO-HI  attrib, ext_attrib  */
   uint8   size[4];               /* size of file     */
   uint8   create_date[2];
   uint8   acces_date[2];
@@ -44,8 +21,7 @@ typedef struct {
 
 typedef struct {
   uint8   name[14];              /* dirname */
-  uint8   attrib;
-  uint8   ext_attrib;
+  uint8   attrib[2];             /* LO-HI  attrib, ext_attrib  */
   uint8   create_date[2];
   uint8   create_time[2];
   uint8   owner_id[4];
@@ -63,7 +39,7 @@ typedef struct {
 
 typedef struct {
   uint8   subdir[4];
-  uint8   attributes[4]; /* 0x20,0,0,0   File  */
+  uint8   attributes[4]; /* 0x20,0,0,0   LO-HI  */
   uint8   uniqueid;      /* 0    */
   uint8   flags;         /* 0x18 */
   uint8   namespace;     /* 0    */
@@ -81,7 +57,7 @@ typedef struct {
 
 typedef struct {
   uint8   subdir[4];
-  uint8   attributes[4]; /* 0x10,0,0,0   DIR   */
+  uint8   attributes[4]; /* 0x10,0,0,0   LO-HI   */
   uint8   uniqueid;      /* 0 */
   uint8   flags;         /* 0x14 or 0x1c */
   uint8   namespace;     /* 0 */
@@ -106,11 +82,22 @@ typedef struct {
   } u;
 } NW_SCAN_DIR_INFO;
 
+typedef struct {
+  uint8   searchsequence[4]; /* same as NW_SCAN_DIR_INFO */
+  uint8   change_bits[4];    /* LO-HI, 2=Attributes */
+  union {
+    NW_DOS_DIR_INFO  d;
+    NW_DOS_FILE_INFO f;
+  } u;
+} NW_SET_DIR_INFO;
+
 extern int use_mmap;
 extern int tells_server_version;
 extern int server_version_flags;
 extern int max_burst_send_size;
 extern int max_burst_recv_size;
+extern int  default_uid;
+extern int  default_gid;
 
 extern int nw_init_connect(void);
 extern void nw_exit_connect(void);
@@ -120,7 +107,7 @@ extern int nw_free_handles(int task);
 extern int nw_creat_open_file(int dir_handle, uint8 *data, int len,
                 NW_FILE_INFO *info, int attrib, int access, int mode, int task);
 
-extern int nw_delete_datei(int dir_handle,  uint8 *data, int len);
+extern int nw_delete_files(int dir_handle, int searchattrib, uint8 *data, int len);
 extern int nw_set_file_information(int dir_handle, uint8 *data, int len,
                              int searchattrib, NW_FILE_INFO *f);
 
@@ -133,7 +120,11 @@ extern int mv_file(int qdirhandle, uint8 *q, int qlen,
 extern int mv_dir(int dir_handle, uint8 *q, int qlen,
                            uint8 *z, int zlen);
 
-extern int nw_creat_node(int volnr, uint8 *unname, int mode);
+extern int nw_unlink_node(int volume, uint8 *unname, struct stat *stb);
+extern int nw_creat_node(int volume, uint8 *unname, int mode);
+
+extern int nw_utime_node(int volume, uint8 *unname, struct stat *stb,
+                   time_t t);
 
 extern int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode);
 
@@ -163,7 +154,8 @@ extern int nw_alloc_dir_handle(
                       int    driveletter,   /* A .. Z normal        */
                       int    is_temphandle, /* temp Handle 1        */
                                             /* spez. temp Handle  2 */
-                      int    task);         /* Prozess Task         */
+                      int    task,         /* Prozess Task            */
+                      int    *eff_rights);
 
 
 extern int nw_open_dir_handle( int        dir_handle,
@@ -213,6 +205,7 @@ void get_dos_dir_attrib(NW_DOS_DIR_INFO *f,
 extern int     act_uid;
 extern int     act_gid;
 extern int     act_obj_id;   /* not login == 0             */
+extern int     act_id_flags; /* &1 == supervisor equivalence !!! */
 extern int     entry8_flags; /* special flags, see examples nw.ini, entry 8 */
 
 extern int conn_get_full_path(int dirhandle, uint8 *data, int len,
@@ -227,13 +220,14 @@ extern void   set_guid(int gid, int uid);
 extern void   reset_guid(void);
 extern void   reseteuid(void);
 extern int    in_act_groups(gid_t gid);
-extern void   set_nw_user(int gid, int uid,
-                        uint32 obj_id, uint8 *objname,
-                        int homepathlen, uint8 *homepath);
+extern int    get_unix_eff_rights(struct stat *stb);
+extern void set_nw_user(int gid, int uid,
+                 int id_flags, 
+                 uint32 obj_id,   uint8 *objname,
+                 int unxloginlen, uint8 *unxloginname,
+                 int grpcount,    uint32 *grps);
 
-extern int    get_real_access(struct stat *stb);
 extern uint32 get_file_owner(struct stat *stb);
-
 
 extern int nw_scan_a_directory(uint8   *rdata,
                         int     dirhandle,
@@ -245,17 +239,17 @@ extern int nw_scan_a_directory(uint8   *rdata,
 extern int nw_scan_a_root_dir(uint8   *rdata,
                               int     dirhandle);
 
+extern int nw_set_a_directory_entry(int     dirhandle,
+                             uint8   *data,
+                             int     len,
+                             int     searchattrib,
+                             uint32  searchbeg,
+                             NW_SET_DIR_INFO *f);
 
 extern int fn_dos_match(uint8 *s, uint8 *p, int options);
 
 extern void   un_date_2_nw(time_t time, uint8 *d, int high_low);
 extern time_t nw_2_un_time(uint8 *d, uint8 *t);
-
-#if !NEW_ATTRIB_HANDLING
-extern int    un_nw_attrib(struct stat *stb, int attrib, int mode);
-#endif
-
-extern int    un_nw_rights(struct stat *stb);
 
 extern void   un_time_2_nw(time_t time, uint8 *d, int high_low);
 
@@ -264,5 +258,23 @@ extern void mangle_dos_name(NW_VOL *vol, uint8 *unixname, uint8 *pp);
 extern int nw_add_trustee(int dir_handle, uint8 *data, int len,
                    uint32 id,  int trustee, int extended);
 
+extern int nw_del_trustee(int dir_handle, uint8 *data, int len,
+                   uint32 id, int extended);
+
+extern int nw_set_dir_info(int dir_handle, uint8 *data, int len,
+                   uint32 owner_id, int max_rights, 
+                   uint8 *creationdate, uint8 *creationtime);
+
+extern int nw_scan_user_trustee(int volume, int *sequence, uint32 id, 
+                        int *access_mask, uint8 *path);
+
+extern int nw_scan_for_trustee( int    dir_handle, 
+                         int    sequence,
+                         uint8 *path,  
+                         int    len,
+                         int     max_entries, 
+                         uint32 *ids,
+                         int    *trustees,
+                         int     extended);
 
 #endif

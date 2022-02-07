@@ -1,4 +1,4 @@
-/* nwdbm.h 01-Oct-97 */
+/* nwdbm.h 29-Apr-98 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -135,7 +135,6 @@ extern int nw_is_obj_in_set(int object_type,
 	        int   member_type,
 	        uint8 *member_name, int member_namlen);
 
-
 extern int nw_add_obj_to_set(int object_type,
 	        uint8 *object_name, int object_namlen,
 	        uint8 *prop_name, int prop_namlen,
@@ -183,14 +182,16 @@ extern int nw_create_prop(int object_type,
 	        uint8 *prop_name, int prop_namlen,
 	        int prop_flags, int prop_security);
 
-
 extern uint32 nw_new_obj_prop(uint32 wanted_id,
                   char *objname, int objtype, int objflags, int objsecurity,
 	          char *propname, int propflags, int propsecurity,
 	          char *value, int valuesize, int ever);
 
+extern int nw_is_security_equal(uint32 id1,  uint32 id2);
+#define HAVE_SU_RIGHTS(id) ( ((id)==1L) || !nw_is_security_equal(1L, (id)))
+extern int get_groups_i_m_in(uint32 id, uint32 *gids);
+
 extern int get_guid(int *gid, int *uid, uint32 obj_id, uint8 *name);
-extern int get_home_dir(uint8 *homedir, uint32 obj_id);
 
 extern int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key);
 extern int nw_test_unenpasswd(uint32 obj_id, uint8 *password);
@@ -199,7 +200,7 @@ extern int nw_set_passwd(uint32 obj_id, char *password, int dont_ch);
 extern int nw_keychange_passwd(uint32 obj_id,
                                uint8 *cryptkey,  uint8 *oldpass,
 			       int   cryptedlen, uint8 *newpass,
-			       uint32 act_id);
+			       int   id_flags);
 
 extern int nw_test_adr_time_access(uint32 obj_id, ipxAddr_t *client_adr);
 

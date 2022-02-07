@@ -1,4 +1,4 @@
-/* nwbind.h 07-Aug-97 */
+/* nwbind.h 23-Apr-98 */
 
 #ifndef _NWBIND_H_
 #define _NWBIND_H_
@@ -15,6 +15,10 @@ typedef struct {
    ipxAddr_t   client_adr;      /* address remote client */
    uint32      object_id;       /* logged object         */
                                 /* 0 = not logged in     */
+   int         id_flags;        /* &1 == supervisor (equivalence) */
+                                /* flags are also availible in */
+                                /* connection based routines */
+
    uint8       crypt_key[8];    /* password generation   */
    time_t      t_login;         /* login time            */
    uint8       message[60];     /* saved BCastmessage    */

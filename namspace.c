@@ -1,4 +1,4 @@
-/* namspace.c 01-Feb-98 : NameSpace Services, mars_nwe */
+/* namspace.c 13-May-98 : NameSpace Services, mars_nwe */
 
 /* !!!!!!!!!!!! NOTE !!!!!!!!!! */
 /* Its still dirty, but it should work fairly well */
@@ -31,6 +31,7 @@
 #include "nwvolume.h"
 #include "connect.h"
 #include "nwattrib.h"
+#include "trustee.h"
 #include "nwconn.h"
 #include "nwfile.h"
 #include "unxfile.h"
@@ -212,10 +213,12 @@ static char *xnwpath_2_unix(N_NW_PATH *nwpath, int modus,
 
 #define nwpath_2_unix(nwpath, modus) \
    xnwpath_2_unix((nwpath), (modus), 0, NULL)
-#define nwpath_2_unix1(nwpath, modus, extrabytes) \
-   xnwpath_2_unix((nwpath), (modus), (extrabytes), NULL)
-#define nwpath_2_unix2(nwpath, modus, extrabytes,  extrastr) \
-   xnwpath_2_unix((nwpath), (modus), (extrabytes), extrastr)
+#define alloc_nwpath2unix(nwpath, modus) \
+   xnwpath_2_unix((nwpath), (modus), 1, NULL)
+#define alloc_nwpath2unix_big(nwpath, modus) \
+   xnwpath_2_unix((nwpath), (modus), 258, NULL)
+#define alloc_nwpath2unix_extra(nwpath, modus, extrastr) \
+   xnwpath_2_unix((nwpath), (modus), 1, extrastr)
 
 char *debug_nwpath_name(N_NW_PATH *p)
 /* only for debugging */
@@ -241,7 +244,7 @@ char *debug_nwpath_name(N_NW_PATH *p)
 
 static int nwp_stat(N_NW_PATH *nwpath, char *debstr)
 {
-  uint8 *uname=nwpath_2_unix1(nwpath, 2, 1);
+  uint8 *uname=alloc_nwpath2unix(nwpath, 2);
   int result=stat(uname, &(nwpath->statb));
   if (nw_debug) {
     char xdebstr[2];
@@ -757,9 +760,8 @@ static int insert_get_base_entry(N_NW_PATH *nwpath,
   if (!basehandle && creatmode) { /* now creat the entry (file or dir) */
     int result = 0;
     char *unname = nwpath_2_unix(nwpath, 2);
-
-    if (get_volume_options(nwpath->volume) &
-            VOL_OPTION_READONLY) return(-0x8a);
+    int voloptions=get_volume_options(nwpath->volume); 
+    if (voloptions&VOL_OPTION_READONLY) return(-0x8a);
     if (creatmode & FILE_ATTR_DIR) {
        /* creat dir */
       if (nw_creat_node(nwpath->volume, unname, 1))
@@ -838,11 +840,18 @@ static int build_base(int            namespace,
     XDPRINTF((4, 0, "build_base with basehandle=%ld, result=0x%x",
                      GET_32(nwp->base), result));
   } else if (nwp->flag != 0xff)
-    result=-0xff;
+    result=-0x9c; /* wrong path */
+  
   if (!result) {
     nwpath->namespace = namespace;
-
     if ((result = add_hpath_to_nwpath(nwpath, nwp, pathes)) > -1) {
+      int voloptions=get_volume_options(nwpath->volume); 
+      if ( (namespace&NAME_OS2) && !(VOL_NAMESPACE_OS2&voloptions))
+        result=-0xbf;  /* invalid namespace */
+      if ( (namespace&NAME_NFS) && !(VOL_NAMESPACE_NFS&voloptions))
+        result=-0xbf;  /* invalid namespace */
+    }
+    if (result > -1) {  
       char   *pp=strrchr((char*)nwpath->path, '/');
       if (mode) {
         if (pp) {
@@ -857,7 +866,6 @@ static int build_base(int            namespace,
       nwpath->fn = (pp) ? (uint8*)pp+1 : nwpath->path;
       result = insert_get_base_entry(nwpath, namespace, 0);
     }
-
   }
   return(result);
 }
@@ -1000,6 +1008,7 @@ int nw_generate_dir_path(int      namespace,
 }
 
 static int build_dir_info(DIR_BASE_ENTRY *dbe,
+                          char *unixname,
                           int namespace,
                           uint32 infomask, uint8 *p)
 {
@@ -1008,7 +1017,6 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe,
   int    result      = 76;  /* minimumsize */
   uint32 owner       = get_file_owner(stb);
   int    voloptions  = get_volume_options(nwpath->volume);
-  char   *unixname   = nwpath_2_unix1(nwpath, 2, 1);
 
   memset(p, 0, result+2);
 
@@ -1026,14 +1034,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe,
   p  += 4;
 
   if (infomask & INFO_MSK_ATTRIBUTE_INFO) {
-#if NEW_ATTRIB_HANDLING
     uint32 attrib = get_nw_attrib_dword(nwpath->volume, unixname, stb);
-#else
-    uint32 attrib = ( (!S_ISDIR(stb->st_mode))
-                     && (voloptions & VOL_OPTION_IS_PIPE) )
-                       ? (uint32) FILE_ATTR_SHARE|FILE_ATTR_A
-                       : (uint32) un_nw_attrib(stb, 0, 0);
-#endif
     U32_TO_32(attrib, p);
     p      += 4;
     U16_TO_16((uint16)(attrib & 0xFFFF), p);
@@ -1082,7 +1083,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe,
   } else p+=8;
 
   if (infomask & INFO_MSK_RIGHTS_INFO) { /* eff. rights ! */
-    U16_TO_16( un_nw_rights(stb), p);
+    U16_TO_16(tru_get_eff_rights(nwpath->volume, unixname, stb), p);
   }
   p      +=2;
 
@@ -1130,7 +1131,6 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe,
 
   XDPRINTF((3, 0, "build_d_i:space=%d, path=%s, result=%d, handle=0x%x, mask=0x%lx",
           namespace, debug_nwpath_name(nwpath), result, dbe->basehandle, infomask));
-  xfree(unixname);
   return(result);
 }
 
@@ -1148,8 +1148,10 @@ int nw_optain_file_dir_info(int namespace,    NW_HPATH *nwp,
   int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
   if (result > -1) {
     DIR_BASE_ENTRY *dbe=dir_base[result];
+    char *unixname = alloc_nwpath2unix(&(dbe->nwpath), 2);
     nwp_stat(&(dbe->nwpath), "nw_optain_file_dir_info");
-    result = build_dir_info(dbe, destnamspace, infomask, responsedata);
+    result = build_dir_info(dbe, unixname, destnamspace, infomask, responsedata);
+    xfree(unixname);
   } else {
     XDPRINTF((3, 0, "nw_optain_file_dir_info NOT OK result=-0x%x",
            -result));
@@ -1157,7 +1159,7 @@ int nw_optain_file_dir_info(int namespace,    NW_HPATH *nwp,
   return(result);
 }
 
-int nw_get_eff_rights(int namespace,    NW_HPATH *nwp,
+static int nsp_get_eff_rights(int namespace,    NW_HPATH *nwp,
                             int destnamspace,
                             int searchattrib, uint32 infomask,
                             uint8 *responsedata)
@@ -1165,12 +1167,15 @@ int nw_get_eff_rights(int namespace,    NW_HPATH *nwp,
   int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
   if (result > -1) {
     DIR_BASE_ENTRY *dbe=dir_base[result];
-    nwp_stat(&(dbe->nwpath), "nw_get_eff_rights");
-    U16_TO_16(un_nw_rights(&(dbe->nwpath.statb)), responsedata);
+    char *unixname = alloc_nwpath2unix(&(dbe->nwpath), 2);
+    nwp_stat(&(dbe->nwpath), "nsp_get_eff_rights");
+    U16_TO_16(tru_get_eff_rights(dbe->nwpath.volume, unixname,  
+                                &(dbe->nwpath.statb)), responsedata);
     responsedata+=2;
-    result = 2+build_dir_info(dbe, destnamspace, infomask, responsedata);
+    result = 2+build_dir_info(dbe, unixname, destnamspace, infomask, responsedata);
+    xfree(unixname);
   } else {
-    XDPRINTF((3, 0, "nw_get_eff_rights NOT OK result=-0x%x",
+    XDPRINTF((3, 0, "nsp_get_eff_rights NOT OK result=-0x%x",
            -result));
   }
   return(result);
@@ -1519,7 +1524,7 @@ int nw_search_file_dir(int namespace, int datastream,
   DIR_BASE_ENTRY    *dest_dbe=NULL;
   DIR_SEARCH_HANDLE *dsh=NULL;
   DIR_BASE_ENTRY    *dbe=NULL;
-
+  uint8  *unixname      =NULL;
   int sequence;
   *perhaps_more  = 0;
   *count         = 0;
@@ -1533,7 +1538,15 @@ int nw_search_file_dir(int namespace, int datastream,
   })
 
   if (len > 255) result=-0x9c; /* we say wrong path here */
-  else if (result > -1) {
+  
+  if (result > -1) {
+    dbe=dir_base[result];
+    unixname   = (uint8*)alloc_nwpath2unix_big(&(dbe->nwpath), 2);
+    if (tru_eff_rights_exists(dbe->nwpath.volume, unixname,
+          &(dbe->nwpath.statb), TRUSTEE_F)) 
+      result=-0xff;  /* no search rights */
+  }
+  if (result > -1) {
     dbe=dir_base[result];
     if (*psequence == MAX_U32) {
       *psequence=new_search_handle(dbe->nwpath.statb.st_dev,
@@ -1562,9 +1575,13 @@ int nw_search_file_dir(int namespace, int datastream,
 
   if (NULL != dsh) {
     DIR_SEARCH_STRUCT *ds=(DIR_SEARCH_STRUCT*) xcmalloc(sizeof(DIR_SEARCH_STRUCT));
-    ds->unixname   = (uint8*)nwpath_2_unix1(&(dbe->nwpath), 2, 258);
-
-    if (NULL != (ds->fdir = opendir(ds->unixname)) ) {
+    ds->unixname   = unixname;
+    if (NULL == (ds->fdir = opendir(ds->unixname)) ) {
+      seteuid(0);
+      ds->fdir=opendir(ds->unixname);
+      reseteuid();
+    }
+    if (NULL != ds->fdir) {
       uint8          entry[257];
       uint8          *pe=entry;
       int            have_wild=0; /* do we have a wildcard entry */
@@ -1664,11 +1681,15 @@ int nw_search_file_dir(int namespace, int datastream,
       *(ds->kpath) = '\0';
 
       if (dest_entry > -1) {
+        char *funixname;
         dest_dbe=dir_base[dest_entry];
+        funixname = alloc_nwpath2unix(&(dbe->nwpath), 2);
+
         (void) nwp_stat(&(dest_dbe->nwpath), "nw_search_file_dir");
-        result = build_dir_info(dest_dbe, datastream,
+        result = build_dir_info(dest_dbe, funixname, datastream,
                          infomask |INFO_MSK_NAME_SPACE_INFO,
                          info);
+        xfree(funixname);
         *count=1;
         dsh->dirpos = telldir(ds->fdir);
         dirbuff     = readdir(ds->fdir);
@@ -1710,7 +1731,6 @@ int nw_search_file_dir(int namespace, int datastream,
       result=-0xff;    /* thanks Peter Gerhard  :) */
       XDPRINTF((5, 0, "could not opendir=`%s`", ds->unixname));
     }
-    xfree(ds->unixname);
     xfree(ds);
   } else if (result > -1) result=-0xff;
   MDEBUG(D_FN_SEARCH, {
@@ -1721,6 +1741,7 @@ int nw_search_file_dir(int namespace, int datastream,
       xdprintf(1, 1,"found='%s'", (dest_dbe) ? (char*) (dest_dbe->nwpath.path) : "" );
     }
   })
+  xfree(unixname);
   return(result);
 }
 
@@ -1738,7 +1759,7 @@ static int nw_open_creat_file_or_dir(
   int   exist  = result;
   uint8 last_part[258];
   *last_part='\0';
-  if (result < 0 && (opencreatmode & (OPC_MODE_CREAT|OPC_MODE_REPLACE))) {
+  if (result == -0xff && (opencreatmode & (OPC_MODE_CREAT|OPC_MODE_REPLACE))) {
     /* do not exist */
     result = build_base(namespace, nwp, pathes, 1, last_part);
     XDPRINTF((5, 0, "nw_open_c... result=%d, last_part='%s'",
@@ -1781,12 +1802,14 @@ static int nw_open_creat_file_or_dir(
       (exist  > -1) result=-0x84;
 
     if (result > -1) {
+      char *unixname = alloc_nwpath2unix(&(dbe->nwpath), 2);
       U32_TO_32(fhandle, responsedata);
       responsedata += 4;
       *responsedata     =(uint8) actionresult;
       *(responsedata+1) = 0;
       responsedata+=2;
-      result = 6 + build_dir_info(dbe, namespace, infomask, responsedata);
+      result = 6 + build_dir_info(dbe, unixname, namespace, infomask, responsedata);
+      xfree(unixname);
     }
   }
   XDPRINTF((3, 0, "nw_open_creat mode=0x%x, creatattr=0x%x, access=0x%x, attr=0x%x, result=%d",
@@ -1811,8 +1834,17 @@ static int func_search_entry(DIR_BASE_ENTRY *dbe, int namespace,
     fs->ubuf  = NULL;
   }
   fs->searchattrib = searchattrib;
-  ds->unixname     = (uint8*)nwpath_2_unix1(&(dbe->nwpath), 2, 258);
-  if (NULL != (ds->fdir = opendir(ds->unixname)) ) {
+  ds->unixname     = (uint8*)alloc_nwpath2unix_big(&(dbe->nwpath), 2);
+ 
+  if (!tru_eff_rights_exists(dbe->nwpath.volume, ds->unixname,
+          &(dbe->nwpath.statb), TRUSTEE_F)) {
+    if (NULL == (ds->fdir = opendir(ds->unixname)) ) {
+      seteuid(0);
+      ds->fdir = opendir(ds->unixname);
+      reseteuid();
+    }
+  } else ds->fdir=NULL;
+  if (NULL != ds->fdir) {
     uint8          entry[257];
     uint8          *pe=entry;
     int            have_wild    = 0; /* do we have a wildcard entry */
@@ -1892,32 +1924,15 @@ static int delete_file_dir(DIR_BASE_ENTRY *dbe, FUNC_SEARCH *fs)
 /* callbackroutine */
 {
   uint8  *unname=(uint8*)nwpath_2_unix(&(dbe->nwpath), 2);
-  int    result;
-  if (S_ISDIR(dbe->nwpath.statb.st_mode)) {
-    /* directory */
-    if (get_nw_attrib_dword(dbe->nwpath.volume, unname, &dbe->nwpath.statb) & FILE_ATTR_R)
-      result = -0x8a; /* don't delete 'readonly' */
-    else {
-      result = rmdir(unname);
-      if (result < 0) {
-        switch (errno) {
-          case EEXIST: result=-0xa0; /* dir not empty */
-          default:     result=-0x8a; /* No privilegs */
-        }
-      }
-    }
-    if (result>-1) {
+  int    result=nw_unlink_node(dbe->nwpath.volume, unname,&dbe->nwpath.statb);
+  if (!result) {
+    if (S_ISDIR(dbe->nwpath.statb.st_mode)) /* directory */
       rmdir_from_structures(unname, dbe);
-      result = 0;
-    }
-  } else  {
-    /* file */
-    if (-1 < (result = nw_unlink(dbe->nwpath.volume, unname)))
-       free_dbe_p(dbe);
+    else  /* file */
+      free_dbe_p(dbe);
   }
   return(result);
 }
-
 
 static int nw_delete_file_dir(int namespace, int searchattrib,
                                NW_HPATH *nwp)
@@ -1965,6 +1980,62 @@ static int nw_set_short_dir_handle(int namespace, int desthandle,
   }
   return((result > 0) ? 0 : result);
 }
+
+typedef struct {
+  int count; /* count oic */
+  NW_OIC *nwoic;
+} S_ADD_TRUSTEE_SET;
+
+static int add_trustee_set(DIR_BASE_ENTRY *dbe, FUNC_SEARCH *fs)
+/* callbackroutine */
+{
+  uint8  *unname=(uint8*)nwpath_2_unix(&(dbe->nwpath), 2);
+  S_ADD_TRUSTEE_SET *st=(S_ADD_TRUSTEE_SET*)fs->ubuf;
+  return(tru_add_trustee_set(dbe->nwpath.volume, unname,
+                            &(dbe->nwpath.statb),
+                            st->count, st->nwoic));
+}
+
+static int nw_add_trustee_set(int namespace, int searchattrib,
+                                     NW_HPATH *nwp,
+                                     int trustee_rights,
+                                     int count, uint8 *oic)
+{
+  uint8 search_entry[258];
+  int result = build_base(namespace, nwp, nwp->pathes, 1, search_entry);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    if (get_volume_options(dbe->nwpath.volume) &
+       VOL_OPTION_READONLY) result = -0x8a;
+    else {
+       FUNC_SEARCH fs;
+       S_ADD_TRUSTEE_SET st;
+       NW_OIC *nwoic=st.nwoic=(NW_OIC*)xmalloc(sizeof(NW_OIC)*count);
+       st.count=0;
+       fs.ubuf=(uint8*)&st;
+       while (count--) {
+         nwoic->id=GET_BE32(oic);
+         oic+=2;
+         if (trustee_rights == -1)
+           nwoic->trustee=GET_16(oic);
+         else
+           nwoic->trustee=trustee_rights;
+         oic+=2;
+         if (nwoic->id) {
+           st.count++;
+           nwoic++;
+         }
+       }
+       result  = func_search_entry(dbe, namespace,
+          search_entry, strlen(search_entry), searchattrib,
+          add_trustee_set, &fs);
+       xfree(st.nwoic);
+    }
+  }
+  return(result);
+}
+
+
 
 static int nw_get_full_path_cookies(int namespace,
                 int destnamspace,
@@ -2049,33 +2120,35 @@ static int nw_rename_file_dir(int namespace,
     DIR_BASE_ENTRY *dbe_s = dir_base[result];
     uint8  last_part[258];
     uint8  *unname_s=
-        (uint8*)nwpath_2_unix1(&(dbe_s->nwpath), 2, 1);
+        (uint8*)alloc_nwpath2unix(&(dbe_s->nwpath), 2);
     result = build_base(namespace, nwpd, pathes_d, 1, last_part);
     if (result > -1) {
       DIR_BASE_ENTRY *dbe_d = dir_base[result];
-      uint8  *unname_d =
-        (uint8*)nwpath_2_unix2(&(dbe_d->nwpath), 0, 1, last_part);
+      uint8  *unname_dp=  /* directory */
+        (uint8*)alloc_nwpath2unix(&(dbe_d->nwpath), 2);
+      uint8  *unname_d =  
+        (uint8*)alloc_nwpath2unix_extra(&(dbe_d->nwpath), 0, last_part);
 
-      if (get_volume_options(dbe_s->nwpath.volume) &
-            VOL_OPTION_READONLY) result= EROFS;
-      else if (get_volume_options(dbe_d->nwpath.volume) &
-            VOL_OPTION_READONLY) result= EROFS;
-
-      else {
+      if (tru_eff_rights_exists(dbe_s->nwpath.volume, unname_s, 
+               &dbe_s->nwpath.statb, TRUSTEE_W|TRUSTEE_M|TRUSTEE_R))
+        result=-0x8b;
+      else if (tru_eff_rights_exists(dbe_d->nwpath.volume, unname_dp, 
+               &dbe_d->nwpath.statb, TRUSTEE_W))
+        result=-0x8b;
+      
+      if (result > -1) {
+        seteuid(0);
         if (S_ISDIR(dbe_s->nwpath.statb.st_mode))
           result = unx_mvdir(unname_s,  unname_d);
         else
           result = unx_mvfile(unname_s, unname_d);
+        reseteuid();
+        if (result==EEXIST)
+           result = -0x92;
       }
       XDPRINTF((5, 0, "Rename:%d '%s' -> '%s'", result, unname_s, unname_d));
+      xfree(unname_dp);
       xfree(unname_d);
-      switch (result) {
-        case   0      : break;
-
-        case   EEXIST : result = -0x92; break;
-        case   EROFS  : result = -0x8b; break;
-        default       : result = -0x8b;
-      }
       if (!result) {
         free_dbe_p(dbe_s);
         if ((result=get_add_new_entry(dbe_d, namespace, last_part, 0)) > -1)
@@ -2095,12 +2168,37 @@ static int nw_modify_file_dir(int namespace,
   int result = build_base(namespace, nwp, pathes, 0, NULL);
   if (result > -1) {
     DIR_BASE_ENTRY *dbe=dir_base[result];
-    uint8 *uname=nwpath_2_unix1(&(dbe->nwpath), 2, 1);
+    uint8 *uname=alloc_nwpath2unix(&(dbe->nwpath), 2);
     struct stat *stb = &(dbe->nwpath.statb);
+    int voloptions = get_volume_options(dbe->nwpath.volume);
     if (-1 != (result=stat(uname, stb))){
+      if (S_ISFIFO(stb->st_mode) || (voloptions&VOL_OPTION_IS_PIPE)){
+        xfree(uname);
+        return(0); /* do nothing but report OK */
+      }
+      if (tru_eff_rights_exists(dbe->nwpath.volume, uname, stb, 
+           TRUSTEE_M))
+        result=-0x8c;  /* no modify rights */
+      if (infomask & DOS_MSK_ATTRIBUTE){
+        result=set_nw_attrib_dword(dbe->nwpath.volume, uname, stb, 
+                                   GET_32(dmi->attributes));
+      }
+      if (!result && (infomask & DOS_MSK_INHERIT_RIGHTS)){
+        int mask       = tru_get_inherited_mask(dbe->nwpath.volume, uname, stb);
+        int grantmask  = GET_16(dmi->rightsgrantmask);
+        int revokemask = GET_16(dmi->rightsrevokemask);
+        revokemask    &= (~TRUSTEE_S);  /* do not remove supervisory mask bit*/
+        mask &= (~revokemask);
+        mask |= grantmask;
+        (void)tru_set_inherited_mask(dbe->nwpath.volume, uname, stb, 
+                                  mask);
+      }
+    } else result=-0xff;
+    if (!result) {  
       struct  utimbuf ut;
       int     do_utime=0;
       uint8   datetime[4];
+      
       un_time_2_nw(stb->st_mtime, datetime,   1);
       un_date_2_nw(stb->st_mtime, datetime+2, 1);
       ut.actime  = stb->st_atime;
@@ -2113,7 +2211,6 @@ static int nw_modify_file_dir(int namespace,
                   (int) *(datetime+3)));
 
       if (infomask & DOS_MSK_MODIFY_DATE || infomask & DOS_MSK_MODIFY_TIME) {
-#if 1
         if (infomask & DOS_MSK_MODIFY_TIME){
            datetime[0] = dmi->modified_time[1];
            datetime[1] = dmi->modified_time[0];
@@ -2123,11 +2220,9 @@ static int nw_modify_file_dir(int namespace,
           datetime[2] = dmi->modified_date[1];
           datetime[3] = dmi->modified_date[0];
         }
-#endif
         do_utime++;
       } else if (infomask & DOS_MSK_CREAT_DATE
               || infomask & DOS_MSK_CREAT_TIME) {
-#if 1
         if (infomask & DOS_MSK_CREAT_TIME) {
            datetime[0] = dmi->created_time[1];
            datetime[1] = dmi->created_time[0];
@@ -2136,7 +2231,6 @@ static int nw_modify_file_dir(int namespace,
           datetime[2] = dmi->created_date[1];
           datetime[3] = dmi->created_date[0];
         }
-#endif
         do_utime++;
       }
       if (do_utime) {
@@ -2147,10 +2241,13 @@ static int nw_modify_file_dir(int namespace,
                   (int) *(datetime+3)));
 
         ut.modtime = nw_2_un_time(datetime+2, datetime);
-        utime(uname, &ut);
+        if (-1==utime(uname, &ut)) {
+          seteuid(0);
+          utime(uname, &ut);
+          reseteuid();
+        }
       }
-      return(0);
-    } else result=-0xff;
+    }    
     xfree(uname);
   }
   return(result);
@@ -2289,7 +2386,7 @@ static int code = 0;
                                    searchattrib, infomask, &dmi);
       }
       break;
-
+    
     case  0x08 :  /* Delete a File or Subdir */
       {
         int     searchattrib  = (int) GET_16(p+2); /* LOW-HI */
@@ -2306,6 +2403,37 @@ static int code = 0;
         /* NO REPLY Packet */
       }
       break;
+
+    case  0x0a : /* Add trustee set to file or dir*/
+      {
+        int searchattrib   = (int) GET_16(p+2);    /* LO-HI */
+        int trustee_rights = (int) GET_16(p+4);    /* LO-HI */
+        /* if trustee_rights == 0xffff, use trustee from OIC structure */
+        int count          = (int) GET_16(p+6);    /* LO-HI */
+        NW_HPATH *nwp = (NW_HPATH *)(p+8);
+        if (trustee_rights==0xffff) trustee_rights=-1;
+        result = nw_add_trustee_set(namespace, searchattrib, nwp,
+                     trustee_rights,
+                     count, 
+                     p+316); 
+            /* OIC structure { uint8 id[4]; uint8 trusttee[2]  LO-HI } */
+        /* NO REPLY Packet */
+      }
+      break;
+    
+#if 0
+    case  0x0b : /* delete trustee set from file or dir */
+      {       
+        int    count  = (int) GET_16(p+2);   
+        NW_HPATH *nwp = (NW_HPATH *)(p+4);
+        result = nw_delete_trustee_set(namespace, nwp,
+                       count, 
+                       p+312);
+            /* object id's   */
+        /* NO REPLY Packet */
+      }
+      break;
+#endif
 
     case  0x0c : /* alloc short dir Handle */
       {
@@ -2460,7 +2588,7 @@ static int code = 0;
         int      searchattrib  = (int) GET_16(p+2); /* LOW-HI */
         uint32   infomask      = GET_32(p+4);       /* LOW-HI */
         NW_HPATH *nwpathstruct = (NW_HPATH *) (p+8);
-        result = nw_get_eff_rights(namespace, nwpathstruct,
+        result = nsp_get_eff_rights(namespace, nwpathstruct,
                                     destnamspace,
                                     searchattrib, infomask,
                                     responsedata);
@@ -2533,7 +2661,7 @@ int get_namespace_dir_entry(int volume, uint32 basehandle,
     DIR_BASE_ENTRY  *e = dir_base[result];
     NW_SCAN_DIR_INFO *scif = (NW_SCAN_DIR_INFO*)rdata;
     uint8  fname[20];
-    char   *unixname=nwpath_2_unix1(&(e->nwpath), 2, 1);
+    char   *unixname=alloc_nwpath2unix(&(e->nwpath), 2);
     (void) stat(unixname, &(e->nwpath.statb));
 
     memset(rdata, 0, sizeof(NW_SCAN_DIR_INFO));

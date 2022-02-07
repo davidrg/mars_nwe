@@ -50,7 +50,7 @@ static NW_SERVERS **nw_servers=NULL;
 #define NEEDS_UPDATE_RIP_NET    8
 #define NEEDS_UPDATE_ALL        (8|4|2|1)
 
-static void insert_delete_net(uint32 destnet,
+static void insert_delete_net(uint32 destnet,   /* destination net */
                               uint32 rnet,      /* routernet  */
                               uint8  *rnode,    /* routernode */
                               uint16 hops,
@@ -77,7 +77,8 @@ static void insert_delete_net(uint32 destnet,
         if (!do_delete) return; /* don't alter device */
         nd_dev = nd;
       }
-      if (nd->net == rnet)    ndticks=nd->ticks;
+      if (nd->net == rnet)    
+         ndticks=nd->ticks;
     }
   }
   if (!do_delete && nd_dev && nd_dev->ticks <= ndticks) return;
@@ -94,7 +95,7 @@ static void insert_delete_net(uint32 destnet,
         int new_max_nw = max_nw_routes+5;
         NW_ROUTES **new_nwr
              =(NW_ROUTES**)xcmalloc(new_max_nw*sizeof(NW_ROUTES*));
-        if (max_nw_servers)
+        if (max_nw_routes)
           memcpy(new_nwr, nw_routes, max_nw_routes*sizeof(NW_ROUTES*));
         xfree(nw_routes);
         nw_routes=new_nwr;
@@ -109,14 +110,13 @@ static void insert_delete_net(uint32 destnet,
     nr->ticks = 0xffff;
     nr->hops  = 0xffff;
   } else if (do_delete) {
-
     nr=nw_routes[k];
     if (nr->rnet == rnet && IPXCMPNODE(nr->rnode, rnode) ) {
       /* only delete the routes, which we have inserted */
       XDPRINTF((2,0,"ROUTE DEL NET=0x%x over Router NET 0x%x",
                 nr->net, rnet));
+      
       ipx_route_del(nr->net);
-
       if (nd_dev != NULL) { /* this is net to our device */
         /* I must delete and setup new, because there is */
         /* no direct way to delete this route from interface :( */
@@ -135,7 +135,7 @@ static void insert_delete_net(uint32 destnet,
 
   ticks+=ndticks;
   if (ticks <= nr->ticks) {
-    if (ticks == nr->ticks && hops >= nr->hops) return;
+    if (ticks == nr->ticks && hops > nr->hops) return;
     nr->hops  = hops;
     nr->ticks = ticks;
     nr->rnet  = rnet;
@@ -475,7 +475,7 @@ void handle_rip(int fd,       int ipx_pack_typ,
 
     if (is_response) {
       insert_delete_net(net, GET_BE32(from_addr->net),
-         from_addr->node,  hops, ticks, (hops > 15) ? 1 : 0);
+           from_addr->node,  hops, ticks, (hops > 15) ? 1 : 0);
     } else { /* rip request */
       build_rip_buff(net);
       if (net == MAX_U32) break;
@@ -699,12 +699,13 @@ static int look_for_interfaces(void);
 
 
 void send_sap_rip_broadcast(int mode)
-/* mode=0, standard broadcast  */
-/* mode=1, first trie          */
-/* mode=2, shutdown            */
-/* mode=3, update routes       */
-/* mode=4, resend to net       */
-/* mode=5, force update routes */
+/* mode=0,  standard broadcast  */
+/* mode=1,  first trie          */
+/* mode=2,  sap shutdown        */
+/* mode=3,  update routes       */
+/* mode=4,  resend to net       */
+/* mode=5,  force update routes */
+/* mode=22, rip shutdown        */
 {
 static int flipflop=1;
   int force_print_routes=(mode == 1) ? 1 : 0;
@@ -720,16 +721,20 @@ static int flipflop=1;
         send_rip_broadcast(1);
         send_sap_broadcast(1);
       }
+    } else if (mode == 22) {
+      send_rip_broadcast(2);
+    } else if (mode == 2) {
+      send_sap_broadcast(2);
     } else {
       send_rip_broadcast(mode);
       send_sap_broadcast(mode);
     }
   } else {
     if (flipflop) {
-      send_rip_broadcast(mode);
+      send_rip_broadcast(0);
       flipflop=0;
     } else {
-      send_sap_broadcast(mode);
+      send_sap_broadcast(0);
       flipflop=1;
     }
   }
@@ -948,8 +953,8 @@ static int look_for_interfaces(void)
         for (j=0; j < anz_routes; j++){
           NW_ROUTES *nr=nw_routes[j];
           if (nr && nr->rnet == nd->net) {
+            XDPRINTF((1,0,"Route to net=0x%x removed", nr->net)); /* !! */
             nr->net = 0L; /* remove route */
-            XDPRINTF((1,0,"Route to net=0x%x removed", nr->net));
           }
         }
         if (nd->wildmask & 1)

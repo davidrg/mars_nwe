@@ -1,4 +1,4 @@
-/* nwfile.c  01-Feb-98 */
+/* nwfile.c  04-May-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -28,6 +28,7 @@
 #include "nwfile.h"
 #include "connect.h"
 #include "nwattrib.h"
+#include "trustee.h"
 #include "nwconn.h"
 #include "unxfile.h"
 
@@ -135,7 +136,9 @@ static int free_file_handle(int fhandle)
       /* now set date and time */
         struct utimbuf ut;
         ut.actime = ut.modtime = fh->tmodi;
+        seteuid(0);
         utime(fh->fname, &ut);
+        reseteuid();
         fh->tmodi = 0L;
       }
     }
@@ -179,28 +182,24 @@ void init_file_module(int task)
   }
 }
 
-static int xsetegid(gid_t gid)
+static int open_with_root_access(char *path, int mode)
+/* open existing files */
 {
-  int result = -1;
-  if (!seteuid(0)) {
-    if (setegid(gid)) {
-      XDPRINTF((2, 0, "Cannot change eff Group ID to %d", gid));
-    } else
-      result=0;
-    if (seteuid(act_uid)) {
-      reset_guid();
-      result = -1;
-    }
+  int fd=open(path, mode);
+  if (fd < 0 && errno == EACCES) {
+    seteuid(0);
+    fd=open(path, mode);
+    reseteuid();
   }
-  return(result);
+  return(fd);
 }
 
 int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                      int attrib, int access, int creatmode, int task)
 /*
- * creatmode: 0 = open
- *          | 1 = creat (ever)
- *          | 2 = creatnew ( creat if not exist )
+ * creatmode: 0 = open     ( do not creat )
+ *          | 1 = creat    ( creat always )
+ *          | 2 = creatnew ( creat if not exist else error )
  *          ---------
  *          & 4 == save handle    (not reuse)
  *          & 8 == ignore rights  (try to open as root)
@@ -226,254 +225,228 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
  *
  */
 {
-   int fhandle  = new_file_handle(volume, unixname, task);
-   int dowrite  = ((access & 2) || (creatmode & 3) ) ? 1 : 0;
-   if (fhandle > HOFFS){
-     FILE_HANDLE *fh=&(file_handles[fhandle-1]);
-     int completition = 0;  /* first ok */
-     int voloptions   = get_volume_options(volume);
-     int acc          = (!stat(fh->fname, stbuff))
-                           ? get_real_access(stbuff) : -1;
+  int dowrite       = ((access & 2) || (creatmode & 3) ) ? 1 : 0;
+  int completition  = 0;  /* first ok */
+  int fhandle       = -1;
+  int voloptions    = get_volume_options(volume);
+  int volnamlen     = get_volume_unixname(volume, NULL);
+  int exist         = stat(unixname, stbuff) ? 0 : 1;
+  int eff_rights    = 0;
+  uint32 dwattrib;
 
-     int did_grpchange = 0;
+  /* first we test accesses 
+   * if something is wrong completition will become != 0
+   */
 
-     if (dowrite && (acc > -1) && (acc & W_OK) && !(creatmode&0x8) &&
-        (get_nw_attrib_dword(volume, fh->fname, stbuff) & FILE_ATTR_R))
-       completition = -0x94;
-     else if (dowrite && (voloptions & VOL_OPTION_READONLY)) {
-       completition = (creatmode&3) ? -0x84 : -0x94;
-     } else if (acc > -1) {
-       /* do exist */
-       if (!S_ISDIR(stbuff->st_mode)) {
-         if (!(voloptions & VOL_OPTION_IS_PIPE)
-           || S_ISFIFO(stbuff->st_mode) ) {
-           /* We look for normal file accesses */
-           if (creatmode & 2) {
-             XDPRINTF((5,0,"CREAT File exist!! :%s:", fh->fname));
-             completition = -0x85; /* No Priv */
-           } else if (dowrite && !(acc & W_OK) && !(creatmode & 0x8) ) {
-             if (!S_ISFIFO(stbuff->st_mode)) {
-               if (entry8_flags&2 && (acc & R_OK)) {
-                 /* we use strange compatibility modus */
-                 dowrite=0;
-                 XDPRINTF((1, 0, "Uses strange open comp. mode for file `%s`",
-                     fh->fname));
-               } else
-                 completition = (creatmode&3) ? -0x84 : -0x94;
-             } else
-              completition = (creatmode&3) ? -0x84 : -0x94;
-           } else if (!(acc & R_OK) && !(creatmode & 0x8) )
-             completition = -0x93;
+  if (!exist) {
+   /* we do it again as root to get always the correct information */
+    seteuid(0);
+    exist = stat(unixname, stbuff) ? 0 : 1;
+    reseteuid();
+  }
 
-           if ((!completition) && !S_ISFIFO(stbuff->st_mode) && dowrite){
-             /* is this file already opened write deny by other process */
-             if (-1 == share_file(stbuff->st_dev, stbuff->st_ino, 0x12|0x8))
-               completition=-0x80;
-           }
+  if (exist) { /* file exists */
+    if (S_ISDIR(stbuff->st_mode)) 
+      completition = -0xff; /* directory is total wrong here */
+    else {
+      eff_rights = tru_get_eff_rights(volume, unixname, stbuff);
+      dwattrib   = get_nw_attrib_dword(volume, unixname, stbuff);
+      if (creatmode&0x2) { /* creat if not exist */
+        if (S_ISFIFO(stbuff->st_mode)||(voloptions&VOL_OPTION_IS_PIPE)) { 
+          /* fifo or pipe command always must exist */
+          if ((dwattrib&FILE_ATTR_R)||!(eff_rights & TRUSTEE_W)){         
+            completition = -0x94; /* No write rights */
+          }
+        } else {
+          XDPRINTF((5,0,"CREAT File exist!! :%s:", unixname));
+          completition = -0x85; /* No Priv */
+        } 
+      } else if (creatmode&0x1) { /* creat always*/ 
+        if (!(creatmode&0x8)){
+          if ((dwattrib&FILE_ATTR_R)
+            || !(eff_rights & TRUSTEE_W))  
+            completition = -0x86; /* creat file exists ro */
+          else if (!(eff_rights & TRUSTEE_E))         
+            completition = -0x85; /* creat file no delete rights */
+          else if (!(eff_rights & TRUSTEE_C)){         
+            completition = -0x84; /* No creat rights */
+          }
+        }
+      } else { /* open */ 
+        if (dowrite) {
+          if (!(creatmode&0x8)) {
+            if ((dwattrib&FILE_ATTR_R)||!(eff_rights & TRUSTEE_W)){         
+              if ((entry8_flags&2) && (eff_rights & TRUSTEE_R) ) {
+                /* we use strange compatibility modus if file is readable */
+                dowrite=0;
+                XDPRINTF((1, 0, "Uses strange open comp. mode for file `%s`",
+                       unixname));
+              } else
+                completition = -0x94; /* No write rights */
+            }
+          }
+        } else {  /* open to read */
+          if (!(creatmode&0x8)) {
+            if (!(eff_rights & TRUSTEE_R)){         
+              completition = -0x93; /* No read rights */
+            }
+          }
+        }
+      }
+      if ( (!completition) && dowrite && !S_ISFIFO(stbuff->st_mode) && 
+          !(voloptions&VOL_OPTION_IS_PIPE)) {
+        /* is this file already opened write deny by other process */
+        if (-1 == share_file(stbuff->st_dev, stbuff->st_ino, 0x12|0x8))
+               completition=-0x80; /* lock fail */
+      }
+    }  
+  } else { /* do not exist, must be created */
+    if (voloptions&VOL_OPTION_IS_PIPE)
+      completition=-0xff;  /* pipecommands always must exist */
+    else if (creatmode&0x3) {  /* do creat */
+      uint8 *p=(uint8*)strrchr(unixname, '/');
+      if (NULL != p && (p - unixname) >= volnamlen) { /* parent dir */
+        *p='\0';
+        seteuid(0);
+        completition=stat(unixname, stbuff);
+        reseteuid();
+        if (!completition) {
+          eff_rights = tru_get_eff_rights(volume, unixname, stbuff);
+          dwattrib   = get_nw_attrib_dword(volume, unixname, stbuff);
+          if (creatmode&0x8) 
+            eff_rights |= TRUSTEE_C|TRUSTEE_W|TRUSTEE_R;
+          if (!(eff_rights & TRUSTEE_C)){ /* no creat rights */        
+            completition=-0x84;
+          }
+        } else 
+          completition=-0x9c;
+        *p='/';
+      } else 
+        completition=-0x9c;
+    } else
+     completition=-0xff; /* should, but do not exist */
+  }
+  
+  /* 
+   * Here all access tests are made and we can do the open as 
+   * root (open_with_root_access).
+   */
+  if (!completition) {   
+    fhandle = new_file_handle(volume, unixname, task);
+    if (fhandle > HOFFS) {
+      FILE_HANDLE *fh=&(file_handles[fhandle-1]);
+      if (exist) {
+        if (S_ISFIFO(stbuff->st_mode)) { /* named pipes */
+          fh->fh_flags |= FH_IS_PIPE;
+          fh->fd = open_with_root_access(fh->fname, O_NONBLOCK|dowrite ? O_RDWR 
+                                                          : O_RDONLY);
+          if (fh->fd < 0) 
+            completition=-0x9c;
+        } else if (voloptions & VOL_OPTION_IS_PIPE) {  /* 'pipe' volume */
+          fh->fh_flags |= FH_IS_PIPE;
+          fh->fh_flags |= FH_IS_PIPE_COMMAND;
+          fh->fd=-3;
+          if (!dowrite)
+              stbuff->st_size = 0x7fff0000 | (rand() & 0xffff);
+          stbuff->st_mtime = (time(NULL)-255)+(rand()&0xff);
+          stbuff->st_atime = stbuff->st_mtime;
+        } else { /* 'normal' file */
+          int acm = (dowrite) ? O_RDWR : O_RDONLY;
+          if (dowrite && (creatmode&0x3))
+            acm |= O_TRUNC;
+          fh->fd  = open_with_root_access(fh->fname, acm);
+          if (fh->fd != -1){
+            if (acm&O_TRUNC) {
+              seteuid(0);
+              stat(fh->fname, stbuff);
+              reseteuid();
+            }
+          } else
+            completition=-0x9c;
+        }
+      } else { /* needs to be created */
+        if (nw_creat_node(volume, fh->fname, 2|8))
+          completition=-0x9c;
+        else {
+          fh->fd   = open_with_root_access(fh->fname, O_RDWR);
+          fh->offd = 0L;
+          if (fh->fd==-1)
+            completition=-0x9c;
+          else {
+            seteuid(0);
+            stat(fh->fname, stbuff);
+            reseteuid();
+          }
+        }
+      }
+      if (!completition && !(fh->fh_flags & FH_IS_PIPE)) {
+        /* We try sharing and mmaping if not a pipe */
+        int result=0;
+        fh->st_dev=stbuff->st_dev;
+        fh->st_ino=stbuff->st_ino;
+        if (((access & 0x4) || (access & 0x8)) ) {
+          if (access & 0x4) /* deny read */
+            result=share_file(stbuff->st_dev, stbuff->st_ino, 0x5);
+          if ((access & 0x8) && !result)
+            result=share_file(stbuff->st_dev, stbuff->st_ino, 0x2);
+          XDPRINTF(((result==-1)?2:5, 0,  "open shared lock:result=%d,fn='%s'",
+                    result, fh->fname));
+        } else {
+          result=share_file(stbuff->st_dev, stbuff->st_ino, 1);
+          if (result==-1) {
+            XDPRINTF((2, 0, "open share failed,fn='%s'", fh->fname));
+          }
+        }
+        if (result==-1) {
+          close(fh->fd);
+          fh->fd       = -1;
+          completition = -0x80;
+          /* 0.99.pl0 changed -0xfe -> -0x80 */
+        }
 
-         } else if (acc & X_OK) {
-           /* special Handling for PIPE commands */
-           if (!(acc & W_OK)) {
-             if (acc & 0x10)      /* access owner */
-               stbuff->st_mode  |= S_IWUSR;
-             else if (acc & 0x20) /* access group */
-               stbuff->st_mode  |= S_IWGRP;
-             else
-               stbuff->st_mode  |= S_IWOTH;
-           }
-         } else {
-           XDPRINTF((4, 0, "No PIPE command rights st_mode=0x%x uid=%d, gid=%d",
-                     stbuff->st_uid, stbuff->st_gid));
-           completition = -0xff;
-         }
-       } else
-         completition= -0xff;
-     } else if ( (voloptions & VOL_OPTION_IS_PIPE) || !(creatmode&3) ) {
-       /* must exist, but don't */
-       completition=-0xff;
-     } else {
-       /* File do not exist yet, but must be created */
-       char *p=strrchr(unixname, '/');
-       /* first we say: not OK */
-       completition = -0xff;
-       if (p) {
-         *p='\0';
-         acc = (!stat(unixname, stbuff))
-                  ? get_real_access(stbuff) : -1;
-         if (acc > 0) {
-           if (acc & W_OK) /* we need write access for this directory */
-             completition=0;
-           else
-             completition=-0x84; /* no creat rights */
-         }
-         *p='/';
-       }
-       if (completition && (creatmode & 8)) {
-         acc=0;
-         completition=0;
-       }
-     }
-
-     if ( (!completition) && (acc & 0x20) && (stbuff->st_gid != act_gid)) {
-       /* here we try a change egid */
-       if (xsetegid(stbuff->st_gid)) {
-         completition = -0x85; /* no privillegs */
-       } else {
-         did_grpchange++;
-       }
-     }
-
-     if (!completition) {
-       if (voloptions & VOL_OPTION_IS_PIPE) {
-         /* <========= this is a PIPE Volume ====================> */
-         fh->fh_flags |= FH_IS_PIPE;
-         if (S_ISFIFO(stbuff->st_mode)){
-           fh->fd = open(fh->fname,
-               O_NONBLOCK | dowrite ? O_RDWR : O_RDONLY);
-         } else {
-           fh->fh_flags |= FH_IS_PIPE_COMMAND;
-           fh->fd=-3;
-         }
-         if (fh->fd != -1) {
-           if (!dowrite)
-             stbuff->st_size = 0x7fff0000 | (rand() & 0xffff);
-           (void)time(&(stbuff->st_mtime));
-           stbuff->st_atime = stbuff->st_mtime;
-           if (creatmode & 4)
-             fh->fh_flags |= FH_DO_NOT_REUSE;
-           if (did_grpchange)
-             xsetegid(act_gid);
-           goto file_creat_open_ret;
-         }
-       } else {
-         /* <========= this is NOT a PIPE Volume ====================> */
-         if (creatmode&0x3) {  /* creat File  */
-           int was_ok=0;
-           fh->fd=-1;
-
-           if (creatmode & 0x2) { /* creatnew */
-             XDPRINTF((5,0,"CREAT FILE:%s: Handle=%d", fh->fname, fhandle));
-             if (!nw_creat_node(volume, fh->fname, 0))
-               was_ok++;
-             else
-               completition = -0x84; /* no create Rights */
-           } else {
-             XDPRINTF((5,0,"CREAT FILE, ever with attrib:0x%x, access:0x%x, fh->fname:%s: handle:%d",
-               attrib,  access, fh->fname, fhandle));
-             if (!nw_creat_node(volume, fh->fname,
-                    (creatmode & 0x8) ? (2|8) : 2))
-               was_ok++;
-             else
-              completition = -0x85; /* no delete /create Rights */
-           }
-           if (was_ok) {
-             fh->fd   = open(fh->fname, O_RDWR);
-             fh->offd = 0L;
-             stat(fh->fname, stbuff);
-           }
-         } else {
-           /* ======== 'normal' open of file ================ */
-           int acm  = (dowrite) ? (int) O_RDWR : (int)O_RDONLY;
-           if (S_ISFIFO(stbuff->st_mode)){
-             acm |= O_NONBLOCK;
-             fh->fh_flags |= FH_IS_PIPE;
-             if (!dowrite) stbuff->st_size = 0x7fffffff;
-             (void)time(&(stbuff->st_mtime));
-             stbuff->st_atime = stbuff->st_mtime;
-           }
-           fh->fd = open(fh->fname, acm);
-           if (fh->fd < 0 && (creatmode&8)) {
-             if (did_grpchange) {
-               xsetegid(act_gid);
-               did_grpchange=0;
-             }
-             seteuid(0);
-             fh->fd = open(fh->fname, acm);
-             reset_guid();
-           }
-           XDPRINTF((5,0, "OPEN FILE:fd=%d, attrib:0x%x, access:0x%x, fh->fname:%s:fhandle=%d",
-                 fh->fd, attrib, access, fh->fname, fhandle));
-           if (fh->fd < 0)
-             completition = dowrite ? -0x94 : -0x93;
-         }
-
-         if (fh->fd > -1) {
-           if (did_grpchange) {
-             xsetegid(act_gid);
-             did_grpchange=0;
-           }
-           if (!(fh->fh_flags & FH_IS_PIPE)) {
-             /* Not a PIPE */
-             int result=0;
-             fh->st_dev=stbuff->st_dev;
-             fh->st_ino=stbuff->st_ino;
-             if ( (!result) && ((access & 0x4) || (access & 0x8)) ) {
-               if (access & 0x4) /* deny read */
-                 result=share_file(stbuff->st_dev, stbuff->st_ino, 0x5);
-               if ((access & 0x8) && !result)
-                 result=share_file(stbuff->st_dev, stbuff->st_ino, 0x2);
-               XDPRINTF(((result==-1)?2:5, 0,  "open shared lock:result=%d,fn='%s'",
-                         result, fh->fname));
-             } else {
-               result=share_file(stbuff->st_dev, stbuff->st_ino, 1);
-               if (result==-1) {
-                 XDPRINTF((2, 0, "open share failed,fn='%s'", fh->fname));
-               }
-             }
-             if (result==-1) {
-               close(fh->fd);
-               fh->fd       = -1;
-               completition = -0x80;
-               /* 0.99.pl0 changed -0xfe -> -0x80 */
-             }
-
-             if (use_mmap && fh->fd > -1 && !dowrite) {
-               fh->size_mmap = fh->offd=lseek(fh->fd, 0L, SEEK_END);
-               if (fh->size_mmap > 0) {
-                 fh->p_mmap = mmap(NULL,
-                                   fh->size_mmap,
-                                   PROT_READ,
-                                   MAP_SHARED,
-                                   fh->fd, 0);
-                 if (fh->p_mmap == (uint8*) -1) {
-                   fh->p_mmap = NULL;
-                   fh->size_mmap=0;
-                 }
-               }
-             }
-           }
-         }
-         if (fh->fd > -1) {
-           if (did_grpchange)
-             xsetegid(act_gid);
-           if (!dowrite)
-              fh->fh_flags |= FH_OPENED_RO;
-           if (voloptions & VOL_OPTION_READONLY)
-              fh->fh_flags |= FH_IS_READONLY;
-           if (creatmode & 4)
-             fh->fh_flags |= FH_DO_NOT_REUSE;
-           goto file_creat_open_ret;
-         }
-       } /* else (note pipecommand) */
-     } /* if !completition */
-     if (did_grpchange)
-        xsetegid(act_gid);
-     XDPRINTF((5,0,"OPEN FILE not OK (-0x%x), fh->name:%s: fhandle=%d",
-         -completition, fh->fname, fhandle));
-     free_file_handle(fhandle);
-     fhandle=completition;
-   } else fhandle=-0x81; /* no more File Handles */
-
-file_creat_open_ret:
-   MDEBUG(D_FH_OPEN, {
-     char fname[200];
-     if (!fd_2_fname(fhandle, fname, sizeof(fname))){
-       FILE_HANDLE *fh=fd_2_fh(fhandle);
-       xdprintf(1,0,"Open/creat fd=%d, fn=`%s`, openmode=%s",
+        if (use_mmap && fh->fd > -1 && !dowrite) {
+          fh->size_mmap = fh->offd=lseek(fh->fd, 0L, SEEK_END);
+          if (fh->size_mmap > 0) {
+            fh->p_mmap = mmap(NULL,
+                              fh->size_mmap,
+                              PROT_READ,
+                              MAP_SHARED,
+                              fh->fd, 0);
+            if (fh->p_mmap == (uint8*) -1) {
+              fh->p_mmap = NULL;
+              fh->size_mmap=0;
+            }
+          }
+        }
+      }
+      if (!completition) {
+        if (fh->fd != -1) {
+          if (!dowrite)
+            fh->fh_flags |= FH_OPENED_RO;
+          if (voloptions & VOL_OPTION_READONLY)
+            fh->fh_flags |= FH_IS_READONLY;
+          if (creatmode & 4)
+            fh->fh_flags |= FH_DO_NOT_REUSE;
+        }
+      } else {
+        XDPRINTF((5,0,"OPEN FILE not OK (-0x%x), fh->name:%s: fhandle=%d",
+                   -completition, fh->fname, fhandle));
+        free_file_handle(fhandle);
+        fhandle=completition;
+      }
+    } else fhandle=-0x81; /* no more File Handles */
+  } else fhandle=completition;
+  
+  MDEBUG(D_FH_OPEN, {
+    char fname[200];
+    if (!fd_2_fname(fhandle, fname, sizeof(fname))){
+      FILE_HANDLE *fh=fd_2_fh(fhandle);
+      xdprintf(1,0,"Open/creat fd=%d, fn=`%s`, openmode=%s",
           fhandle, fname, (fh && (fh->fh_flags &FH_OPENED_RO)) ? "RO" : "RW" );
-     }
-   })
-   return(fhandle);
+    }
+  })
+
+  return(fhandle);
 }
 
 int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
@@ -501,7 +474,7 @@ int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
   return(-0x88); /* wrong filehandle */
 }
 
-int nw_close_file(int fhandle, int reset_reuse)
+int nw_close_file(int fhandle, int reset_reuse, int task)
 {
   XDPRINTF((5, 0, "nw_close_file handle=%d, count_fhandles",
      fhandle, count_fhandles));
@@ -515,6 +488,12 @@ int nw_close_file(int fhandle, int reset_reuse)
   if (fhandle > HOFFS && (fhandle <= count_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (reset_reuse) fh->fh_flags &= (~FH_DO_NOT_REUSE);
+    else if (fh->task != task) 
+        return(0); /* 24-May-98 , 0.99.pl9 */
+    /* if close file's task is wrong the file will not be closed.   
+     * I hope this is right !?
+     */
+
     if (fh->fd > -1 || (fh->fd == -3 && fh->fh_flags & FH_IS_PIPE_COMMAND)) {
       int result = 0;
       int result2;
@@ -546,7 +525,9 @@ int nw_close_file(int fhandle, int reset_reuse)
                          && !(fh->fh_flags & FH_IS_READONLY)) {
         struct utimbuf ut;
         ut.actime = ut.modtime = fh->tmodi;
+        seteuid(0);
         utime(fh->fname, &ut);
+        reseteuid();
         fh->tmodi = 0L;
       }
 #ifdef TEST_FNAME
@@ -587,7 +568,9 @@ int nw_commit_file(int fhandle)
               if (fh->tmodi > 0L) {
                 struct utimbuf ut;
                 ut.actime = ut.modtime = fh->tmodi;
+                seteuid(0);
                 utime(fh->fname, &ut);
+                reseteuid();
                 fh->tmodi = 0L;
               }
               fh->fd=dup2(fd, fh->fd);
@@ -599,7 +582,9 @@ int nw_commit_file(int fhandle)
           if (fh->tmodi > 0L) {
             struct utimbuf ut;
             ut.actime = ut.modtime = fh->tmodi;
+            seteuid(0);
             utime(fh->fname, &ut);
+            reseteuid();
           }
 #endif
         }
@@ -663,7 +648,7 @@ int nw_read_file(int fhandle, uint8 *data, int size, uint32 offset)
         size=offset;
 #endif
 #if 1
-        if (!size) {
+        if ((fh->fh_flags & FH_IS_PIPE_COMMAND) && !size) {
           if (fh->f->flags & 1) return(-0x57);
           fh->f->flags |= 1;
         }
@@ -889,30 +874,4 @@ int get_nwfd(int fhandle)
   }
   return(-1);
 }
-
-int nw_unlink(int volume, char *name)
-{
-  struct stat stbuff;
-  int voloptions=get_volume_options(volume);
-  if (voloptions & VOL_OPTION_IS_PIPE)
-    return(0); /* don't delete 'pipe commands' */
-  else if (get_volume_options(volume) & VOL_OPTION_READONLY)
-    return(-0x8a); /* don't delete 'readonly' */
-  if (stat(name, &stbuff))
-    return(-0x9c); /* wrong path */
-  if (get_nw_attrib_dword(volume, name, &stbuff) & FILE_ATTR_R)
-    return(-0x8a); /* don't delete 'readonly' */
-
-  if (  -1 == share_file(stbuff.st_dev, stbuff.st_ino, 0x12|0x8)
-     || ( !(entry8_flags&0x10) &&
-       -1 == share_file(stbuff.st_dev, stbuff.st_ino, 0x11|0x4)) )
-    return(-0x8a); /* NO Delete Privileges, file is shared open */
-  if (!unlink(name)) {
-    free_nw_ext_inode(volume, name, stbuff.st_dev, stbuff.st_ino);
-    return(0);
-  }
-  return(-0x8a); /* NO Delete Privileges */
-}
-
-
 

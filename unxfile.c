@@ -1,4 +1,4 @@
-/* unxfile.c:  05-Feb-98*/
+/* unxfile.c:  30-Apr-98*/
 
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
@@ -80,10 +80,15 @@ int unx_xrmdir(char *unixname)
     memcpy(buf, unixname, len);
     *p++ = '/';
     while ((dirbuff = readdir(d)) != (struct dirent*)NULL){
-      if (dirbuff->d_ino) {
+      if (dirbuff->d_ino && 
+        (     dirbuff->d_name[0] != '.'
+          || (dirbuff->d_name[1] != '\0' && 
+             (dirbuff->d_name[1] != '.' || dirbuff->d_name[2] != '\0')))) {
         strcpy(p, dirbuff->d_name);
-        if (unlink(buf) && unx_xrmdir(buf)) 
+        if (unlink(buf) && unx_xrmdir(buf)) {
+          errorp(1, "unx_xrmdir", "cannot remove '%s'", buf);
           break;
+        }
       }
     }
     xfree(buf);
@@ -115,7 +120,7 @@ int unx_ftruncate(int fd, uint32 size)
   flockd.l_whence = SEEK_SET;
   flockd.l_start  = size;
   flockd.l_len    = 0;
-  result = fcntl(fd, F_FREESP, &flockd);
+  return(fcntl(fd, F_FREESP, &flockd));
 #endif
 }
 

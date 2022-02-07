@@ -1,4 +1,4 @@
-/* nwqueue.c 08-Oct-97       */
+/* nwqueue.c 14-Apr-98       */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -251,8 +251,11 @@ static void r_w_queue_jobs(NWE_QUEUE *q, int mode)
             qj->server_station=0;
             qj->server_id=0;
             qj->job_control_flags &= ~0x20;
+            
+
             add_queue_job(q, qj);
             qj=(INT_QUEUE_JOB*)xmalloc(sizeof(INT_QUEUE_JOB));
+          
           }
           xfree(qj);
         }
@@ -534,19 +537,25 @@ int nw_get_queue_job_list_old(uint32 q_id, uint8 *responsedata)
   return(result);
 }
 
+static int get_qj_file_size(NWE_QUEUE *q, INT_QUEUE_JOB  *qj)
+{
+  if (q && qj) {
+    struct stat stb;
+    uint8 buf[300];
+    build_unix_queue_file(buf, q, qj);
+    if (!stat(buf, &stb))
+       return(stb.st_size);
+  }
+  return(0);
+}
+
 int nw_get_queue_job_file_size(uint32 q_id, int job_id)
 {
   int result=-0xd5;
   NWE_QUEUE     *q  = find_queue(q_id);
   INT_QUEUE_JOB *qj = find_queue_job(q, job_id);
-  if (qj) {
-    struct stat stb;
-    uint8 buf[300];
-    build_unix_queue_file(buf, q, qj);
-    if (!stat(buf, &stb))
-      return(stb.st_size);
-    return(0);
-  }
+  if (qj) 
+    return(get_qj_file_size(q, qj));
   return(result);
 }
                                  
@@ -580,6 +589,35 @@ int nw_remove_job_from_queue(uint32 user_id, uint32 q_id, int job_id)
     } else result=-0xd6; /* no queue user rights */
   }
   return(result);
+}
+
+void nw_close_connection_jobs(int connection, int task)
+/* 
+ * this routine closes pending client open queue jobs 
+ * if (task == -1) all jobs of connection are affected
+*/
+{
+  NWE_QUEUE *q=(NWE_QUEUE*)nwe_queues;
+  while (q) {
+    INT_QUEUE_JOB *qj=q->queue_jobs;
+    while(qj) {
+      if (qj->client_connection == connection
+        && (qj->client_task == task || task == -1)
+        && (qj->job_control_flags & 0x20) ) { /* actual queued */
+        if (get_qj_file_size(q, qj) > 0) {  /* we mark it as not queued */
+          qj->job_control_flags &= ~0x20;
+        } else {  /* we remove it */
+          XDPRINTF((1, 0, "Queue job removed by nw_close_connection_jobs, conn=%d, task=%d", connection, task));
+          (void)remove_queue_job_file(q, qj);
+          free_queue_job(q, qj->job_id);
+        }
+        qj=q->queue_jobs;
+        continue;
+      }
+      qj=qj->next;
+    }
+    q=q->next;
+  }
 }
 
 /* ------------------ for queue servers ------------------- */
@@ -618,6 +656,8 @@ int nw_attach_server_to_queue(uint32 user_id,
         /* we only allow 1 qserver/queue in this version */
     }
   }
+  XDPRINTF((2, 0, "attach TO QUEUE q_id=0x%x, user=0x%x, conn=%d, result=0x%x", 
+     q_id, user_id, connection, result));
   return(result);
 }
 
@@ -664,9 +704,18 @@ int nw_service_queue_job(uint32 user_id, int connection, int task,
            && (qj->target_id == MAX_U32 || qj->target_id == user_id)
            && (qj->job_typ == MAX_U16 || job_typ==MAX_U16 
                                       || qj->job_typ == job_typ)) {
-          
-          fqj=qj;
-          break;
+          if (get_qj_file_size(q, qj) > 0) {
+            fqj=qj;
+            break;
+          } else {
+            if (time(NULL) - qj->entry_time > 60) {  /* ca. 1 min */
+              XDPRINTF((1, 0, "Queue job of size 0 automaticly removed"));
+              (void)remove_queue_job_file(q, qj);
+              free_queue_job(q, qj->job_id);
+              qj=q->queue_jobs;
+              continue;
+            }
+          }
         } else {
           XDPRINTF((6, 0, "Queue job ignored: station=%d, target_id=0x%x,job_typ=0x%x, %s",
              qj->server_station, qj->target_id, qj->job_typ,  

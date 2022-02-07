@@ -1,3 +1,8 @@
+------10-May-98--- 0.99.pl9 ---------
+- changed default attrib directory location:
+  /var/lib/nwserv/attrib -> /var/nwserv/attrib. ( section 46 ) 
+- changed default rights to 751 640. (section 9 and section 1 )
+- first trustee handling added. See new volume flag 't' and 'doc/TRUSTEES'.
 ------03-Mar-98--- 0.99.pl7 ---------
 - very important BUG fixed by Andrew Sapozhnikov. <sapa@hq.icb.chel.su>
   The properties find member functions could find max. 32 entries. (1 segment)

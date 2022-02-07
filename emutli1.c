@@ -1,4 +1,4 @@
-/* emutli1.c 03-Mar-98 */
+/* emutli1.c 05-May-98 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -160,7 +160,10 @@ static void del_special_net(int special, char *devname, int frame)
           if (frame < 0) continue;
           sipx->sipx_type = frame;
           if (flags & 1) { /* primary */
-            strcpy(id.ifr_name, name);
+            if (flags & 2){ /* primary == internal net */
+              sipx->sipx_special = IPX_INTERNAL;
+            } else
+              strcpy(id.ifr_name, name);
             break;
           }
         }
@@ -279,10 +282,49 @@ int get_frame_name(uint8 *framename, int frame)
   return(0);
 }
 
+int ipx_inuse(int mode)
+/* returns 0 if ipx is idle */
+{
+  FILE *f=fopen("/proc/net/ipx", "r");
+  int idle=0;
+  if (f) {
+    char buff[200];
+    while (fgets((char*)buff, sizeof(buff), f) != NULL){
+      uint32 network;
+      int     sock;
+      if (2==sscanf(buff, "%lx:%x", &network, &sock)) {
+        if (mode == 0) {
+          if (sock >= 0x4000) { /* user socket */
+            idle=sock;
+            break;
+          }
+        } else if (sock==mode) {
+          idle=sock;
+          break;
+        }
+      }
+    }
+    fclose(f);
+  }
+  return(idle);
+}
+
+static void ipx_in_use_abort()
+{
+  errorp(11, "!! IPX IN USE ERROR !!",
+       "mars_nwe would kill existing IPX programs if starting\n"
+       "because it must reinit ipx devices.\n"
+       "Please stop other IPX programs e.g. ncpmount,\n"
+       "or change mars_nwe's configuration.\n"
+       );
+  exit(1);
+}
+
 int init_ipx(uint32 network, uint32 node, int ipx_debug, int flags)
 {
   int result=-1;
   int sock;
+  uint32 primary_net=0L;
 #if INTERNAL_RIP_SAP
 # ifdef CONFIG_IPX_INTERN
   errorp(11, "!! configuration error !!",
@@ -299,36 +341,49 @@ int init_ipx(uint32 network, uint32 node, int ipx_debug, int flags)
     exit(1);
   } else {
     ipx_config_data cfgdata;
+    struct sockaddr_ipx ipxs;
     ioctl(sock, SIOCIPXCFGDATA, &cfgdata);
     org_auto_interfaces =
         auto_interfaces = cfgdata.ipxcfg_auto_create_interfaces;
     set_sock_debug(sock);
     result=0;
-
-    /* build new internal net */
-    if (network) {
-      struct sockaddr_ipx ipxs;
-      memset((char*)&ipxs, 0, sizeof(struct sockaddr_ipx));
-      ipxs.sipx_port   = htons(SOCK_NCP);
-      ipxs.sipx_family = AF_IPX;
-      if (bind(sock, (struct sockaddr*)&ipxs,
-            sizeof(struct sockaddr_ipx))==-1) {
-        if (errno == EEXIST || errno == EADDRINUSE) result = -1;
-      }
-      if (result) {
+    
+    memset((char*)&ipxs, 0, sizeof(struct sockaddr_ipx));
+    ipxs.sipx_port   = htons(SOCK_NCP);
+    ipxs.sipx_family = AF_IPX;
+    if (bind(sock, (struct sockaddr*)&ipxs,
+          sizeof(struct sockaddr_ipx))==-1) {
+      if (errno == EEXIST || errno == EADDRINUSE) {
+        result = -1;
         errorp(1, "EMUTLI:init_ipx socket 0x451", NULL);
         exit(1);
       }
-      del_internal_net();
-      add_internal_net(network, node);
+    } else {
+      int maxplen=sizeof(struct sockaddr_ipx);
+      if (getsockname(sock, (struct sockaddr*)&ipxs, &maxplen) != -1)
+        primary_net= ntohl(ipxs.sipx_network);
+      if (primary_net)
+        have_ipx_started++;
+    }
+    /* build new internal net */
+    if (network) {
+      int diffs = (primary_net && (network != primary_net));
+      if (diffs) {
+        XDPRINTF((1,0,"Existing primary network will be reinit from %x to %x", 
+           primary_net, network));
+        if (ipx_inuse(0) && !(flags&4)) 
+          ipx_in_use_abort();
+      }
+      if ((flags&4) || diffs || !primary_net) {  /* if complete reinit or diffs */
+        del_internal_net();
+        add_internal_net(network, node);
+      }
       have_ipx_started++;
     }
-
     if ((flags & 2) && !auto_interfaces) { /* set auto interfaces */
       auto_interfaces = 1;
       ioctl(sock, SIOCAIPXITFCRT, &auto_interfaces);
     }
-
     close(sock);
   }
   return(result);
@@ -347,8 +402,10 @@ void exit_ipx(int flags)
       ioctl(sock, SIOCAIPXITFCRT, &org_auto_interfaces);
     close(sock);
   }
-  if (have_ipx_started && flags&4) {
+  if (flags&4) {
     del_all_interfaces_nets();
+  } else if (!ipx_inuse(0)) {
+    del_internal_net();
   }
 }
 
@@ -359,8 +416,10 @@ int init_dev(char *devname, int frame, uint32 network, int wildmask)
    if (!have_ipx_started) {
      if (wildmask) return(-99);
      have_ipx_started++;
-     del_primary_net();
-     add_primary_net(devname, frame, network);
+     if (!ipx_inuse(0)) {
+       del_primary_net(); 
+       add_primary_net(devname, frame, network);
+     }
    } else {
      if (!wildmask)
        return(add_device_net(devname, frame, network));

@@ -1,0 +1,72 @@
+last changed: 12-May-98
+
+First simple trustee handling is added in 0.99.pl9.
+
+some notes/restrictions:
+
+NOT ALL functions will work correct with trustees rights.
+Trustee handling still needs to be hard tested to avoid 
+SECURITY holes.
+
+- trustee handling must be activated by setting the volumes 't' flag.
+- if activated for the SYS directory then the following default 
+  trustees should be set.
+  GROUP EVERYBODY: C         in SYS:MAIL
+                   FR        in SYS:PUBLIC
+  SUPERVISOR:      SRWCEMFA  in SYS:
+
+  the standard user rights in mail diretories are not so important, 
+  because user has unix rights in this diretory.
+  every USER:      RWCEMF in SYS:MAIL/userid
+
+  A non root supervisor and user with supervisor equivalences 
+  get default full trustee rights in root directory. These rights
+  could be altered in subdirectories to less rights.
+  A root supervisor always has full rights.
+
+- if SYS volume is marked as trusttee volume then some
+  checking routines will reduce g+o unix accesses in
+  SYS:MAIL subdirectories.
+- symlink directories must get direct trustees, inheritated_mask
+  is set to 0 to prevent user making symlinks to directories
+  they do not have real access.
+- when stepping through directories, 
+  inheritated_mask will be set to 0 if st_dev changes.
+- only root assigned user may give trustee rights to 
+  file/dir which st_dev differs from VOLUMES st_dev.
+- only additional rights are given by trustees, existing
+  unix user rights are not reduced.
+  therefore trustee volumes should get low unix rights.
+  for example:  0711 for directories and 0600 for files.
+- for many routines the user still needs the 'x' directory right.
+- the trusttee search is limitated to user and first level groups.
+  'group in group' and 'normal' security equivalences are not supported.
+  Supervisor equivalences are supported.
+- an user can only be member of 32 groups.
+- some changes of trustees only have effect after new login.
+- must never be switched on volumes which do not have fix inodes,
+  because trustees are represented by device and inode number of the
+  file or directory.
+
+- standard trustee directory is /var/nwserv/trustees 
+  ( see nwserv.conf section 47 )
+
+- representation under this directory is:
+  - for user trustees:
+    volumename/device/ino0/ino1/ino2/t.ino3/id -> trustee
+    ino0 .. ino3 = byte 0 .. 3 of inode
+    id = user id as hex number.
+  - for inherit right masks  ( we use 'userid' 0 )
+    volumename/device/ino0/ino1/ino2/t.ino3/0  -> inherit_right_mask
+  - and for scanning trustees:
+    volumename/device/ino0/ino1/ino2/n.ino3 -> path
+    path is relativ to volumes root path.
+  - and for 'trustees are changed' notifications:
+    volumename/ts -> sernum (hex value)
+  all values are represented by symbolic links, not files similar
+  to the attribute handling.
+
+
+  
+
+ 

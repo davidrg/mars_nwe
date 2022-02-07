@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "09-Mar-98"
+#define REVISION_DATE "25-May-98"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -82,7 +82,6 @@ static int        max_nw_vols=MAX_NW_VOLS;
 static int        max_connections=MAX_CONNECTIONS;
 static CONNECTION *connections=NULL;
 static CONNECTION *act_c=(CONNECTION*)NULL;
-static int        act_connection;
 static int        internal_act=0;
 
 int b_acc(uint32 obj_id, int security, int forwrite)
@@ -107,8 +106,8 @@ int b_acc(uint32 obj_id, int security, int forwrite)
     if (act_c->object_id > 0) return(0);  /* rights for all logged */
   } else if (security == 2) {
     if (  act_c->object_id == obj_id
-       || act_c->object_id == 1 ) return(0); /* rights for the user */
-  } else if (security == 3 && act_c->object_id == 1) return(0);
+       || (act_c->id_flags&1) ) return(0); /* rights for the user */
+  } else if (security == 3 && (act_c->id_flags&1)) return(0);
 
   switch (forwrite&0xf) {
     case 0 : acc_what = "read";   break;
@@ -152,7 +151,11 @@ static void sent_down_message(void)
   while (++k < max_connections) {
     CONNECTION *cn=&connections[k];
     if (cn->active) {
+#if 0      
       strmaxcpy(cn->message, "SERVER IS GOING DOWN", 58);
+#else      
+      strmaxcpy(cn->message, "MARS_NWE IS DIEING", 58);
+#endif      
       nwserv_handle_msg(k+1);
     }
   } /* while */
@@ -178,6 +181,7 @@ static void open_clear_connection(int conn, int activate, uint8 *addr)
       }
     }
     c->object_id  = 0;
+    c->id_flags   = 0;
   }
 }
 
@@ -198,19 +202,31 @@ static void get_login_time(uint8 login_time[], CONNECTION *cx)
 static int build_login_response(uint8 *responsedata, uint32 obj_id)
 {
   uint8 pw_name[40];
+  uint8 *p;
   int result;
+  int i;
   act_c->object_id = obj_id;     /* actuell Object ID  */
   act_c->t_login   = akttime;    /* and login Time     */
-  
+  act_c->id_flags  = 0;
   internal_act=1;
+  if (HAVE_SU_RIGHTS(obj_id)) {
+    act_c->id_flags|=1; /* supervisor equivalence */
+  }
   get_guid((int*) responsedata,
            (int*) (responsedata+sizeof(int)),
            obj_id, pw_name);
-  *((uint32*) (responsedata+2*sizeof(int))) = obj_id;
-
-  result = get_home_dir(responsedata + 3 * sizeof(int)+1, obj_id);
-  *(responsedata + 3 * sizeof(int)) = (uint8) result;
-  result = 3 * sizeof(int) + 1 + (int) *(responsedata+ 3 * sizeof(int));
+  *((int*)(responsedata+2*sizeof(int)))     = act_c->id_flags;
+  *((uint32*) (responsedata+3*sizeof(int))) = obj_id;
+  result=4*sizeof(int);
+  p = responsedata + result;
+  i = (uint8)get_groups_i_m_in(obj_id, (uint32*) (p+sizeof(int)) );
+  *(int*)(p) = i;
+  result+= (sizeof(int)+i*sizeof(uint32));
+  p=responsedata + result;
+  i=strlen(pw_name);
+  *p = (uint8) i;
+  memcpy(p+1, pw_name, i);
+  result += ( i + 1 );
   write_utmp(1, act_connection, act_c->pid_nwconn,
                  &(act_c->client_adr), pw_name);
   internal_act=0;
@@ -233,7 +249,7 @@ static void handle_fxx(int gelen, int func)
   uint8        connect_status= 0;
   int          data_len      = 0;
 
-  if (func==0x19) {
+  if (func==0x18||func==19) {
     ufunc   = 0;
     rdata   = requestdata;
   } else if (func==0x20) {
@@ -330,7 +346,7 @@ static void handle_fxx(int gelen, int func)
         }
         internal_act=0;
         /* OK if supervisor or trying to read (0x29) own limits */
-        if (act_c->object_id == 1 ||
+        if ( (act_c->id_flags&1)  ||
 	    (act_c->object_id == id && ufunc == 0x29))
 	  ((int *) responsedata)[2] = 0; /* OK */
         else
@@ -686,7 +702,7 @@ static void handle_fxx(int gelen, int func)
 
      case 0x34 :  {  /* rename OBJECT, only SU */
                     int result=-0xff;
-                    if (1 == act_c->object_id) {
+                    if (act_c->id_flags&1) {
                       uint8  *p           =  rdata;
                       NETOBJ obj;
                       uint8  newname[256];
@@ -774,7 +790,7 @@ static void handle_fxx(int gelen, int func)
      case 0x38 :  {  /* change Bindery Objekt Security */
                      /* only SU ! */
                     int result= -0xff;
-                    if (1 == act_c->object_id) {
+                    if (act_c->id_flags&1) {
                       uint8  *p           =  rdata;
                       NETOBJ obj;
                       obj.type            =  GET_BE16(p+1);
@@ -926,19 +942,18 @@ static void handle_fxx(int gelen, int func)
                       if (0 == (result = find_obj_id(&obj))) {
                         XDPRINTF((6, 0, "CHPW: OLD=`%s`, NEW=`%s`", oldpassword,
                                          newpassword));
-
-                        internal_act = 1;
-                        if (act_c->object_id == 1 ||
+                        internal_act=1;            
+                        if ((act_c->id_flags&1) ||
                            (0 == (result=test_allow_password_change(act_c->object_id))
                            &&
                            0 == (result=nw_test_unenpasswd(obj.id, oldpassword)))){
-                          if ( (act_c->object_id != 1)
+                          if ( (!(act_c->id_flags&1))
                             || *newpassword
                             || !(password_scheme & PW_SCHEME_LOGIN))
                              result=nw_set_passwd(obj.id, newpassword, 0);
                           else result = -0xff;
                         }
-                        internal_act = 0;
+                        internal_act=0;
                       }
                       if (result < 0) completition = (uint8) -result;
                       memset(oldpassword, 0, 50);
@@ -1003,7 +1018,6 @@ static void handle_fxx(int gelen, int func)
                     if (result) completition = (uint8) -result;
                   } break;
 
-
      case 0x44 :  { /* CLOSE BINDERY */
                     ;
                   } break;
@@ -1025,8 +1039,8 @@ static void handle_fxx(int gelen, int func)
                       *xdata  = (uint8) 0;
                       memset(xdata+1, 0xff, 4);
                     } else {
-                      *xdata  = (act_c->object_id == 1) ? (uint8) 0x33
-                                                        : (uint8) 0x22;
+                      *xdata  = (act_c->id_flags&1) ? (uint8) 0x33
+                                                    : (uint8) 0x22;
                       U32_TO_BE32(act_c->object_id, (xdata+1));
                     }
                     data_len = 5;
@@ -1035,19 +1049,10 @@ static void handle_fxx(int gelen, int func)
                   }
                   break;
 
-     case 0x47 :  { /* SCAN BINDERY OBJECT TRUSTEE PATH */
-                    /* TODO !!! */
-                    struct XDATA {
-                      uint8 nextsequence[2];
-                      uint8 id[4];
-                      uint8 access_mask;
-                      uint8 pathlen;
-                      uint8 path[1];
-                    } *xdata = (struct XDATA*) responsedata;
-                    memset(xdata, 0, 8);
-                    data_len = 8;
-                    }
-                  break;
+#if 0
+     case 0x47 :  /* SCAN BINDERY OBJECT TRUSTEE PATH */
+                  handled in nwconn
+#endif
 
      case 0x48 :  { /* GET BINDERY ACCES LEVEL from OBJECT ??? */
                     struct XDATA {
@@ -1059,7 +1064,7 @@ static void handle_fxx(int gelen, int func)
                     result =  nw_get_obj(&obj);
                     if (!result) {
                       /* don't know whether this is ok ?? */
-                      if (act_c->object_id == 1) {
+                      if (act_c->id_flags&1) {
                         xdata->acces_level = 0x33;
                       } else if (act_c->object_id == obj.id) {
                         xdata->acces_level = 0x22;
@@ -1072,7 +1077,7 @@ static void handle_fxx(int gelen, int func)
                   break;
 
      case 0x49 :  { /* IS CALLING STATION A MANAGER */
-                    completition = (act_c->object_id == 1) ? 0 : 0xff;
+                    completition = (act_c->id_flags&1) ? 0 : 0xff;
                      /* here only SU = Manager  */
                     /* not manager, then completition = 0xff */
                   }
@@ -1113,7 +1118,7 @@ static void handle_fxx(int gelen, int func)
                         result=test_allow_password_change(obj.id);
                       if (!result)
   		        result=nw_keychange_passwd(obj.id, act_c->crypt_key,
-				rdata, (int)*p, p+1, act_c->object_id);
+				rdata, (int)*p, p+1, act_c->id_flags);
                       if (!result) test_ins_unx_user(obj.id);
 		      internal_act = 0;
 		    }
@@ -1153,7 +1158,7 @@ static void handle_fxx(int gelen, int func)
      case 0x65 :  {   /* Destroy Queue */
                    uint32 q_id =  GET_BE32(rdata);
                    int result=-0xd3;  /* no rights */
-                   if (1 == act_c->object_id)
+                   if (act_c->id_flags&1)
                      result=nw_destroy_queue(q_id);
                    if (result < 0)
                       completition=(uint8)(-result);
@@ -1421,12 +1426,12 @@ static void handle_fxx(int gelen, int func)
                     }
                   }break;
 
-
-
      case 0xc8 :  { /* CHECK CONSOLE PRIVILEGES */
-                   XDPRINTF((1, 0, "TODO: CHECK CONSOLE PRIV"));
+                    /* to use fileserver service functions */
+                    XDPRINTF((1, 0, "MAKE BETTER: CHECK CONSOLE PRIV"));
                    /*  !!!!!! TODO completition=0xc6 (no rights) */
-                    if (act_c->object_id != 1) completition=0xc6; /* no rights */
+                    if (!(act_c->id_flags&1)) 
+                       completition=0xc6; /* no rights */
                   } break;
 
      case 0xc9 :  { /* GET FILE SERVER DESCRIPTION STRINGs */
@@ -1438,15 +1443,8 @@ static void handle_fxx(int gelen, int func)
                    int  l;
                    memset(responsedata, 0, 512);
                    strcpy(responsedata,   company);
-
                    l = 1 + sprintf(responsedata+k, revision,
                                      _VERS_H_, _VERS_L_, _VERS_P_ );
-#if 0
-                   k+=l;
-#else
-                   /* BUG in LIB */
-                   k += (1 + strlen(responsedata+k));
-#endif
                    strcpy(responsedata+k, revision_date);
                    k += (strlen(revision_date)+1);
                    strcpy(responsedata+k, copyright);
@@ -1493,10 +1491,12 @@ static void handle_fxx(int gelen, int func)
                   break;
 
      case 0xd3 :  { /* down File Server */
-                    if (act_c->object_id == 1) { /* only SUPERVISOR */
+                    internal_act=1;
+                    if (HAVE_SU_RIGHTS(act_c->object_id)) { /* only SUPERVISOR */
                        /* inform nwserv */
                        nwserv_down_server();
                     } else completition = 0xff;
+                    internal_act=0;
                   }
                   break;
 
@@ -1508,9 +1508,13 @@ static void handle_fxx(int gelen, int func)
        default : completition = 0xfb; /* not known here */
                   break;
     }  /* switch */
+  } else if (func == 0x18) {  /* End of Job */
+    nw_close_connection_jobs(act_connection, ncprequest->task); /* close print jobs */
   } else if (func == 0x19) {  /* logout */
+    nw_close_connection_jobs(act_connection, -1);  /* close all print jobs */
     write_utmp(0, act_connection, act_c->pid_nwconn, &(act_c->client_adr), NULL);
     act_c->object_id  = 0; /* not LOGIN  */
+    act_c->id_flags   = 0; /* no flags   */
   } else if (0x20 == func) { /* Semaphore */
     int result = handle_func_0x20(act_c, rdata, ufunc, responsedata);
     if (result > -1) data_len = result;
@@ -1532,7 +1536,7 @@ static void handle_fxx(int gelen, int func)
   send_ipx_data(ipx_out_fd, 17, data_len, (char*)ncpresponse,
                  &my_addr, NULL);
 
-  XDPRINTF((2, 0, "func=0x%x ufunc=0x%x compl:0x%x, written count = %d",
+  XDPRINTF((6, 0, "func=0x%x ufunc=0x%x compl:0x%x, written count = %d",
              (int)func, (int)ufunc, (int) completition, data_len));
 }
 
@@ -1686,14 +1690,11 @@ int main(int argc, char *argv[])
     fprintf(stderr, "usage nwbind nwname address nwbindsock\n");
     exit(1);
   }
-
   init_tools(NWBIND, 0);
 
   strmaxcpy(my_nwname, argv[1], 47);
   adr_to_ipx_addr(&my_addr, argv[2]);
-
   sscanf(argv[3], "%x", &sock_nwbind);
-
   internal_act = 1;
   if (nw_init_dbm(my_nwname, &my_addr) <0) {
     errorp(1, "nw_init_dbm", NULL);
@@ -1709,7 +1710,6 @@ int main(int argc, char *argv[])
   max_nw_vols=get_ini_int(61); /* max. volumes */
   if (max_nw_vols < 1)
     max_nw_vols = MAX_NW_VOLS;
-
 #ifdef LINUX
   set_emu_tli();
 #endif
@@ -1719,7 +1719,6 @@ int main(int argc, char *argv[])
 #endif
   XDPRINTF((1, 0, "USE_PERMANENT_OUT_SOCKET %s",
                 (ipx_out_fd > -1) ? "enabled" : "disabled"));
-
   ud.opt.len       = sizeof(ipx_pack_typ);
   ud.opt.maxlen    = sizeof(ipx_pack_typ);
   ud.opt.buf       = (char*)&ipx_pack_typ; /* gets actual Typ */

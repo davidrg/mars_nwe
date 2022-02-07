@@ -1,4 +1,4 @@
-/* nwdbm.c  27-Feb-98  data base for mars_nwe */
+/* nwdbm.c  12-May-98  data base for mars_nwe */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -59,13 +59,15 @@ int tells_server_version=1; /* default 1 since 12-Jan-97 */
 int password_scheme=0;
 
 uint8 *sys_unixname=NULL; /* Unixname of SYS: ends with '/'  */
-int   sys_unixnamlen=0;   /* len of unixname   */
-int   sys_downshift=0;    /* is SYS downshift  */
+int   sys_unixnamlen=0;   /* len of unixname     */
+int   sys_downshift=0;    /* is SYS downshift    */
+int   sys_has_trustee=0;  /* has SYS trustees ?  */
 uint8 *sys_sysname=NULL;  /* Name of first Volume, normally SYS */
 
 uint32 network_serial_nmbr=(uint32)NETWORK_SERIAL_NMBR;
 uint16 network_appl_nmbr=(uint16)NETWORK_APPL_NMBR;
-static int entry8_flags = 0;
+static int entry8_flags  = 0;
+static int entry17_flags = 0;
 
 static datum key;
 static datum data;
@@ -1251,8 +1253,12 @@ uint32 nw_new_obj_prop(uint32 wanted_id,
 
 /* some property names */
 /*STANDARD NOVELL properties */
-static uint8 *pn_password=(uint8*)      "PASSWORD";
-static uint8 *pn_login_control=(uint8*)"LOGIN_CONTROL"; 
+static uint8 *pn_password=(uint8*)        "PASSWORD";
+static uint8 *pn_login_control=(uint8*)   "LOGIN_CONTROL"; 
+static uint8 *pn_security_equals=(uint8*) "SECURITY_EQUALS"; 
+static uint8 *pn_groups_i_m_in=(uint8*)   "GROUPS_I'M_IN"; 
+static uint8 *pn_group_members=(uint8*)   "GROUP_MEMBERS"; 
+
 
 /* OWN properties */
 static uint8 *pn_unix_user=(uint8*)     "UNIX_USER";
@@ -1300,6 +1306,36 @@ static MYPASSWD *nw_getpwnam(uint32 obj_id)
   return(NULL);
 }
 
+int nw_is_security_equal(uint32 id1,  uint32 id2)
+/* returns 0 if id2 has same security as id1 */
+{
+  return(nw_is_member_in_set(id2, pn_security_equals, id1));
+}
+
+int get_groups_i_m_in(uint32 id, uint32 *gids)
+/* returns max. 32 groups */
+{
+  uint8 buff[128];
+  uint8 more_segments=0;
+  uint8 property_flags;
+  int   result=nw_get_prop_val_by_obj_id(id, 1, 
+                  pn_groups_i_m_in, strlen(pn_groups_i_m_in),
+                  buff, &more_segments, &property_flags);
+  if (!result) {
+    uint8   *p=buff;
+    int     k=-1;
+    while (++k < 32) {
+      *gids=GET_BE32(p);
+      p+=4;
+      if (*gids) {
+        gids++;
+        result++;
+      }
+    }
+  } else result=0;
+  return(result);
+}
+
 int get_guid(int *gid, int *uid, uint32 obj_id, uint8 *name)
 /* searched for gid und uid of actual obj */
 {
@@ -1314,25 +1350,6 @@ int get_guid(int *gid, int *uid, uint32 obj_id, uint8 *name)
     *uid = -1;
     if (name) strcpy(name, "UNKNOWN");
     return(-0xff);
-  }
-}
-
-int get_home_dir(uint8 *homedir,  uint32 obj_id)
-/* searches for UNIX homedir of actual obj */
-{
-  MYPASSWD *pw = nw_getpwnam(obj_id);
-  if (NULL != pw) {
-    int len=strlen(pw->pw_dir);
-    if (!len) {
-      *homedir++ = '/';
-      *homedir   = '\0';
-      len =1;
-    } else
-      strmaxcpy(homedir, pw->pw_dir, min(255, len));
-    return(len);
-  } else {
-    *homedir='\0';
-    return(0);
   }
 }
 
@@ -1371,7 +1388,8 @@ int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
                                 obj_id, vgl_key, akt_key);
   if (result < 1) return(result);
 
-  if (obj_id == 1) return(-0xff);  /* SUPERVISOR */
+  if (obj_id == 1) return(-0xff); 
+  /* the real SUPERVISOR must use netware passwords */
 
   if (password_scheme & PW_SCHEME_LOGIN) {
     if (!(password_scheme & PW_SCHEME_ALLOW_EMPTY_PW)) {
@@ -1445,7 +1463,7 @@ int nw_set_passwd(uint32 obj_id, char *password, int dont_ch)
  * from ncp request
  */
 int nw_keychange_passwd(uint32 obj_id, uint8 *cryptkey, uint8 *oldpass,
-			 int cryptedlen, uint8 *newpass, uint32 act_id)
+			 int cryptedlen, uint8 *newpass, int id_flags)
 /* returns 1 if new password is zero */
 {
   uint8 storedpass[200];
@@ -1468,7 +1486,7 @@ int nw_keychange_passwd(uint32 obj_id, uint8 *cryptkey, uint8 *oldpass,
   XDPRINTF((5, 0, "ncp old: %s", hex_str(buf, oldpass,      8)));
 
   if (result < 0) {     /* wrong passwd */
-    if (1 == act_id) {  /* supervisor is changing passwd   */
+    if (id_flags&1) {  /* supervisor (equivalence) is changing passwd   */
       U32_TO_BE32(obj_id, s_uid);
       shuffle(s_uid, buf, 0, storedpass);
       nw_encrypt(cryptkey, storedpass, keybuff);
@@ -1614,6 +1632,7 @@ static int nw_new_add_prop_member(uint32 obj_id, char *propname,
   return(result);
 }
 
+
 int nwdbm_mkdir(char *unixname, int mode, int flags)
 /* flags & 1 = set x permiss flag in upper dirs */
 {
@@ -1637,7 +1656,7 @@ int nwdbm_mkdir(char *unixname, int mode, int flags)
 }
 
 int nwdbm_rmdir(char *path)
-/* removes full directory */
+/* removes full directory, without subdirs */
 {
   DIR   *f=opendir(path);
   if (f) {
@@ -1730,28 +1749,38 @@ static void add_pr_queue(uint32 q_id,
 static void add_pr_server(uint32 ps_id,
                          char *ps_name,
                          char *ps_queue,
-                         uint32 su_id, uint32 ge_id)
+                         uint32 su_id, uint32 ge_id, int is_user)
 {
-  XDPRINTF((2,0, "ADD PS=%s, Q=%s", ps_name, ps_queue));
-  nw_new_obj(&ps_id, ps_name, 0x7, O_FL_STAT, 0x31);
-  nw_new_add_prop_member(ps_id, "PS_OPERATORS", P_FL_STAT,  0x31,  su_id);
-  nw_new_add_prop_member(ps_id, "PS_USERS", P_FL_STAT,      0x31,  ge_id);
-
+  XDPRINTF((1,0, "ADD PS%s=%s, Q=%s", is_user?"(User)":"", ps_name, ps_queue));
+  if (!is_user) {
+    nw_new_obj(&ps_id, ps_name, 0x7, O_FL_STAT, 0x31);
+    nw_new_add_prop_member(ps_id, "PS_OPERATORS", P_FL_STAT,  0x31,  su_id);
+    nw_new_add_prop_member(ps_id, "PS_USERS", P_FL_STAT,      0x31,  ge_id);
+  } else {
+    NETOBJ  obj;
+    strmaxcpy((char*)obj.name, (char*)ps_name, 47);
+    obj.type = 0x1; /* USER */
+    if (find_obj_id(&obj)) {
+      XDPRINTF((1, 0, "add_pr_server:user=%s not exist", obj.name));
+      return;
+    }
+    ps_id=obj.id;
+  }
   if (ps_queue && *ps_queue) {
     NETOBJ  obj;
     strmaxcpy((char*)obj.name, (char*)ps_queue, 47);
     obj.type = 0x3; /* QUEUE */
-    if (!find_obj_id(&obj))
+    if (!find_obj_id(&obj)) {
       nw_new_add_prop_member(obj.id, "Q_SERVERS",  P_FL_STAT, 0x31, ps_id);
+    }
   }
-
 }
 
 static void add_user_to_group(uint32 u_id,  uint32 g_id)
 {
-  nw_new_add_prop_member(u_id, "GROUPS_I'M_IN",   P_FL_STAT,  0x31,  g_id);
-  nw_new_add_prop_member(u_id, "SECURITY_EQUALS", P_FL_STAT,  0x32,  g_id);
-  nw_new_add_prop_member(g_id, "GROUP_MEMBERS",   P_FL_STAT,  0x31,  u_id);
+  nw_new_add_prop_member(u_id, pn_groups_i_m_in,   P_FL_STAT,  0x31,  g_id);
+  nw_new_add_prop_member(u_id, pn_security_equals, P_FL_STAT,  0x32,  g_id);
+  nw_new_add_prop_member(g_id, pn_group_members,   P_FL_STAT,  0x31,  u_id);
 }
 
 static void add_user_2_unx(uint32 u_id,  char  *unname)
@@ -1851,8 +1880,9 @@ static int get_sys_unixname(uint8 *unixname, uint8 *sysname, uint8 *sysentry)
       uint8 *p;
       for (p=optionstr; *p; p++) {
         if (*p=='k') {
-          result=1;
-          break;
+          result|=1;  /* downshift */
+        } else if (*p=='t') {
+          result|=2;  /* trustees */
         }
       } /* for */
     } /* if */
@@ -1861,7 +1891,7 @@ static int get_sys_unixname(uint8 *unixname, uint8 *sysname, uint8 *sysentry)
     *(pp+1) = '\0';
 
     if (stat(unixname, &statb) < 0)
-      nwdbm_mkdir(unixname, 0777, 1);
+      nwdbm_mkdir(unixname, 0751, 1);
 
     if (stat(unixname, &statb) < 0 || !S_ISDIR(statb.st_mode)) {
       errorp(1, "No good SYS", "unix name='%s'", unixname);
@@ -1927,6 +1957,7 @@ static void correct_user_dirs(uint32 objid, uint8 *objname, int uid, int gid)
   uint8  *pp;
   uint8  *p1;
   int    l;
+  int    mask;
   DIR    *f;
   memcpy(fndir, sys_unixname, sys_unixnamlen);
   /* SYS/MAIL */
@@ -1940,18 +1971,50 @@ static void correct_user_dirs(uint32 objid, uint8 *objname, int uid, int gid)
     upstr(p);
     upstr(buf1);
   }
-  (void)mkdir(fndir, 0733);
-  (void)chmod(fndir, 0733);
+
+  if (sys_has_trustee) 
+    mask = 0700; /* other rights may be given via trustees */
+  else
+    mask = 0733; /* everybody should be able to write */
+
+  (void)mkdir(fndir, mask);
+  (void)chmod(fndir, mask);
   (void)chown(fndir, uid, gid);
+  
   if ((f=opendir(fndir)) != (DIR*)NULL) {
     struct dirent* dirbuff;
     *pp='/';
+    if (entry17_flags&0x1) {  /* creat empty login script */
+      struct stat statb;
+      strcpy(pp+1, "login");
+      if (!sys_downshift)
+         upstr(pp+1);
+      if (stat(fndir, &statb)) { /* no one exist */
+        FILE *f=fopen(fndir, "w");
+        if (f) {
+          fprintf(f, "REM auto created by mars_nwe\r\n");
+          fclose(f);
+          (void)chown(fndir, uid, gid);
+          chmod(fndir, 0600); 
+        }
+      }
+    }
+
     while ((dirbuff = readdir(f)) != (struct dirent*)NULL){
       if (dirbuff->d_ino) {
+        struct stat lstatb;
         uint8 *name=(uint8*)(dirbuff->d_name);
         if (name[0] != '.' && name[1] != '.' && name[1] != '\0') {
           strcpy(pp+1, name);
-          (void)chown(fndir, uid, gid);
+          if (  !lstat(fndir, &lstatb) 
+             && !S_ISLNK(lstatb.st_mode) && 
+              lstatb.st_uid != 0 && lstatb.st_gid != 0
+              && lstatb.st_uid != uid) {
+            (void)chown(fndir, uid, gid);
+            if (sys_has_trustee) {
+              chmod(fndir, S_ISDIR(lstatb.st_mode) ? 700 : 600);
+            }
+          }
         }
       }
     }
@@ -1963,6 +2026,7 @@ static void correct_user_dirs(uint32 objid, uint8 *objname, int uid, int gid)
     upstr(p1);
   else
     downstr(p1+5);
+  unlink(fndir);
   symlink(buf1, fndir);
 }
 
@@ -2243,7 +2307,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   }
 
   ge_id = nw_new_obj_prop(ge_id, "EVERYONE",        0x2,   0x0,  0x31,
-	                   "GROUP_MEMBERS",          P_FL_SET,  0x31,
+	                   pn_group_members,          P_FL_SET,  0x31,
 	                      NULL, 0, 0);
   if (NULL != (f= open_nw_ini())){
     char buff[256];
@@ -2268,6 +2332,8 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
 
       } else if (8 == what) { /* entry8_flags */
         entry8_flags = hextoi((char*)buff);
+      } else if (17 == what) { /* entry17_flags */
+        entry17_flags = hextoi((char*)buff);
       } else if (21 == what) {  /* QUEUES */
         char name[200];
         char directory[200];
@@ -2311,38 +2377,18 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
       } else if (22 == what) {  /* PSERVER */
         char name[200];
         char queue[200];
-        char *p=buff;
-        char *pp=name;
-        char c;
-        int  state=0;
-        name[0]='\0';
-        queue[0]='\0';
-
-        while (0 != (c = *p++)) {
-          if (c == 32 || c == '\t') {
-            if (!(state & 1)) {
-              *pp = '\0';
-              state++;
-            }
-          } else {
-            if (state & 1){
-              if (state == 1) {
-                pp=queue;
-                state++;
-              } else break;
-            }
-            *pp++ = c;
-          }
-        }
-        *pp='\0';
-
+        char sflags[200];
+        int  flags=0;
+        int  count=sscanf((char*)buff, "%s %s %s", name, queue, sflags);
+        if (count > 2) flags=hextoi(sflags);
+        if (count < 2) *queue=0;
+        if (count < 1) *name=0;
         if (*name) {
           upstr(name);
           upstr(queue);
-          add_pr_server(ps1_id, name, queue, su_id, ge_id);
-          ps1_id++;
+          add_pr_server(ps1_id, name, queue, su_id, ge_id, flags&1 ?1:0);
+          if (!(flags&1)) ps1_id++;
         }
-
       } else if (12 == what || 13 == what || 14 == what) {
         /* SUPERVISOR, OTHERS  and GROUPS*/
         char nname[100];
@@ -2458,14 +2504,16 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   if (*sysentry) {
     uint8 unixname[512];
     uint8 sysname[256];
-    int   result    = get_sys_unixname(unixname, sysname, sysentry);
-    int   downshift = (result & 1);
-    int   unlen     = strlen(unixname);
+    int   result      = get_sys_unixname(unixname, sysname, sysentry);
+    int   downshift   = (result & 1);
+    int   has_trustee = (result & 2);
+    int   unlen       = strlen(unixname);
     if (result < 0) return(-1);
     new_str(sys_unixname, unixname);
     new_str(sys_sysname,  sysname);
-    sys_downshift  = downshift;
-    sys_unixnamlen = unlen;
+    sys_downshift   = downshift;
+    sys_has_trustee = has_trustee;
+    sys_unixnamlen  = unlen;
 
     if (make_tests) {
       uint32  objs[LOC_MAX_OBJS];
@@ -2473,11 +2521,13 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
       int     ocount=0;
       uint8  *pp    = unixname+unlen;
       uint8  *ppp   = maildir+unlen;
+      int    mask;
       memcpy(maildir, unixname, unlen+1);
 
       test_add_dir(unixname,     pp, 4, downshift,0755, 0,0, "LOGIN");
-      test_add_dir(unixname,     pp, 0, downshift,0755, 0,0, "SYSTEM");
-      test_add_dir(unixname,     pp, 0, downshift,0755, 0,0, "PUBLIC");
+      test_add_dir(unixname,     pp, 0, downshift,0751, 0,0, "SYSTEM");
+      mask = (sys_has_trustee) ? 0751 : 0755;
+      test_add_dir(unixname,     pp, 0, downshift,mask, 0,0, "PUBLIC");
       /* ----- */
       ppp=test_add_dir(maildir, ppp, 1, downshift,0755, 0,0, "MAIL");
       test_add_dir(maildir,     ppp, 0, downshift,0755, 0,0, "USER");
@@ -2501,22 +2551,12 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
         obj.id = objs[ocount];
         nw_get_obj(&obj);
         if (obj.type == 1) {
-          char sx[20];
           int gid;
           int uid;
-          sprintf(sx, "../%x", (int)obj.id);
-          if (!get_guid(&gid, &uid, obj.id, NULL))  {
-            test_add_dir(maildir, ppp, 2, downshift, 0733, gid, uid, sx+3);
-            memcpy(ppp, "user/", 5);
-            strmaxcpy(ppp+5, obj.name, 47);
-            if (downshift) downstr(ppp+5);
-            else upstr(ppp);
-            unlink(maildir);
-            symlink(sx, maildir);
-            *ppp='\0';
-          } else
+          if (!get_guid(&gid, &uid, obj.id, NULL)) 
+            correct_user_dirs(obj.id, obj.name, uid, gid);
+          else
             errorp(10, "Cannot get unix uid/gid", "User=`%s`", obj.name);
-
         } else if (obj.type == 3) { /* print queue */
           uint8 buff[300];
           char  *p;
@@ -2525,7 +2565,8 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
           if (result > -1 && NULL != (p=strchr(buff, ':')) ) {
             *p++='\0';
             if (!strcmp(buff, sysname)) {
-              test_add_dir(unixname, pp, 2|4, downshift, 0775, 0, 0, p);
+              mask = (sys_has_trustee) ? 0751 : 0755;
+              test_add_dir(unixname, pp, 2|4, downshift, mask, 0, 0, p);
             } else
              errorp(10, "queue dir not on SYS",
                 "Queue=%s, Volume=%s", obj.name, sysname);
@@ -2557,13 +2598,12 @@ static void nw_init_dbm_1(char *servername, ipxAddr_t *adr)
   int     anz=0;
   uint32  objs[LOC_MAX_OBJS];
   uint8   props[LOC_MAX_OBJS];
-
+  
   create_nw_db(dbm_fn[FNOBJ],  0);
   create_nw_db(dbm_fn[FNPROP], 0);
   create_nw_db(dbm_fn[FNVAL],  0);
-
   create_nw_db(dbm_fn[FNIOBJ], 0);
-
+  
   if (!dbminit(FNOBJ)){
     for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
       data = fetch(key);

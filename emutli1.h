@@ -1,4 +1,4 @@
-/* emutli1.h 10-Apr-97 */
+/* emutli1.h 05-May-98 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -29,14 +29,11 @@ extern int  get_interface_frame_name(char *name, uint32 net);
 extern int add_device_net(char *devname, int frame, uint32 netnum);
 
 extern int  get_frame_name(uint8 *framename, int frame);
+extern int  ipx_inuse(int mode);
 extern int  init_ipx(uint32 network, uint32 node, int ipx_debug, int flags);
 extern void exit_ipx(int full);
 extern int  init_dev(char  *devname, int frame, uint32 network, int wildmask);
 extern void exit_dev(char  *devname, int frame);
-
-#if 0
-extern int get_ipx_addr(ipxAddr_t *addr);
-#endif
 
 extern void ipx_route_add(uint32  dest_net,
                           uint32  route_net,

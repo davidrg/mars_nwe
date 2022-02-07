@@ -1,4 +1,4 @@
-/* nwconn.c 18-Nov-97       */
+/* nwconn.c 13-May-98       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -32,7 +32,6 @@
 #include "namspace.h"
 #include "nwconn.h"
 
-int act_connection = 0;
 int act_pid        = 0;
 
 #define  FD_NCP_OUT    3
@@ -394,8 +393,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            uint8 sub_dir_name[16];
                            uint8 create_date_time[4];
                            uint8 owner_id[4];       /* HI LOW */
-                           uint8 max_right_mask;
-                           uint8 reserved;          /* Reserved by Novell */
+                           uint8 max_right_mask;    /* inherited right mask */
+                           uint8 reserved;          /* Reserved by Novell   */
                            uint8 sub_dir_nmbr[2];   /* HI LOW */
                          } *xdata = (struct XDATA*) responsedata;
                          int result;
@@ -488,6 +487,22 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                              (int)input->trustee_right_mask,
                              0);
                          if (result) completition = (uint8) -result;
+                       } else  if (*p == 0xe){  /* remove trustees */
+                         struct INPUT {
+                           uint8   header[7];         /* Requestheader     */
+                           uint8   div[3];            /* 0x0, dlen, ufunc  */
+                           uint8   dir_handle;        /* Handle            */
+                           uint8   trustee_id[4];     /* Trustee Object ID */
+                           uint8   reserved;        
+                           uint8   pathlen;
+                           uint8   path[2];
+                         } *input = (struct INPUT *) (ncprequest);
+                         int result = nw_del_trustee(
+                             input->dir_handle, 
+                             input->path, input->pathlen, 
+                             GET_BE32(input->trustee_id),    
+                             0); /* normal */
+                         if (result) completition = (uint8) -result;
                        } else  if (*p == 0xf){ /* rename dir */
                    /******** Rename DIR *********************/
                          int dir_handle  = (int) *(p+1);
@@ -500,7 +515,6 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                                               newpath, newpathlen);
                          if (code) completition = (uint8) -code;
                        } else  if (*p == 0x12 /* Allocate Permanent Dir Handle */
-
                    /******** Allocate Permanent DIR Handle **/
                           || *p == 0x13     /* Allocate Temp Dir Handle */
                    /******** Allocate Temp DIR Handle **/
@@ -510,6 +524,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            uint8 dirhandle;   /* new Dir Handle   */
                            uint8 right_mask;  /* 0xff effektive Right MAsk ? */
                          } *xdata = (struct XDATA*) responsedata;
+                         int eff_rights;
                          int dirhandle = nw_alloc_dir_handle(
                                             (int) *(p+1),
                                                    p+4,
@@ -517,10 +532,11 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                                             (int)*(p+2),
                                             (*p==0x12) ? 0
                                          : ((*p==0x13) ? 1 : 2),
-                                         (int)(ncprequest->task));
+                                         (int)(ncprequest->task),
+                                         &eff_rights);
                          if (dirhandle > -1){
                            xdata->dirhandle  = (uint8) dirhandle;
-                           xdata->right_mask = 0xff;
+                           xdata->right_mask = eff_rights;
                            data_len = sizeof(struct XDATA);
                          } else completition = (uint8) -dirhandle;
 
@@ -569,12 +585,15 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            }
                          }
                          completition = (uint8)-result;
+#if 0
+                       } else  if (*p == 0x18){ /* restore directory handle */
+                        ?????????
+#endif
                        } else  if (*p == 0x19){
                         /* Set Directory Information
                          * Modifies basic directory information as creation date and
                          * directory rights mask. DOS namespace.
                          */
-#if 0
                          struct INPUT {
                            uint8   header[7];         /* Requestheader */
                            uint8   div[3];            /* 0x0, dlen, ufunc */
@@ -584,11 +603,17 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            uint8   owner_id[4];
                            uint8   new_max_rights;
                            uint8   pathlen;
-                           uint8   path;
+                           uint8   path[2];
                          } *input = (struct INPUT *) (ncprequest);
-#endif
+                         int result = nw_set_dir_info(
+                             input->dir_handle, 
+                             input->path, input->pathlen, 
+                             GET_BE32(input->owner_id),    
+                             (int)input->new_max_rights,
+                             input->creation_date,
+                             input->creation_time);
+                         if (result<0) completition = (uint8) -result;
                          /* No REPLY  */
-                         completition = 0xfb;  /* !!!!! TODO !!!! */
                        } else  if (*p == 0x1a){ /* Get Pathname of A Volume Dir Pair */
 #if 0
                          struct INPUT {
@@ -641,7 +666,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                        } else  if (*p == 0x20){
                        /* scan volume user disk restrictions */
                          uint8  volnr    = *(p+1);
-                         /* uint32 sequenz  = GET_BE32(p+2); */
+                         /* uint32 sequence  = GET_BE32(p+2); */
                          struct XDATA {
                            uint8  entries;  /* 0x0   */
                            /*--- per entry (max.entries = 12) ----*/
@@ -666,37 +691,57 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          * sets or changes the file or directory information to the
                          * values entered in 'Change Bits'.
                          */
-                         /* NO REPLY */
-                         /* ncopy use this call */
-                          /* TODO !!!!!!!!!!!!!!!!!!!!  */
-
-                         do_druck++;
-
+                         /* NO REPLY
+                          * used by ncopy.exe, flag.exe
+                          */
+                         struct INPUT {
+                           uint8   header[7];        /* Requestheader */
+                           uint8   div[3];            /* 0x0, dlen, ufunc */
+                           uint8   dir_handle;       
+                           uint8   attrib;        
+                           NW_SET_DIR_INFO f;
+                         } *input = (struct INPUT *) (ncprequest);
+                         int result = nw_set_a_directory_entry(
+                                      input->dir_handle,
+                                      input->f.u.f.name,
+                                      input->f.u.f.namlen,
+                                      input->attrib,
+                                      GET_BE32(input->f.searchsequence),
+                                      &(input->f));
+                         if (result<0)
+                           do_druck++;
+                           /* TODO !!!!!!! */
                        } else  if (*p == 0x26) { /* Scan file or Dir for ext trustees */
-                         int sequenz = (int)*(p+2); /* trustee sequenz  */
+                         int sequence = (int)*(p+2); /* trustee sequence  */
                          struct XDATA {
                            uint8  entries;
                            uint8  ids[80];       /* 20 id's */
                            uint8  trustees[40];  /* 20 trustees's */
                          } *xdata = (struct XDATA*) responsedata;
-                         int result  = nw_get_eff_dir_rights(
-                                       (int)*(p+1),
-                                       p+4,
-                                       (int)*(p+3), 1);
-                         if (result > -1){
-                           if (!sequenz) {
-                             memset(xdata, 0, sizeof(struct XDATA));
-                             xdata->entries=1;
-#if 0
-                             U32_TO_BE32(1, xdata->ids);  /* SUPERVISOR  */
-#else
-                             U32_TO_BE32(act_obj_id, xdata->ids);  /* actual LOGIN User */
-                             /* NOTE: this should be made better */
-#endif
-                             xdata->trustees[1] = 0x1;    /* Supervisory */
-                             xdata->trustees[0] = 0xff;   /* all low     */
-                             data_len = sizeof(struct XDATA);
-                           } else completition = 0x9c;  /* no more trustees */
+                         uint32 ids[20];
+                         int    trustees[20];
+                         int result  = nw_scan_for_trustee(
+                                       (int)*(p+1),   /* dir handle */
+                                       sequence,
+                                       p+4,           /* path */
+                                       (int)*(p+3),   /* pathlen */
+                                       20,            /* max entries */
+                                       ids,
+                                       trustees,
+                                       1);  /* extended */
+                         if (result > -1) {
+                           int       i = -1;
+                           uint8 *idsp = xdata->ids;
+                           uint8 *trp  = xdata->trustees;
+                           memset(xdata, 0, sizeof(*xdata));
+                           xdata->entries = result;
+                           while(++i < result) {
+                             U32_TO_BE32(ids[i],      idsp); 
+                             idsp+=4;
+                             U16_TO_16(trustees[i], trp); /* LO - HI */
+                             trp+=2;
+                           }
+                           data_len = sizeof(struct XDATA);
                          } else completition = (uint8) (-result);
                        } else  if (*p == 0x27) { /* Add Ext Trustees to DIR or File */
                          struct INPUT {
@@ -704,7 +749,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                            uint8   div[3];            /* 0x0, dlen, ufunc  */
                            uint8   dir_handle;        /* Handle            */
                            uint8   trustee_id[4];     /* Trustee Object ID */
-                           uint8   trustee_rights[2]; /* low - high        */
+                           uint8   trustee_rights[2]; /* lo - hi           */
                            uint8   pathlen;
                            uint8   path[2];
                          } *input = (struct INPUT *) (ncprequest);
@@ -757,20 +802,34 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                           data_len=sizeof(struct XDATA);
 #endif
                        } else  if (*p == 0x2a){
-                          /* Get Eff. Rights of DIR's and Files  ??*/
+                          /*  Get Eff. Rights of DIR's and Files  ??*/
                          struct XDATA {
-                           uint8    eff_rights;   /* Effektive Right to Dir */
-                           uint8    unkwown_data; /* 0x1  */
+                           uint8    eff_rights[2]; /* LO-HI */
                          } *xdata = (struct XDATA*) responsedata;
                          int result = nw_get_eff_dir_rights(
                                        (int)*(p+1),
                                        p+3,
                                        (int)*(p+2), 1);
                          if (result > -1){
-                           xdata->eff_rights   = (uint8)result;
-                           xdata->unkwown_data = 0x1;
+                           U16_TO_16(result, xdata->eff_rights);
                            data_len            = sizeof(struct XDATA);
                          } else completition = (uint8) (-result);
+                       } else  if (*p == 0x2b){  /* remove ext trustees */
+                         struct INPUT {
+                           uint8   header[7];         /* Requestheader     */
+                           uint8   div[3];            /* 0x0, dlen, ufunc  */
+                           uint8   dir_handle;        /* Handle            */
+                           uint8   trustee_id[4];     /* Trustee Object ID */
+                           uint8   reserved;      
+                           uint8   pathlen;
+                           uint8   path[2];
+                         } *input = (struct INPUT *) (ncprequest);
+                         int result = nw_del_trustee(
+                             input->dir_handle, 
+                             input->path, input->pathlen, 
+                             GET_BE32(input->trustee_id),    
+                             1); /* extended */
+                         if (result) completition = (uint8) -result;
                        } else  if (*p == 0x2c){
                          /* Get Volume and Purge Information */
                          /* new Call since V3.11 */
@@ -967,6 +1026,40 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
              }
              break;
 
+     case 0x47 :  { /* SCAN BINDERY OBJECT TRUSTEE PATH */
+                    struct INPUT {
+                      uint8   header[7];     /* Requestheader     */
+                      uint8   div[3];        /* 0x0, dlen, ufunc  */
+                      uint8   volume;     
+                      uint8   sequence[2];   /* trustee searchsequence */
+                      uint8   id[4];         /* Trustee Object ID */
+                    } *input = (struct INPUT *) (ncprequest);
+                    struct XDATA {
+                      uint8 nextsequence[2];
+                      uint8 id[4];
+                      uint8 access_mask;
+                      uint8 pathlen;
+                      uint8 path[1];
+                    } *xdata = (struct XDATA*) responsedata;
+                    int sequence=GET_BE16(input->sequence);
+                    int access_mask=0;
+                    uint32 id=GET_BE32(input->id);
+                    int result=nw_scan_user_trustee(
+                       input->volume, &sequence, id, &access_mask, xdata->path);
+                    if (result > 0) {
+                      U16_TO_BE16(sequence, xdata->nextsequence);
+                      memcpy(xdata->id, input->id, 4);
+                      xdata->access_mask=(uint8)access_mask;
+                      xdata->pathlen=result;
+                      data_len = 8+result;
+                    } else if (!result) {
+                      memset(xdata, 0, 8);
+                      data_len = 8;
+                    } else
+                      completition = (uint8)(-result);
+                  }
+                  break;
+
              case 0x64:  { /* create queue */
 #if 0
                int    q_typ      = GET_BE16(rdata);
@@ -1011,7 +1104,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
              case 0x7f: {  /* close file and start queue */
                struct INPUT {
                  uint8   header[7];          /* Requestheader */
-                 uint8   packetlen[2];       /* low high      */
+                 uint8   packetlen[2];       /* lo - hi       */
                  uint8   func;               /* 0x7f or 0x69  */
                  uint8   queue_id[4];        /* Queue ID      */
                  uint8   job_id[4];          /* result from creat queue    */
@@ -1074,15 +1167,19 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
          break;
 
          case 0x18 : /* End of Job */
+                     free_connection_task_jobs(ncprequest->task);
                      nw_free_handles(ncprequest->task);
+                     return(-1); /* nwbind must do a little rest */
                      break;
 
          case 0x19 : /* logout, some of this call is handled in ncpserv. */
                      free_queue_jobs();
                      nw_free_handles(-1);
                      set_nw_user(-1, -1,
+                                  0,
                                   0, NULL,
-                                 -1, NULL);
+                                 -1, NULL,
+                                  0, NULL);
                      return(-1); /* nwbind must do a little rest */
                      break;
 
@@ -1171,18 +1268,18 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                        struct XDATA {
                          uint8  volume;            /* Volume       */
                          uint8  dir_id[2];         /* Direktory ID */
-                         uint8  searchsequenz[2];
+                         uint8  searchsequence[2];
                          uint8  dir_rights;        /* Rights       */
                        } *xdata= (struct XDATA*) responsedata;
                        int volume;
-                       int searchsequenz;
+                       int searchsequence;
                        int dir_id;
                        int rights = nw_open_dir_handle(dir_handle, p, len,
-                                     &volume, &dir_id, &searchsequenz);
+                                     &volume, &dir_id, &searchsequence);
                        if (rights >-1) {
                          xdata->volume = (uint8)volume;
                          U16_TO_BE16((uint16)dir_id,        xdata->dir_id);
-                         U16_TO_BE16((uint16)searchsequenz, xdata->searchsequenz);
+                         U16_TO_BE16((uint16)searchsequence, xdata->searchsequence);
                          xdata->dir_rights = (uint8)rights;
                          data_len = sizeof(struct XDATA);
                        } else completition = (uint8) -rights;
@@ -1235,14 +1332,14 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                      {
                        struct INPUT {
                          uint8   header[7];      /* Requestheader   */
-                         uint8   sequenz[2];     /* z.B. 0xff, 0xff */
+                         uint8   sequence[2];     /* z.B. 0xff, 0xff */
                          uint8   dir_handle;     /* z.B  0x1        */
                          uint8   search_attrib;  /* z.B. 0x6        */
                          uint8   len;
                          uint8   data[2];        /* Name          */
                        } *input = (struct INPUT *)ncprequest;
                        struct XDATA {
-                         uint8   sequenz[2];    /* answer sequence */
+                         uint8   sequence[2];    /* answer sequence */
                          uint8   reserved[2];   /* z.B  0x0   0x0  */
                          union {
                            NW_DIR_INFO  d;
@@ -1250,18 +1347,18 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          } u;
                        } *xdata = (struct XDATA*)responsedata;
                        int len = input->len;
-                       uint8 my_sequenz[2];
+                       uint8 my_sequence[2];
                        int searchsequence;
                        uint32 owner;
-                       memcpy(my_sequenz, input->sequenz, 2);
+                       memcpy(my_sequence, input->sequence, 2);
                        searchsequence = nw_search( (uint8*) &(xdata->u),
                                              &owner,
                                              (int)input->dir_handle,
-                                             (int) GET_BE16(my_sequenz),
+                                             (int) GET_BE16(my_sequence),
                                              (int) input->search_attrib,
                                              input->data, len);
                        if (searchsequence > -1) {
-                         U16_TO_BE16((uint16) searchsequence, xdata->sequenz);
+                         U16_TO_BE16((uint16) searchsequence, xdata->sequence);
                          data_len = sizeof(struct XDATA);
                        } else completition = (uint8) (- searchsequence);
                      }
@@ -1278,8 +1375,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                        } *input = (struct INPUT *)ncprequest;
                        struct XDATA {
                          uint8   ext_fhandle[2]; /* all zero       */
-                         uint8   fhandle[4];     /* Dateihandle    */
-                         uint8   reserve2[2];    /* z.B  0x0   0x0 */
+                         uint8   fhandle[4];     /* File Handle    */
+                         uint8   reserved[2];    /* reserved by novell */
                          NW_FILE_INFO fileinfo;
                        } *xdata= (struct XDATA*)responsedata;
                        int  fhandle=nw_creat_open_file((int)input->dirhandle,
@@ -1290,8 +1387,10 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
 
                        if (fhandle > -1){
                          U32_TO_32(fhandle, xdata->fhandle);
-                         U16_TO_BE16(0, xdata->ext_fhandle);
-                         U16_TO_BE16(0, xdata->reserve2);
+                         xdata->ext_fhandle[0]=0;
+                         xdata->ext_fhandle[1]=0;
+                         xdata->reserved[0]=0;
+                         xdata->reserved[1]=0;
                          data_len = sizeof(struct XDATA);
                        } else completition = (uint8) (-fhandle);
                      }
@@ -1306,7 +1405,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          uint8   fhandle[4];     /* filehandle */
                        } *input = (struct INPUT *)ncprequest;
                        uint32 fhandle = GET_32(input->fhandle);
-                       completition = (uint8)(-nw_close_file(fhandle, 0));
+                       completition = (uint8)(-nw_close_file(fhandle, 
+                                 0, (int)(ncprequest->task)));
 
 #if TEST_FNAME
                        if (!completition && fhandle == test_handle) {
@@ -1328,9 +1428,9 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          uint8   data[1];       /* Name */
                        } *input = (struct INPUT *)ncprequest;
                        struct XDATA {
-                         uint8   extfhandle[2];
-                         uint8   fhandle[4];   /* Filehandle */
-                         uint8   reserved[2];  /* rese. by NOVELL */
+                         uint8   ext_fhandle[2];
+                         uint8   fhandle[4];   /* Filehandle         */
+                         uint8   reserved[2];  /* reserved by NOVELL */
                          NW_FILE_INFO fileinfo;
                        } *xdata= (struct XDATA*)responsedata;
                        int  fhandle=nw_creat_open_file(
@@ -1345,8 +1445,10 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                        if (fhandle > -1){
                          data_len = sizeof(struct XDATA);
                          U32_TO_32  (fhandle, xdata->fhandle);
-                         U16_TO_BE16(0,       xdata->extfhandle);
-                         U16_TO_BE16(0,       xdata->reserved);
+                         xdata->ext_fhandle[0]=0;
+                         xdata->ext_fhandle[1]=0;
+                         xdata->reserved[0]=0;
+                         xdata->reserved[1]=0;
 
 #ifdef TEST_FNAME
                          input->data[input->len] = '\0';
@@ -1369,7 +1471,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                          uint8   len;
                          uint8   data[2];        /* Name */
                        } *input = (struct INPUT *)ncprequest;
-                       int err_code = nw_delete_datei((int)input->dirhandle,
+                       int err_code = nw_delete_files((int)input->dirhandle,
+                           (int)input->searchattributes,
                            input->data, (int)input->len);
                        if (err_code < 0)
                           completition = (uint8) -err_code;
@@ -1563,7 +1666,7 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                        struct XDATA {
                          uint8   ext_fhandle[2]; /* all zero       */
                          uint8   fhandle[4];     /* Dateihandle    */
-                         uint8   reserve2[2];    /* z.B  0x0   0x0 */
+                         uint8   reserved[2];    /* reserved by Novell */
                          NW_FILE_INFO fileinfo;
                        } *xdata= (struct XDATA*)responsedata;
                        int  fhandle=nw_creat_open_file((int)input->dirhandle,
@@ -1575,9 +1678,10 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
 
                        if (fhandle > -1){
                          U32_TO_32  (fhandle, xdata->fhandle);
-                         U16_TO_BE16(0, xdata->ext_fhandle);
-                         U16_TO_BE16(0, xdata->reserve2);
-
+                         xdata->ext_fhandle[0]=0;
+                         xdata->ext_fhandle[1]=0;
+                         xdata->reserved[0]=0;
+                         xdata->reserved[1]=0;
                          data_len = sizeof(struct XDATA);
 #ifdef TEST_FNAME
                          input->data[input->len] = '\0';
@@ -1890,22 +1994,24 @@ static void handle_after_bind()
        switch (ufunc) {
          case 0x14:   /* Login Objekt, unencrypted passwords */
          case 0x18: { /* crypt_keyed LOGIN */
-           int   fnlen = (int) *(bindresponse + 3 * sizeof(int));
+           int    grpcount      = * (int*)(bindresponse    + 4 * sizeof(int));
+           uint32 *grps         =   (uint32*)(bindresponse + 5 * sizeof(int));
+           int    unxloginlen   =   (int)*(uint8*)(grps+grpcount);
+           uint8  *unxloginname =   (uint8*)(grps+grpcount)+1;
            uint8 objname[48];
            /* ncpserv have changed the structure */
-
            if (ufunc==0x14) {
              xstrmaxcpy(objname, requestdata+6, (int) *(requestdata+5));
            } else if (ufunc==0x18){
              xstrmaxcpy(objname, requestdata+14, (int) *(requestdata+13));
            } else objname[0]='\0';
-
-           set_nw_user(*((int*)bindresponse),   /* gid */
+           set_nw_user(*((int*)bindresponse),               /* gid */
                        *((int*)(bindresponse+sizeof(int))), /* uid */
-                       *((uint32*)(bindresponse + 2 * sizeof(int))), /* id */
+                       *((int*)(bindresponse    + 2 * sizeof(int))), /* id_flags */
+                       *((uint32*)(bindresponse + 3 * sizeof(int))), /* id */
                         objname,           /* login name */
-                        fnlen,             /* unix homepathlen */
-                        bindresponse + 3 * sizeof(int) +1); /* unix homepath */
+                        unxloginlen, unxloginname,
+                        grpcount, grps);
          }
          break;
 
@@ -1921,7 +2027,8 @@ static void handle_after_bind()
            } *input = (struct INPUT *) (ncprequest);
            uint32  q_id = GET_BE32(input->queue_id);
            uint8  *qjob = bindresponse;
-           int result = creat_queue_job(q_id, qjob,
+           int result = creat_queue_job( (int) ncprequest->task,
+                                         q_id, qjob,
                                          responsedata,
                                          (ufunc == 0x68)  );
            if (result > -1)
@@ -1969,7 +2076,8 @@ static void handle_after_bind()
            } *input = (struct INPUT *) (ncprequest);
            uint32  q_id = GET_BE32(input->queue_id);
            uint8  *qjob = bindresponse;
-           int result   = service_queue_job(q_id, qjob,
+           int result   = service_queue_job((int)ncprequest->task,
+                                      q_id, qjob,
                                       responsedata,
                                       ufunc==0x71);
            if (result > -1)
@@ -2190,7 +2298,7 @@ int main(int argc, char **argv)
   setuid(0);
   setgid(0);
   act_connection = atoi(*(argv+1));
-  init_tools(NWCONN, act_connection);
+  init_tools(NWCONN, 0);
   memset(saved_readbuff, 0, sizeof(saved_readbuff));
   XDPRINTF((2, 0, "FATHER PID=%d, ADDR=%s CON:%d",
                   father_pid, *(argv+2), act_connection));
@@ -2274,7 +2382,8 @@ int main(int argc, char **argv)
         }
         saved_sequence = -1;
       } else { /* this calls I must handle, it is a request */
-        time_t act_time=time(NULL);
+        act_time=time(NULL);
+        act_ncpsequence=(int)(ncprequest->sequence);
 
         if (act_time > last_time+300 && saved_sequence == -1) {
            /* ca. 5 min. reset wdogs */

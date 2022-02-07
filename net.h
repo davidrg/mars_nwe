@@ -22,6 +22,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/types.h>  /* moved 12-May-98 0.99.pl9 */
 
 /* we want sysv signal handling, used for glibc */
 #define _XOPEN_SOURCE 
@@ -37,9 +38,12 @@
 #endif
 
 #include <sys/fcntl.h>
-#include <sys/types.h>
+/* #include <sys/types.h> moved 12-May-98 0.99.pl9 */
 #include <unistd.h>
 #include <sys/stat.h>
+#ifndef S_ISLNK
+#  define S_ISLNK(m)	(((m) & S_IFMT) == S_IFLNK)
+#endif
 #include <time.h>
 #include <sys/wait.h>
 #include <utmp.h>
@@ -56,7 +60,6 @@ extern int errno;
 /* #  include "common.h" */
 /* #  include "portable.h" , needed ???   */
 #  include <sys/ipx_app.h>
-
 #else
 #  include <sys/ioctl.h>
 #  include "emutli.h"      /* TLI-EMULATION */

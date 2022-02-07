@@ -1,4 +1,4 @@
-/* nwserv.c 08-Feb-98 */
+/* nwserv.c 19-May-98 */
 /* MAIN Prog for NWSERV + NWROUTED  */
 
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
@@ -95,11 +95,6 @@ int                  sockfd       [NEEDED_SOCKETS];
 static struct        pollfd  polls[NEEDED_POLLS];
 #if 0
 static uint16        spx_diag_socket;    /* SPX DIAGNOSE SOCKET       */
-#endif
-#if !IN_NWROUTED
-static ipxAddr_t     nw386_adr;          /* Address of NW-TEST Server */
-static int           nw386_found    =  0;
-static int           client_mode    =  0;
 #endif
 static int           ipxdebug       =  0;
 static int           pid_ncpserv    = -1;
@@ -353,25 +348,6 @@ static int start_nwbind(char *nwname)
 }
 
 #if !IN_NWROUTED
-static int start_nwclient(void)
-{
-  switch (fork()){
-    case 0 : {  /* new Process */
-               char *progname="nwclient";
-               char pathname[300];
-               char my_addrstr[100];
-               char serv_addrstr[100];
-               ipx_addr_to_adr(my_addrstr,     &my_server_adr);
-               ipx_addr_to_adr(serv_addrstr,   &nw386_adr);
-               execl(get_exec_path(pathname, progname), progname,
-                      my_addrstr, serv_addrstr, NULL);
-             }
-             exit(1);
-
-    case -1: return(-1);  /* error */
-  }
-  return(0);       /*  OK */
-}
 
 /* ===========================  WDOG =============================== */
 #ifndef _WDOG_TESTING_
@@ -509,23 +485,6 @@ static void send_bcasts(int conn)
 #endif
 
 
-void get_server_data(char *name,
-                ipxAddr_t *adr,
-                ipxAddr_t *from_addr)
-{
-#if !IN_NWROUTED
-   if (!nw386_found && strcmp(name, my_nwname)) {
-     memcpy(&nw386_adr, adr, sizeof(ipxAddr_t));
-     nw386_found++;
-     if (client_mode) {
-       start_nwclient();
-       client_mode = 0;  /* only start once */
-     }
-   }
-#endif
-   XDPRINTF((2,0,"NW386 %s found at:%s", name, visable_ipx_adr(adr)));
-}
-
 static void handle_sap(int fd,
                 int        ipx_pack_typ,
                 int        data_len,
@@ -579,7 +538,6 @@ static void handle_sap(int fd,
           XDPRINTF((2,0, "SERVER %s IS GOING DOWN", name));
           insert_delete_server(name, type, NULL, NULL,      16, 1, 0);
         } else {
-          get_server_data((char*)name, ad, from_addr);
           insert_delete_server(name, type, ad, from_addr, hops, 0, 0);
           if (type == 4) flag=1;
         }
@@ -963,11 +921,6 @@ static void get_ini(int full)
                           max_connections=MAX_CONNECTIONS;
                       }
                       break;
-
-           case 104 : /* nwclient */
-                      if (client_mode && atoi(inhalt))
-                          client_mode++;
-                      break;
 #endif
            case 210 : server_goes_down_secs=atoi(inhalt);
                       if (server_goes_down_secs < 1 ||
@@ -1005,9 +958,6 @@ static void get_ini(int full)
     } /* while */
     fclose(f);
   }
-#if !IN_NWROUTED
-  if (client_mode < 2) client_mode=0;
-#endif
   if (print_route_tac && !pr_route_info_fn && !*pr_route_info_fn)
     print_route_tac = 0;
   if (!print_route_tac) xfree(pr_route_info_fn);
@@ -1091,9 +1041,16 @@ static void close_all(void)
     t_close(ipx_out_fd);
   }
 #endif
+  
   while (j--) {
-    t_unbind(sockfd[j]);
-    t_close(sockfd[j]);
+#ifdef RIP_SLOT
+    if ( j != RIP_SLOT ) {
+#endif
+      t_unbind(sockfd[j]);
+      t_close(sockfd[j]);
+#ifdef RIP_SLOT
+    }
+#endif
   }
 
   if (pid_ncpserv > 0) {
@@ -1121,15 +1078,25 @@ static void close_all(void)
 #ifdef LINUX
 # if INTERNAL_RIP_SAP
 #if 1
-  if (!(ipx_flags&1)) {
-    for (j=0; j<count_net_devices;j++) {
-      NW_NET_DEVICE *nd=net_devices[j];
-      if (nd->is_up==1) { /* only no auto interfaces */
-        XDPRINTF((1, 0, "Close Device=%s, frame=%d",
-                nd->devname, nd->frame));
-        exit_dev(nd->devname, nd->frame);
+  if ((!ipx_inuse(0)) || (ipx_flags&4)) {
+    send_sap_rip_broadcast(22);
+    sleep(2);
+    send_sap_rip_broadcast(22);
+    sleep(1);
+    t_unbind(sockfd[RIP_SLOT]);
+    t_close(sockfd[RIP_SLOT]);
+    if (!(ipx_flags&1)) {
+      for (j=0; j<count_net_devices;j++) {
+        NW_NET_DEVICE *nd=net_devices[j];
+        if (nd->is_up==1) { /* only no auto interfaces */
+          XDPRINTF((1, 0, "Close Device=%s, frame=%d",
+                  nd->devname, nd->frame));
+          exit_dev(nd->devname, nd->frame);
+        }
       }
     }
+  } else {
+    XDPRINTF((1, 0, "Not sending rip hangup, because ipxinuse"));
   }
 #endif
   exit_ipx(ipx_flags);
@@ -1273,6 +1240,7 @@ int main(int argc, char **argv)
     if (*a == '-') {
       while (*(++a)) {
         switch (*a)  {
+#ifdef LINUX        
           case 'a' : 
           case 'd' : 
             if (    (*a == 'a' && argc - j == 4) 
@@ -1313,7 +1281,7 @@ int main(int argc, char **argv)
               return((result<0) ? 1 : 0);
             } else
               return(usage(argv[0]));
-          
+#endif          
           case 'h' : init_mode = 1; break;
           case 'k' : init_mode = 2; break;
           case 'u' : init_mode = 3; break;
@@ -1326,13 +1294,7 @@ int main(int argc, char **argv)
           default  : return(usage(argv[0]));
         }
       }
-    }
-#if !IN_NWROUTED
-    else if (*a == 'y')
-      client_mode=1;
-     /* in client mode the testprog 'nwclient' will be startet. */
-#endif
-    else
+    } else
       return(usage(argv[0]));
   }
 #if !DO_TESTING
@@ -1555,7 +1517,6 @@ int main(int argc, char **argv)
         } else {
 #if !IN_NWROUTED
           if (call_wdog) send_wdogs(1);
-          if (client_mode && difftime > 5) get_servers();  /* Here more often */
 #endif
         }
       }

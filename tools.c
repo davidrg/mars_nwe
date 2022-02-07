@@ -1,4 +1,4 @@
-/* tools.c  08-Feb-98 */
+/* tools.c  24-May-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,7 +32,12 @@
 #endif
 
 int    nw_debug=0;
-uint32 debug_mask=0; /* special debug masks */
+uint32 debug_mask=0;       /* special debug masks */
+
+/* next are set and used by nwconn and nwbind processes */
+int    act_ncpsequence=0; /* for debugging */
+int    act_connection=0;  /* which connection (nwconn, nwbind) */
+time_t act_time=0L;       /* actual time */
 
 static FILE *logfile=stderr;
 static int   use_syslog=0; /* 1 = use syslog for all loggings
@@ -40,7 +45,6 @@ static int   use_syslog=0; /* 1 = use syslog for all loggings
                             */
 
 static int   in_module=0;  /* in which process i am ?   */
-static int   connection=0; /* which connection (nwconn) */
 static int   my_pid = -1;
 static void  (*sigsegv_func)(int isig);
 static char  *modnames[] =
@@ -60,12 +64,25 @@ static char *get_modstr(void)
 
 char *xmalloc(uint size)
 {
-  char *p = (size) ? (char *)malloc(size) : (char*)NULL;
-  if (p == (char *)NULL && size){
-    errorp(1, "xmalloc", "not enough core, need %d Bytes\n", size);
-    exit(1);
-  }
-  return(p);
+  if (size) {
+    char *p = (char *)malloc(size);
+    if (!p) { 
+      int tries=0;
+      do {
+        sleep(1);
+        p = (char *)malloc(size);
+      } while (!p && tries++ < 10);
+      if (!p){
+        errorp(1, "xmalloc", "not enough core, need %d Bytes\n", size);
+        exit(1);
+      } else {
+        XDPRINTF((1, 0, "Warning:could not alloc %d Bytes for %d tries", 
+          size, tries+1));
+      }
+    }
+    return(p);
+  } else 
+    return(NULL);
 }
 
 char *xcmalloc(uint size)
@@ -143,7 +160,8 @@ static char *buffered=NULL;
       }
       if (!(mode & 2)) {
         char identstr[200];
-        sprintf(identstr, "%-8s %d", get_modstr(), connection);
+        sprintf(identstr, "%-8s %d %3d", get_modstr(), 
+                           act_connection, act_ncpsequence);
         openlog(identstr, LOG_CONS, LOG_DAEMON);
         syslog(LOG_DEBUG, buf);
         closelog();
@@ -155,7 +173,8 @@ static char *buffered=NULL;
       xfree(buf);
     } else {
       if (!(mode & 1))
-        fprintf(logfile, "%-8s %d:", get_modstr(), connection);
+        fprintf(logfile, "%-8s %d %3d:", get_modstr(), 
+          act_connection, act_ncpsequence);
       if (p) {
         va_start(ap, p);
         vfprintf(logfile, p, ap);
@@ -202,7 +221,7 @@ void errorp(int mode, char *what, char *p, ...)
       vsprintf(buf+l, p, ap);
       va_end(ap);
     }
-    sprintf(identstr, "%-8s %d", get_modstr(), connection);
+    sprintf(identstr, "%-8s %d %3d", get_modstr(), act_connection, act_ncpsequence);
     openlog(identstr, LOG_CONS, LOG_DAEMON);
     syslog(prio, buf);
     closelog();
@@ -210,8 +229,11 @@ void errorp(int mode, char *what, char *p, ...)
     lologfile=stderr;
   }
   while (1) {
-    if (mode==1) fprintf(lologfile, "\n!! %-8s %d:PANIC !!\n", get_modstr(), connection);
-    fprintf(lologfile, "%-8s %d:%s:%s\n", get_modstr(), connection,  what, errstr);
+    if (mode==1) 
+      fprintf(lologfile, "\n!! %-8s %d %3d:PANIC !!\n", 
+              get_modstr(), act_connection, act_ncpsequence);
+    fprintf(lologfile, "%-8s %d %3d:%s:%s\n", get_modstr(), act_connection,  
+         act_ncpsequence, what, errstr);
     if (p) {
       va_start(ap, p);
       vfprintf(lologfile, p, ap);
@@ -301,7 +323,7 @@ static uint8 *path_spool=NULL;
 
 char *get_div_pathes(char *buff, char *name, int what, char *p, ... )
 {
-  char *wpath;
+  char *wpath=NULL;
   int  len;
   uint8 locbuf[200];
   switch (what) {
@@ -333,7 +355,9 @@ char *get_div_pathes(char *buff, char *name, int what, char *p, ... )
     default : buff[0]='\0';
               return(buff);
   }
+D();
   len=sprintf(buff, (name && *name) ? "%s/%s" : "%s/", wpath, name);
+D();
   if (NULL != p) {
     va_list ap;
     va_start(ap, p);
@@ -355,7 +379,10 @@ int get_ini_int(int what)
 
 static void sig_segv(int isig)
 {
-  errorp(11, "!!! SIG_SEGV !!!", "at pid=%d", my_pid);
+  errorp(11, "!!! SIG_SEGV !!!", "at pid=%d, ncp_sequence=%d", my_pid, act_ncpsequence);
+#ifndef LINUX
+  exit(1);
+#endif
 #if 0
   (*sigsegv_func)(isig);
 #endif
@@ -428,7 +455,6 @@ void init_tools(int module, int options)
   int   new_log=0;
   in_module  = module;
   my_pid     = getpid();
-  connection = (NWCONN == module) ? options : 0;
   if (NWSERV == module || NWROUTED == module) {
     int kill_pid=-1;
     char *pidfn=get_pidfilefn((char*)buf);
@@ -695,4 +721,18 @@ int find_station_match(int entry, ipxAddr_t *addr)
           entry, matched, visable_ipx_adr(addr)));
   return(matched);
 }
+
+#ifndef LINUX
+/* UnixWare needs fixed sprintf function :-( */
+int fixed_sprintf(char *buf, char *p, ...)
+{
+  va_list ap;
+  va_start(ap, p);
+  (void)vsprintf(buf, p, ap);
+  va_end(ap);
+  return(strlen(buf));
+}
+#endif
+
+
 

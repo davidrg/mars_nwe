@@ -1,4 +1,4 @@
-/* nwfile.h 09-Feb-98 */
+/* nwfile.h 30-Apr-98 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
 #include "extpipe.h"
@@ -39,7 +39,7 @@ extern int file_creat_open(int volume, uint8 *unixname,
 extern int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit);
 
 
-extern int nw_close_file(int fhandle, int reset_reuse);
+extern int nw_close_file(int fhandle, int reset_reuse, int task);
 extern int nw_commit_file(int fhandle);
 
 extern uint8 *file_get_unix_name(int fhandle);
@@ -56,7 +56,5 @@ extern int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock);
 extern int fd_2_fname(int fhandle, char *buf, int bufsize);
 extern FILE_HANDLE *fd_2_fh(int fhandle);
 extern int get_nwfd(int fhandle);
-
-extern int nw_unlink(int volume, char *name);
 
 #endif

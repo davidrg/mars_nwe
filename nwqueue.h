@@ -1,4 +1,4 @@
-/* nwqueue.h 08-Oct-97 */
+/* nwqueue.h 14-Apr-98 */
 #ifndef _NWQUEUE_H_
 #define _NWQUEUE_H_
 #include "queuedef.h"
@@ -21,6 +21,9 @@ extern int nw_get_queue_job_list_old(uint32 q_id, uint8 *responsedata);
 extern int nw_get_queue_job_file_size(uint32 q_id, int job_id);
 
 extern int nw_remove_job_from_queue(uint32 user_id, uint32 q_id, int job_id);
+
+extern void nw_close_connection_jobs(int connection, int task);
+
 
 /* ------------------ for queue servers ------------------- */
 extern int nw_attach_server_to_queue(uint32 user_id, 

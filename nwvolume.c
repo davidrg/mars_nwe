@@ -1,4 +1,4 @@
-/* nwvolume.c  01-Feb-98 */
+/* nwvolume.c  10-May-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -21,6 +21,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <sys/vfs.h>
+#include <pwd.h>
 
 #ifndef LINUX
 #include <sys/statvfs.h>
@@ -30,7 +31,11 @@
 #include <utime.h>
 
 #include "nwfname.h"
+#include "nwattrib.h"
+#include "trustee.h"
 #include "nwvolume.h"
+
+#define  VOLOPTIONS_DEFAULT  VOL_OPTION_ATTRIBUTES
 
 NW_VOL     *nw_volumes=NULL;
 int        used_nw_volumes=0;
@@ -39,8 +44,44 @@ uint8      *home_dir=NULL;
 int        home_dir_len=0;
 char       *path_vol_inodes_cache=NULL;
 char       *path_attributes=NULL;
+char       *path_trustees=NULL;
 
 static int max_nw_vols=MAX_NW_VOLS;
+
+static void free_vol_trustee(NW_VOL *vol)
+{
+  if (vol) {
+    while(vol->count_trustees-- > 0){
+      VOLUME_TRUSTEE *vt=vol->trustees+vol->count_trustees;
+      xfree(vt->path);
+    }
+    xfree(vol->trustees);
+    vol->count_trustees=0;
+    vol->max_alloc_trustees=0;
+    vol->trustee_id=0L;
+    vol->trustee_last_test_time=0;
+  }
+}
+
+static void add_vol_trustee(NW_VOL *vol, uint8 *path, int len, int trustee)
+{
+  VOLUME_TRUSTEE *vt;
+  if (vol->count_trustees == vol->max_alloc_trustees) {
+    vol->max_alloc_trustees += 3;
+    vt=(VOLUME_TRUSTEE*)xcmalloc(sizeof(VOLUME_TRUSTEE) * vol->max_alloc_trustees);
+    if (vol->count_trustees) {
+      memcpy(vt, vol->trustees, sizeof(VOLUME_TRUSTEE)*vol->count_trustees);
+    }
+    xfree(vol->trustees);
+    vol->trustees=vt;
+  }
+  vt=vol->trustees+vol->count_trustees++;
+  vt->trustee=trustee;
+  vt->path=xmalloc(len+1);
+  vt->len=len;
+  memcpy(vt->path, path, len);
+  *(vt->path+len)='\0';
+}
 
 static void volume_to_namespace_map(int volume, NW_VOL *vol)
 {
@@ -50,6 +91,8 @@ static void volume_to_namespace_map(int volume, NW_VOL *vol)
     XDPRINTF((1, 0, "cannot stat vol=%d, `%s`", volume, vol->unixname));
     return;
   }
+  vol->dev      = statb.st_dev;
+  vol->inode    = statb.st_ino;
   dnm.dev       = statb.st_dev;
   dnm.namespace = 0; /* NAMESPACE DOS */
   (void) nw_vol_inode_to_handle(volume, statb.st_ino, &dnm);
@@ -77,13 +120,15 @@ void nw_init_volumes(FILE *f)
       while (++i < nw_volumes[k].maps_count)
         xfree(nw_volumes[k].dev_namespace_maps[i]);
       nw_volumes[k].maps_count = 0;
+      free_vol_trustee(&nw_volumes[k]);
     }
   }
   rewind(f);
   used_nw_volumes   = 0;
   loaded_namespaces = 0;
   new_str(path_vol_inodes_cache, "/var/spool/nwserv/.volcache");
-  new_str(path_attributes, "/var/lib/nwserv/attrib");
+  new_str(path_attributes, "/var/nwserv/attrib");
+  new_str(path_trustees, "/var/nwserv/trustees");
   while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))) {
     if ( what == 1 && used_nw_volumes < max_nw_vols && strlen((char*)buff) > 3){
       uint8 sysname[256];
@@ -97,14 +142,14 @@ void nw_init_volumes(FILE *f)
                  sysname, unixname, optionstr, umode_dirstr, umode_filestr);
       if (founds > 1) {
         NW_VOL *vol=&(nw_volumes[used_nw_volumes]);
-        vol->options    = VOL_NAMESPACE_DOS;
+        vol->options       = VOLOPTIONS_DEFAULT;
+        vol->options      |= VOL_NAMESPACE_DOS;
         loaded_namespaces |= VOL_NAMESPACE_DOS;
         up_fn(sysname);
         new_str(vol->sysname, sysname);
         len = strlen((char*)unixname);
         if (unixname[0] == '~' && (unixname[1]=='\0' || unixname[1]=='/')) {
           vol->options  |= VOL_OPTION_IS_HOME;
-          vol->options  |= VOL_OPTION_REMOUNT;
           if (len > 2) { /* tail is present */
             if (unixname[len-1] != '/') {
               unixname[len++] = '/';
@@ -155,6 +200,10 @@ void nw_init_volumes(FILE *f)
                          |= VOL_OPTION_READONLY;
                          break;
 
+              case 't' : vol->options
+                         |= VOL_OPTION_TRUSTEES;
+                         break;
+              
               case 'O' : vol->options
                          |= VOL_NAMESPACE_OS2;
                          loaded_namespaces |= VOL_NAMESPACE_OS2;
@@ -184,76 +233,69 @@ void nw_init_volumes(FILE *f)
           vol->max_maps_count = MAX_DEV_NAMESPACE_MAPS;
           vol->high_inode     = 0xfffffff;
         }
+        
         if (vol->unixnamlen)
           volume_to_namespace_map(used_nw_volumes-1, vol);
+        
+        /* few checks */
+        if (vol->options & VOL_OPTION_IS_HOME) {
+          vol->options  |= VOL_OPTION_REMOUNT;
+        }
+
+        if (vol->options & VOL_OPTION_NO_INODES) {
+          vol->options &= ~VOL_OPTION_TRUSTEES;
+          vol->options &= ~VOL_OPTION_ATTRIBUTES;
+        }
+
+        MDEBUG(D_ACCESS, {
+          xdprintf(1,0,"init vol:=%d(%s),ud=0%o,uf=0%o, opt=0x%4x", 
+                     used_nw_volumes-1, vol->sysname,
+                     vol->umode_dir, vol->umode_file, vol->options);
+        })
       }
     } else if (what==40) {  /* path for vol/dev/inode->path cache */
       new_str(path_vol_inodes_cache, buff);
     } else if (what==46) {  /* path for attribute handling */
       new_str(path_attributes, buff);
+    } else if (what==47) {  /* path for trustees handling */
+      new_str(path_trustees, buff);
     }
   } /* while */
 }
 
-void nw_setup_home_vol(int len, uint8 *fn)
+static int get_unx_home_dir(uint8 *homedir, uint8 *unxlogin)
+/* searches for UNIX homedir of actual unxlogin name */
 {
-  int k=used_nw_volumes;
-  uint8 unixname[258];
-  uint8 fullname[258];
-
-  unixname[0] = '\0';
-  xfree(home_dir);
-  home_dir_len=0;
-  if (len > 0) {
-    strmaxcpy(unixname, fn, len);
-    if (unixname[len-1] != '/') {
-      unixname[len++] = '/';
-      unixname[len]   = '\0';
+  struct passwd *pw;
+  int   len=0;
+  endpwent(); 
+  if (unxlogin && *unxlogin && NULL != (pw=getpwnam(unxlogin))) {
+    len=strlen(pw->pw_dir);
+    if (!len) {
+      *homedir++ = '/';
+      *homedir   = '\0';
+      len =1;
+    } else {
+      if (len > 255) len=255;
+      strmaxcpy(homedir, pw->pw_dir, len);
     }
-    new_str(home_dir, unixname);
-    home_dir_len=len;
+  } else {
+    *homedir='\0';
   }
-  while (k--) { /* now set all HOME volumes */
-    uint8 *fname;
-    int	  flen;
-
-    if (nw_volumes[k].options & VOL_OPTION_IS_HOME)  {
-      int i = -1;
-      while (++i < nw_volumes[k].maps_count)
-        xfree(nw_volumes[k].dev_namespace_maps[i]);
-      nw_volumes[k].maps_count = 0;
-      fname = unixname;
-      flen = len;
-      if (len > 0 && nw_volumes[k].addonlen) {
-        if (len + nw_volumes[k].addonlen > 256) {
-          flen = 0;
-          fname = "";
-        } else {
-          strcpy(fullname, unixname);
-          /* concatenation $HOME/ and add/on/ */
-          strcpy(fullname + len, nw_volumes[k].homeaddon);
-          fname = fullname;
-          flen = len + nw_volumes[k].addonlen;
-        }
-      }
-      nw_volumes[k].unixnamlen =  flen;
-      new_str(nw_volumes[k].unixname, fname);
-      if (flen>0)
-        volume_to_namespace_map(k, &(nw_volumes[k]));
-    }
-  }
+  endpwent(); 
+  return(len);
 }
 
 void nw_setup_vol_opts(int act_gid, int act_uid,
                        int act_umode_dir, int act_umode_file,
-                       int homepathlen, uint8 *homepath)
-
+                       uint8 *unxlogin)
 /* set's homevolume and volume's umodes */
 {
   int k=used_nw_volumes;
   uint8 unixname[258];
   uint8 fullname[258];
-
+  uint8 homepath[258];
+  int homepathlen=get_unx_home_dir(homepath, unxlogin);
   unixname[0] = '\0';
   xfree(home_dir);
   home_dir_len=0;
@@ -267,10 +309,11 @@ void nw_setup_vol_opts(int act_gid, int act_uid,
     home_dir_len=homepathlen;
   }
 
-  while (k--) { /* now set all HOME volumes */
+  while (k--) { 
     uint8 *fname;
     int	  flen;
     if (nw_volumes[k].options & VOL_OPTION_IS_HOME)  {
+      /* now set HOME volumes */
       int i = -1;
       while (++i < nw_volumes[k].maps_count)
         xfree(nw_volumes[k].dev_namespace_maps[i]);
@@ -301,9 +344,7 @@ void nw_setup_vol_opts(int act_gid, int act_uid,
 
     if (!nw_volumes[k].umode_file)
       nw_volumes[k].umode_file=act_umode_file;
-
   }
-
 }
 
 
@@ -417,14 +458,28 @@ int nw_get_volume_name(int volnr, uint8 *volname)
 
 int get_volume_umode_dir(int volnr)
 {
-  return( (volnr > -1 && volnr < used_nw_volumes) ?
-                     nw_volumes[volnr].umode_dir  : 0);
+  if (volnr > -1 && volnr < used_nw_volumes) {
+    int result=nw_volumes[volnr].umode_dir;
+    MDEBUG(D_ACCESS, {
+      xdprintf(1,0,"get_d_umode vol:=%d(%s), result=0x%x",
+                 volnr, nw_volumes[volnr].sysname,  result);
+    })
+    return(result);
+  }  
+  return(0);
 }
 
 int get_volume_umode_file(int volnr)
 {
-  return( (volnr > -1 && volnr < used_nw_volumes) ?
-                     nw_volumes[volnr].umode_file  : 0);
+  if (volnr > -1 && volnr < used_nw_volumes) {
+    int result=nw_volumes[volnr].umode_file;
+    MDEBUG(D_ACCESS, {
+      xdprintf(1,0,"get_f_umode vol:=%d(%s), result=0x%x",
+                 volnr, nw_volumes[volnr].sysname, result);
+    })
+    return(result);
+  }  
+  return(0);
 }
 
 /* stolen from GNU-fileutils */
@@ -511,6 +566,10 @@ int get_volume_inode(int volnr, struct stat *stb)
 /* returns inode if OK, else errocode < 0 */
 {
   int result = -0x98; /* Volume not exist */;
+  if (stb) {
+    stb->st_mode=0;
+    stb->st_ino=0;
+  }
   if (volnr > -1 && volnr < used_nw_volumes) {
     struct stat statb;
     if (!stb) stb=&statb;
@@ -520,6 +579,139 @@ int get_volume_inode(int volnr, struct stat *stb)
   }
   XDPRINTF((5,0,"get_volume_inode of VOLNR:%d, result=0x%x", volnr, result));
   return(result);
+}
+
+int get_volume_unixname(int volnr, uint8 *unixname)
+{
+  int result = 0;
+  if (volnr > -1 && volnr < used_nw_volumes) {
+    if (unixname)
+      memcpy(unixname,nw_volumes[volnr].unixname,
+        nw_volumes[volnr].unixnamlen);
+    result = nw_volumes[volnr].unixnamlen;
+  }
+  return(result);
+}
+
+static void vol_trustee_scan(NW_VOL *v, int volume, uint8 *trusteepath, uint8 *p)
+{
+  DIR   *f;
+  *p='.';
+  *(p+1)='\0';
+  if (NULL != (f=opendir(trusteepath))) {
+    struct dirent* dirbuff;
+    while ((dirbuff = readdir(f)) != (struct dirent*)NULL){
+      if (dirbuff->d_ino 
+          && dirbuff->d_name[0] != 't' 
+          && dirbuff->d_name[0] != '.') {
+        struct stat stb;
+        strcpy(p, dirbuff->d_name);
+        if (dirbuff->d_name[0] == 'n') {
+          uint8 path[255];
+          int l=readlink(trusteepath, path, 254);
+          if (l > 0) {
+            uint8 unixname[300];
+            memcpy(unixname, v->unixname, v->unixnamlen); /* first UNIXNAME VOLUME */
+            memcpy(unixname+v->unixnamlen, path, l); 
+            unixname[l+v->unixnamlen]='\0';
+            XDPRINTF((2, 0, "vol_trustee_scan, trustee path=`%s`", unixname));
+            if (!stat(unixname, &stb)) {
+              int trustee=tru_get_id_trustee(volume, unixname, &stb, 
+                           v->trustee_id);
+              if (trustee > -1) {
+                if (!v->trustee_namespace) { /* DOS */
+                  unix2doscharset(path);
+                  up_fn(path);
+                }
+                add_vol_trustee(v, path, l, trustee);
+                XDPRINTF((2, 0, "trustee=0x%x found", trustee));
+              }
+            } else {
+              XDPRINTF((1, 0, "trustee path=`%s` not found", 
+                unixname));
+            }
+          }
+        } else if ((!stat(trusteepath, &stb)) && S_ISDIR(stb.st_mode)) {
+          uint8 *pp=p+strlen(p);
+          *pp='/';
+          vol_trustee_scan(v, volume, trusteepath, pp+1);
+        }
+      }
+    }
+    closedir(f);
+  }
+}
+
+static void build_volume_user_trustee(int volume, uint32 id, int namespace)
+{
+  NW_VOL *v=&(nw_volumes[volume]);
+  uint8 trusteepath[500];
+  uint8 *p;
+  free_vol_trustee(v);
+  strcpy(trusteepath, path_trustees);
+  p=trusteepath+strlen(trusteepath);
+  *p++='/';
+  strcpy(p, v->sysname);
+  p+=strlen(v->sysname);
+  *p++='/';
+  *p='\0';
+  v->trustee_id=id;
+  v->trustee_namespace=namespace;
+  vol_trustee_scan(v, volume, trusteepath, p);
+}
+
+int vol_trustees_were_changed(int volume)
+{
+  NW_VOL *v=&(nw_volumes[volume]);
+  if (act_time > v->trustee_last_test_time+60) { 
+    /* normally every minute */
+    unsigned int new_sernum=tru_vol_sernum(volume, 0);
+    if (v->trustee_sernum != new_sernum) {
+      free_vol_trustee(v);
+      tru_free_cache(volume);
+      v->trustee_sernum = new_sernum;
+      return(1);
+    }
+    v->trustee_last_test_time=act_time;
+  }
+  return(0);
+}
+
+int get_volume_user_trustee(int volume, uint32 id, 
+                            int namespace,
+                            int *sequence,
+                            int *trustee, uint8 *path)
+{
+  NW_VOL *v=&(nw_volumes[volume]);
+  int seq=*sequence;
+  if (!(v->options & VOL_OPTION_TRUSTEES)) {
+    *path     = 0;
+    *trustee  = 0;
+    *sequence = 0;
+    return(0);
+  }
+  ++*sequence;
+  if (vol_trustees_were_changed(volume) || 
+     !seq || id != v->trustee_id || namespace != v->trustee_namespace)
+    build_volume_user_trustee(volume, id, namespace);
+  if (seq < v->count_trustees) {
+    VOLUME_TRUSTEE *tr=v->trustees+seq++; 
+    int l=strlen(v->sysname);
+    memcpy(path, v->sysname, l+1);
+    up_fn(path);
+    *(path+l++) =':';
+    if (tr->len && (tr->len > 1 || tr->path[0] != '.')){
+      memcpy(path+l, tr->path, tr->len);
+      l+=tr->len;
+    }
+    *(path+l) ='\0';
+    *trustee=tr->trustee;
+    return(l);
+  } else {
+    *path=0;
+    *trustee=0;
+    return(0);
+  }
 }
 
 

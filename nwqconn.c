@@ -1,4 +1,4 @@
-/* nwqconn.c 24-Sep-97 */
+/* nwqconn.c 14-Apr-98 */
 /* (C)opyright (C) 1997  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -24,16 +24,23 @@
 #include "connect.h"
 #include "nwqconn.h"
 
+/* 
+ * the connection based queue stuff is in this module.         
+ * The running process is nwconn.
+ * the bindery/global queue handling is in nwqueue.c.
+*/
+
 typedef struct S_INT_QUEUE_JOB {
   uint32           queue_id;
   int              job_id;
   int              fhandle;
+  int              task;
   struct S_INT_QUEUE_JOB *next;
 } INT_QUEUE_JOB;
 
 INT_QUEUE_JOB *queue_jobs=NULL;
 
-static INT_QUEUE_JOB *new_queue_job(uint32 queue_id, int job_id)
+static INT_QUEUE_JOB *new_queue_job(uint32 queue_id, int job_id, int task)
 {
   INT_QUEUE_JOB *p=(INT_QUEUE_JOB*)xcmalloc(sizeof(INT_QUEUE_JOB));
   if (!queue_jobs) {
@@ -46,6 +53,7 @@ static INT_QUEUE_JOB *new_queue_job(uint32 queue_id, int job_id)
   p->next=NULL;
   p->queue_id=queue_id;
   p->job_id=job_id;
+  p->task=task;
   return(p);
 }
 
@@ -80,21 +88,22 @@ static INT_QUEUE_JOB *find_queue_job(uint32 queue_id, int job_id)
   return(NULL);
 }
 
-static int open_creat_queue_file(int mode, uint8 
+static int open_creat_queue_file(int mode, uint8
                                 *file_name, int file_name_len,
                                 uint8 *dirname, int dirname_len)
  /* modes:
-  * 0 : creat 
+  * 0 : creat
   * 1 : open ro  (as root)
   * 2 : open rw  (as root)
   */
 {
   int result;
-  result=nw_alloc_dir_handle(0, dirname, dirname_len, 99, 2, 1);
+  int eff_rights;
+  result=nw_alloc_dir_handle(0, dirname, dirname_len, 99, 2, 1, &eff_rights);
   if (result > -1) {
     char unixname[300];
-    
-    result=conn_get_kpl_unxname(unixname, result, file_name, file_name_len);
+    int  dirhandle=result;
+    result=conn_get_kpl_unxname(unixname, dirhandle, file_name, file_name_len);
     if (result > -1) {
       struct stat stbuff;
       if (mode == 0) {  /* creat */
@@ -110,21 +119,23 @@ static int open_creat_queue_file(int mode, uint8
                             &stbuff, 0x6, 0x6, 4|8, 0);
       } else result=-1;
     }
-  } 
+    nw_free_dir_handle(dirhandle, 1);
+  }
   if (result < 0) {
     uint8 dn[300];
     uint8 fn[300];
     strmaxcpy(dn, dirname, dirname_len);
     strmaxcpy(fn, file_name, file_name_len);
-    XDPRINTF((1, 0, "open_creat_queue_file, mode=%d,result=-0x%x, dn='%s', fn='%s'", 
+    XDPRINTF((1, 0, "open_creat_queue_file, mode=%d,result=-0x%x, dn='%s', fn='%s'",
                         mode, -result, dn, fn));
     result=-0xff;
   }
   return(result);
 }
 
-int creat_queue_job(uint32 q_id,
-                    uint8 *queue_job, 
+int creat_queue_job(int task,
+                    uint32 q_id,
+                    uint8 *queue_job,
                     uint8 *responsedata,
                     uint8 old_call)
 {
@@ -134,11 +145,11 @@ int creat_queue_job(uint32 q_id,
   INT_QUEUE_JOB *jo;
   int result;
   memcpy(responsedata, queue_job, (old_call) ? sizeof(QUEUE_JOB_OLD)
-   		       		  	     : sizeof(QUEUE_JOB)); 
+   		       		  	     : sizeof(QUEUE_JOB));
   if (old_call) {
     QUEUE_JOB_OLD *job=(QUEUE_JOB_OLD*)responsedata;  /* before 3.11 */
     job_id = GET_BE16(job->job_id);
-    jo     = new_queue_job(q_id, job_id);
+    jo     = new_queue_job(q_id, job_id, task);
     result = open_creat_queue_file(0, job->job_file_name+1, *(job->job_file_name),
                                dirname+1, *dirname);
     if (result > -1) {
@@ -148,9 +159,9 @@ int creat_queue_job(uint32 q_id,
       result = sizeof(QUEUE_JOB_OLD) - 202;
     }
   } else {
-    QUEUE_JOB *job=(QUEUE_JOB*)responsedata; 
+    QUEUE_JOB *job=(QUEUE_JOB*)responsedata;
     job_id=GET_BE16(job->job_id);
-    jo     = new_queue_job(q_id, job_id);
+    jo     = new_queue_job(q_id, job_id, task);
     result = open_creat_queue_file(0, job->job_file_name+1, *(job->job_file_name),
                                dirname+1, *dirname);
     if (result > -1) {
@@ -161,8 +172,8 @@ int creat_queue_job(uint32 q_id,
   }
   if (result < 0)
     free_queue_job(q_id, job_id);
-  
-  XDPRINTF((6, 0, "creat_q_job, id=%d, result=%d", jo ? jo->job_id : -1, 
+
+  XDPRINTF((6, 0, "creat_q_job, id=%d, result=%d", jo ? jo->job_id : -1,
     result));
   return(result);
 }
@@ -172,10 +183,10 @@ int close_queue_job(uint32 q_id, int job_id)
   int result = -0xff;
   INT_QUEUE_JOB *jo=find_queue_job(q_id, job_id);
   if (jo) {
-    nw_close_file(jo->fhandle, 0);
+    nw_close_file(jo->fhandle, 0, jo->task);
     result=0;
   }
-  XDPRINTF((5,0,"close_queue_job Q=0x%x, job=%d, result=%d", 
+  XDPRINTF((5,0,"close_queue_job Q=0x%x, job=%d, result=%d",
         q_id, job_id, result));
   return(result);
 }
@@ -192,7 +203,7 @@ int close_queue_job2(uint32 q_id, int job_id,
       char unixname[300];
       QUEUE_PRINT_AREA qpa;
       memcpy(&qpa, client_area, sizeof(QUEUE_PRINT_AREA));
-      strmaxcpy((uint8*)unixname, 
+      strmaxcpy((uint8*)unixname,
           (uint8*)file_get_unix_name(jo->fhandle), sizeof(unixname)-1);
       XDPRINTF((5,0,"nw_close_file_queue fhandle=%d", jo->fhandle));
       if (*unixname) {
@@ -205,7 +216,7 @@ int close_queue_job2(uint32 q_id, int job_id,
              qpa.banner_user_name, qpa.banner_file_name);
         } else
           strmaxcpy((uint8*)printcommand, prc, prc_len);
-        nw_close_file(jo->fhandle, 1);
+        nw_close_file(jo->fhandle, 1, jo->task);
         jo->fhandle = 0L;
         if (NULL == (f = fopen(unixname, "r"))) {
           /* OK now we try the open as root */
@@ -232,7 +243,7 @@ int close_queue_job2(uint32 q_id, int job_id,
             if (0 != (k=ext_pclose(fp))) {
               XDPRINTF((1,0,"Errorresult = %d by closing print pipe", k));
             }
-          } 
+          }
           fclose(f);
           if (is_ok) {
             seteuid(0);
@@ -244,15 +255,16 @@ int close_queue_job2(uint32 q_id, int job_id,
       }
     } else {
       result=0;
-      nw_close_file(jo->fhandle, 1);
+      nw_close_file(jo->fhandle, 1, jo->task);
     }
     free_queue_job(q_id, job_id);
   }
   return(result);
 }
 
-int service_queue_job(uint32 q_id,
-                    uint8 *queue_job, 
+int service_queue_job(int task,
+                    uint32 q_id,
+                    uint8 *queue_job,
                     uint8 *responsedata,
                     uint8 old_call)
 {
@@ -262,12 +274,12 @@ int service_queue_job(uint32 q_id,
   INT_QUEUE_JOB *jo;
   int result;
   memcpy(responsedata, queue_job, (old_call) ? sizeof(QUEUE_JOB_OLD)
-   		       		  	     : sizeof(QUEUE_JOB)); 
+   		       		  	     : sizeof(QUEUE_JOB));
   if (old_call) {
     QUEUE_JOB_OLD *job=(QUEUE_JOB_OLD*)responsedata;  /* before 3.11 */
     job_id = GET_BE16(job->job_id);
-    jo     = new_queue_job(q_id, job_id);
-    result = open_creat_queue_file(1, 
+    jo     = new_queue_job(q_id, job_id,task);
+    result = open_creat_queue_file(1,
                                job->job_file_name+1, *(job->job_file_name),
                                dirname+1, *dirname);
     if (result > -1) {
@@ -277,9 +289,9 @@ int service_queue_job(uint32 q_id,
       result = sizeof(QUEUE_JOB_OLD) - 202;
     }
   } else {
-    QUEUE_JOB *job=(QUEUE_JOB*)responsedata; 
+    QUEUE_JOB *job=(QUEUE_JOB*)responsedata;
     job_id = GET_BE16(job->job_id);
-    jo     = new_queue_job(q_id, job_id);
+    jo     = new_queue_job(q_id, job_id,task);
     result = open_creat_queue_file(1,
                                job->job_file_name+1, *(job->job_file_name),
                                dirname+1, *dirname);
@@ -300,11 +312,11 @@ int finish_abort_queue_job(uint32 q_id, int job_id)
   int result = -0xff;
   INT_QUEUE_JOB *jo=find_queue_job(q_id, job_id);
   if (jo) {
-    nw_close_file(jo->fhandle, 0);
+    nw_close_file(jo->fhandle, 0, jo->task);
     free_queue_job(q_id, job_id);
     result=0;
   }
-  XDPRINTF((5,0,"finish_abort_queue_job Q=0x%x, job=%d, result=%d", 
+  XDPRINTF((5,0,"finish_abort_queue_job Q=0x%x, job=%d, result=%d",
         q_id, job_id, result));
   return(result);
 }
@@ -312,7 +324,7 @@ int finish_abort_queue_job(uint32 q_id, int job_id)
 uint32 get_queue_job_fhandle(uint32 q_id, int job_id)
 {
   INT_QUEUE_JOB *jo=find_queue_job(q_id, job_id);
-  if (jo) 
+  if (jo)
     return(jo->fhandle);
   return(0);
 }
@@ -326,5 +338,32 @@ void free_queue_jobs(void)
     xfree(tmp);
   }
   queue_jobs=NULL;
+}
+
+static int loc_free_connection_task_jobs(int task)
+{
+  INT_QUEUE_JOB *qj=queue_jobs;
+  if (!qj) return(0);
+  if (qj->task==task){
+    queue_jobs=qj->next;
+    nw_close_file(qj->fhandle, 1, task);
+    xfree(qj);
+    return(1);
+  }
+  while (qj->next) {
+    if (qj->next->task == task) {
+      INT_QUEUE_JOB *tmp=qj->next;
+      qj->next=tmp->next;
+      nw_close_file(tmp->fhandle, 1, task);
+      xfree(tmp);
+      return(1);
+    } else qj=qj->next;
+  }
+  return(0); /* not found */
+}
+
+void free_connection_task_jobs(int task)
+{
+  while(loc_free_connection_task_jobs(task)) ;;
 }
 
