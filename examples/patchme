@@ -1,0 +1,19 @@
+#!/bin/sh
+ACT_DIR=`pwd`
+PATCHFILE=kpatch1.3.56
+LINUXDIR=/usr/src/linux
+IPXDIR=$LINUXDIR/net/ipx
+IPXFILE=af_ipx.c
+
+if [ -r $IPXDIR/$IPXFILE ] ; then
+  if [ -r $IPXDIR/P1 ] ; then
+    echo "patch was allready made: $IPXDIR/P1 exist"
+  else
+    cd $IPXDIR && cp -a $IPXFILE $IPXFILE.org && \
+    patch < $ACT_DIR/$PATCHFILE && echo "$PATCHFILE" > $IPXDIR/P1
+    echo "please rebuild the kernel"
+  fi
+else
+ echo "linuxdir $LINUXDIR perhaps wrong ?"
+fi
+

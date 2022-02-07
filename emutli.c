@@ -1,4 +1,4 @@
-/* emutli.c 08-Jan-96 */
+/* emutli.c 22-Jan-96 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -457,21 +457,71 @@ int t_rcvudata(int fd, struct t_unitdata *ud, int *flags)
    ud->addr.len = sizeof(ipxAddr_t);
    return(result);
 }
+#define HAVE_IPX_SEND_BUG 0
+#if HAVE_IPX_SEND_BUG
+static int last_fd;
+static int new_try;
+
+static void sig_alarm(int rsig)
+{
+  struct sockaddr_ipx ipxs;
+  int    maxplen=sizeof(struct sockaddr_ipx);
+  signal(rsig, SIG_IGN);
+  XDPRINTF((1, 0, "GOT ALARM SIGNAL in sendto"));
+  memset((char*)&ipxs, 0, sizeof(struct sockaddr_ipx));
+  ipxs.sipx_family=AF_IPX;
+  if (getsockname(last_fd, (struct sockaddr*)&ipxs, &maxplen) != -1){
+    int sock;
+    int i    = 5;
+    while (close(last_fd) == -1 && i--) sleep(1);
+    sleep(2);
+    sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
+    if (bind(sock, (struct sockaddr*)&ipxs, sizeof(struct sockaddr_ipx))==-1) {
+      errorp(0, "TLI-BIND", "socket Nr:0x%x", (int)GET_BE16(&(ipxs.sipx_port)));
+      exit(1);
+    }
+    if (sock != last_fd) {
+      dup2(sock, last_fd);
+      close(sock);
+    }
+    new_try++;
+  } else
+    errorp(0, "getsockname", NULL);
+}
+#endif
 
 
 int t_sndudata(int fd, struct t_unitdata *ud)
 {
    int result;
    struct sockaddr_ipx ipxs;
+   if (ud->addr.len != sizeof(ipxAddr_t)) return(-1);
+
+#if HAVE_IPX_SEND_BUG
+    {
+    int anz_tries=3;
+    do {
+      void (*old_sig)(int rsig) = signal(SIGALRM, sig_alarm);
+      new_try  = 0;
+      alarm(2);
+      last_fd  = fd;
+#endif
+
    memset(&ipxs, 0, sizeof(struct sockaddr_ipx));
    ipxs.sipx_family=AF_IPX;
-
-   if (ud->addr.len != sizeof(ipxAddr_t)) return(-1);
    ipx2sockadr(&ipxs, (ipxAddr_t*) (ud->addr.buf));
    ipxs.sipx_type    = (ud->opt.len) ? (uint8) *((uint8*)(ud->opt.buf)) : 0;
 
    result = sendto(fd,(void *)ud->udata.buf,
 	  ud->udata.len, 0, (struct sockaddr *) &ipxs, sizeof(ipxs));
+
+#if HAVE_IPX_SEND_BUG
+     alarm(0);
+     signal(SIGALRM, old_sig);
+   } while (new_try && anz_tries--);
+   }
+#endif
+
    return(result);
 }
 

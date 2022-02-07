@@ -1,5 +1,5 @@
 /* ncpserv.c */
-#define REVISION_DATE "14-Jan-96"
+#define REVISION_DATE "22-Jan-96"
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify

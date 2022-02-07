@@ -1,4 +1,4 @@
-/*  tools.h : 07-Jan-96    */
+/*  tools.h : 15-Jan-96    */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -46,18 +46,6 @@ extern uint8 down_char(uint8 ch);
 extern uint8 up_char(uint8 ch);
 extern uint8 *downstr(uint8 *s);
 extern uint8 *upstr(uint8 *s);
-
-
-/* stolen from GNU-fileutils */
-/* Space usage statistics for a filesystem.  Blocks are 512-byte. */
-struct fs_usage {
-  long fsu_blocks;		/* Total blocks. */
-  long fsu_bfree;		/* Free blocks available to superuser. */
-  long fsu_bavail;		/* Free blocks available to non-superuser. */
-  long fsu_files;		/* Total file nodes. */
-  long fsu_ffree;		/* Free file nodes. */
-};
-extern int get_fs_usage(char *path, struct fs_usage *fsp);
 
 
 extern int nw_debug;

@@ -1,4 +1,4 @@
-/* connect.c  13-Jan-96 */
+/* connect.c  22-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -33,13 +33,11 @@ extern int errno;
 static int  default_uid=-1;
 static int  default_gid=-1;
 
+#include "nwvolume.h"
 #include "connect.h"
 
-#define MAX_NW_DIRS    255
-static NW_DIR    dirs[MAX_NW_DIRS];
-static int       used_dirs=0;
-static NW_VOL    vols[MAX_NW_VOLS];
-static int       used_vols=0;
+NW_DIR    dirs[MAX_NW_DIRS];
+int       used_dirs=0;
 
 static int       connect_is_init = 0;
 
@@ -62,20 +60,20 @@ static char *build_unix_name(NW_PATH *nwpath, int modus)
   static char unixname[300];    /* must be big enouugh */
   int volume = nwpath->volume;
   char *p, *pp;
-  if (volume < 0 || volume >= used_vols) {
+  if (volume < 0 || volume >= used_nw_volumes) {
     fprintf(stderr, "build_unix_name volume=%d not ok\n", volume);
     strcpy(unixname, "ZZZZZZZZZZZZ"); /* vorsichthalber */
     return(unixname);
   }
-  strcpy(unixname, vols[volume].unixname); /* first UNIXNAME VOLUME */
+  strcpy(unixname, nw_volumes[volume].unixname); /* first UNIXNAME VOLUME */
 
   p  = pp = unixname+strlen(unixname);
   strcpy(p,  nwpath->path);  /* now the path */
   p += strlen(nwpath->path);
   if ( (!(modus & 1)) && nwpath->fn[0])
-    strcpy(p, nwpath->fn);    /* und jetzt fn  */
+    strcpy(p, nwpath->fn);    /* and now fn  */
   else if ((modus & 2) && (*(p-1) == '/')) *(p-1) = '\0';
-  if (vols[volume].options & 1) downstr((uint8*)pp);
+  if (nw_volumes[volume].options & 1) downstr((uint8*)pp);
   return(unixname);
 }
 
@@ -84,11 +82,11 @@ static int new_file_handle(void)
   int rethandle = -1;
   FILE_HANDLE  *fh=NULL;
   while (++rethandle < anz_fhandles) {
-    if (file_handles[rethandle].fd < 0) { /* empty slot */
-      fh = &(file_handles[rethandle]);
+    FILE_HANDLE  *fh=&(file_handles[rethandle]);
+    if (fh->fd == -1 && !(fh->flags & 4)) { /* empty slot */
       rethandle++;
       break;
-    }
+    } else fh=NULL;
   }
   if (fh == NULL) {
     if (anz_fhandles < MAX_FILEHANDLES) {
@@ -97,36 +95,48 @@ static int new_file_handle(void)
     } else return(0); /* no free handle anymore */
   }
   /* init handle  */
-  fh->fd      = -1;
+  fh->fd      = -2;
   fh->offd    = 0L;
   fh->tmodi   = 0L;
   fh->name[0] = '\0';
+  fh->flags   = 0;
+  fh->f       = NULL;
+  XDPRINTF((5, 0, "new_file_handle=%d, anz_fhandles=%d",
+       rethandle, anz_fhandles));
   return(rethandle);
 }
 
 static int free_file_handle(int fhandle)
 {
+  int result=-0x88;
   if (fhandle > 0 && (fhandle <= anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
-      close(fh->fd);
-      fh->fd = -1;
-      if (fh->tmodi > 0L) {
+      if (fh->flags & 2) {
+        if (fh->f) pclose(fh->f);
+        fh->f = NULL;
+      } else close(fh->fd);
+      if (fh->tmodi > 0L && !(fh->flags & 2)) {
       /* now set date and time */
         struct utimbuf ut;
         ut.actime = ut.modtime = fh->tmodi;
         utime(fh->name, &ut);
+        fh->tmodi = 0L;
       }
     }
-    if (fhandle == anz_fhandles) {
+    fh->fd = -1;
+    if (fhandle == anz_fhandles && !(fh->flags & 4)) {
       /* was last */
       anz_fhandles--;
-      while (anz_fhandles && file_handles[anz_fhandles-1].fd < 0)
+      while (anz_fhandles && file_handles[anz_fhandles-1].fd == -1
+        && !(file_handles[anz_fhandles-1].flags & 4) )
           anz_fhandles--;
     }
-    return(0);
+    result=0;
   }
-  return(-0x88); /* wrong filehandle */
+  XDPRINTF((5, 0, "free_file_handle=%d, anz_fhandles=%d, result=%d",
+          fhandle, anz_fhandles, result));
+  return(result); /* wrong filehandle */
 }
 
 static int new_dir_handle(ino_t inode, NW_PATH *nwpath)
@@ -174,7 +184,7 @@ static int new_dir_handle(ino_t inode, NW_PATH *nwpath)
   if ((fh->f        = opendir(fh->unixname)) != (DIR*) NULL){
     fh->kpath       = fh->unixname + strlen(fh->unixname);
     fh->volume      = nwpath->volume;
-    fh->vol_options = vols[fh->volume].options;
+    fh->vol_options = nw_volumes[fh->volume].options;
     fh->inode       = inode;
     fh->timestamp   = akttime;
   } else {
@@ -223,14 +233,14 @@ void set_guid(int gid, int uid)
   } else XDPRINTF((5,0,"SET GID=%d, UID=%d OK", gid, uid));
 }
 
-char *conn_get_nwpath_name(NW_PATH *p)
+static char *conn_get_nwpath_name(NW_PATH *p)
 /* for debugging */
 {
 static char nwpathname[300];
   char volname[100];
-  if (p->volume < 0 || p->volume >= used_vols) {
+  if (p->volume < 0 || p->volume >= used_nw_volumes) {
     sprintf(volname, "<%d=NOT-OK>", (int)p->volume);
-  } else strcpy(volname, vols[p->volume].sysname);
+  } else strcpy(volname, nw_volumes[p->volume].sysname);
   sprintf(nwpathname, "%s:%s%s", volname, p->path, p->fn);
   return(nwpathname);
 }
@@ -262,25 +272,13 @@ static int x_str_match(uint8 *s, uint8 *p)
                     break;
 
         case  '.' :
-#if 0
-                    if (!*s && !*p) return(1);  /* point at end */
-#else
                     if (!*s && (!*p || *p == '*' || *p == '?')) return(1);
-#endif
                     if (pc != *s++) return(0);
                     if (*p == '*') return(1);
                     break;
 
         case '*' :
-#if 0
-                   if (!*p) {
-                     uint8 *ss=s;
-                     while (*ss) if (*ss++ == '.') return(0);
-                     return(1);   /* last star */
-                   }
-#else
                    if (!*p) return(1);
-#endif
                    while (*s){
                      if (x_str_match(s, p) == 1) return(1);
                      ++s;
@@ -330,14 +328,14 @@ static int x_str_match(uint8 *s, uint8 *p)
   return ( (*s) ? 0 : 1);
 }
 
-static int str_match(uint8 *s, uint8 *p, uint8 options)
+int fn_match(uint8 *s, uint8 *p, uint8 options)
 {
   uint8 *ss=s;
   int   len=0;
   int   pf=0;
   for (; *ss; ss++){
     if (*ss == '.') {
-      if (pf++) return(0); /* Kein 2. Punkt */
+      if (pf++) return(0); /* no 2. pouint */
       len=0;
     } else {
       if ((pf && len > 3) || len > 8) return(0);
@@ -372,8 +370,8 @@ static int func_search_entry(NW_PATH *nwpath, int attrib,
   FUNC_SEARCH    fs_local;
   if (!fs) fs = &fs_local;
   fs->attrib  = attrib;
-  if (volume < 0 || volume >= used_vols) return(-1); /* something wrong */
-  else  soptions = vols[volume].options;
+  if (volume < 0 || volume >= used_nw_volumes) return(-1); /* something wrong */
+  else  soptions = nw_volumes[volume].options;
   strcpy(entry,  nwpath->fn);
   if (soptions & 1) downstr(entry);   /* now downshift chars */
   nwpath->fn[0] = '\0';
@@ -391,7 +389,7 @@ static int func_search_entry(NW_PATH *nwpath, int attrib,
         okflag = (name[0] != '.' &&
                  (  (entry[0] == '*' && entry[1] == '\0')
                  || (!strcmp(name, entry))
-                 || str_match(name, entry, soptions)));
+                 || fn_match(name, entry, soptions)));
         if (okflag) {
           *kpath = '\0';
           strcpy(kpath, name);
@@ -430,8 +428,8 @@ static int get_dir_entry(NW_PATH *nwpath,
   uint8          entry[256];
   int            volume = nwpath->volume;
   uint8          soptions;
-  if (volume < 0 || volume >= used_vols) return(0); /* something wrong */
-  else  soptions = vols[volume].options;
+  if (volume < 0 || volume >= used_nw_volumes) return(0); /* something wrong */
+  else  soptions = nw_volumes[volume].options;
   strcpy(entry,  nwpath->fn);
   if (soptions & 1) downstr(entry);   /* now downshift chars */
 
@@ -453,7 +451,7 @@ static int get_dir_entry(NW_PATH *nwpath,
         okflag = (name[0] != '.' &&
                  (  (entry[0] == '*' && entry[1] == '\0')
                  || (!strcmp(name, entry))
-                 || str_match(name, entry, soptions)));
+                 || fn_match(name, entry, soptions)));
         if (okflag) {
           *kpath = '\0';
           strcpy(kpath, name);
@@ -506,7 +504,7 @@ static int get_dh_entry(DIR_HANDLE *dh,
         okflag = (name[0] != '.' && (
                         (!strcmp(name, entry)) ||
                         (entry[0] == '*' && entry[1] == '\0')
-                     || str_match(name, entry, dh->vol_options)));
+                     || fn_match(name, entry, dh->vol_options)));
 
         if (okflag) {
           strcpy(dh->kpath, name);
@@ -600,9 +598,9 @@ static int build_path( NW_PATH *path,
   if (only_dir) path->fn[0] = '\0';
 
   if (vol[0]) {  /* there is a volume in path */
-    int j = used_vols;
+    int j = used_nw_volumes;
     while (j--) {
-      if (!strcmp(vols[j].sysname, vol)) {
+      if (!strcmp(nw_volumes[j].sysname, vol)) {
         path->volume = j;
         break;
       }
@@ -733,7 +731,7 @@ int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
    return(completition);
 }
 
-static uint16 un_date_2_nw(time_t time, uint8 *d)
+uint16 un_date_2_nw(time_t time, uint8 *d)
 {
   struct tm  *s_tm=localtime(&time);
   uint16  xdate=s_tm->tm_year - 80;
@@ -745,7 +743,7 @@ static uint16 un_date_2_nw(time_t time, uint8 *d)
   return(xdate);
 }
 
-static time_t nw_2_un_time(uint8 *d, uint8 *t)
+time_t nw_2_un_time(uint8 *d, uint8 *t)
 {
   uint16 xdate = GET_BE16(d);
   uint16 xtime = (t != (uint8*) NULL) ? GET_BE16(t) : 0;
@@ -766,7 +764,7 @@ static time_t nw_2_un_time(uint8 *d, uint8 *t)
   return(mktime(&s_tm));
 }
 
-static uint16 un_time_2_nw(time_t time, uint8 *d)
+uint16 un_time_2_nw(time_t time, uint8 *d)
 {
   struct tm  *s_tm=localtime(&time);
   uint16  xdate=s_tm->tm_hour;
@@ -831,7 +829,7 @@ int nw_creat_open_file(int dir_handle, uint8 *data, int len,
 {
    int fhandle=new_file_handle();
 
-   if (fhandle){
+   if (fhandle > 0){
      FILE_HANDLE *fh=&(file_handles[fhandle-1]);
      NW_PATH nwpath;
      int completition = conn_get_kpl_path(&nwpath, dir_handle, data, len, 0);
@@ -845,60 +843,76 @@ int nw_creat_open_file(int dir_handle, uint8 *data, int len,
          }
        }
 #endif
-
      if (completition > -1) {
        struct stat stbuff;
        completition = -0xff;  /* no File  Found */
        strcpy(fh->name, build_unix_name(&nwpath, 0));
-
-       if (creatmode) {  /* creat File  */
-         if (creatmode & 0x2) { /* creatnew */
-           if (!stat(fh->name, &stbuff)) {
-             XDPRINTF((5,0,"CREAT File exist!! :%s:", fh->name));
-             fh->fd   = -1;
-             completition =   -0x85; /* No Priv */
+       if (get_volume_options(nwpath.volume, 1) & VOL_OPTION_IS_PIPE) {
+         /* this is a PIPE Dir */
+         int statr = stat(fh->name, &stbuff);
+         if (!statr && (stbuff.st_mode & S_IFMT) != S_IFDIR) {
+           char pipecommand[300];
+           char *pipeopen = (creatmode || (access & 2)) ? "w" : "r";
+           char *topipe   = "READ";
+           if (creatmode) topipe = "CREAT";
+           else if (access & 2) topipe = "WRITE";
+           sprintf(pipecommand, "%s %s", fh->name, topipe);
+           fh->f  = popen(pipecommand, pipeopen);
+           fh->fd = (fh->f) ? fileno(fh->f) : -1;
+           if (fh->fd > -1) {
+             fh->flags |= 2;
+             get_file_attrib(info, &stbuff, &nwpath);
+             return(fhandle);
+           }
+         }
+       } else {
+         if (creatmode) {  /* creat File  */
+           if (creatmode & 0x2) { /* creatnew */
+             if (!stat(fh->name, &stbuff)) {
+               XDPRINTF((5,0,"CREAT File exist!! :%s:", fh->name));
+               fh->fd       = -1;
+               completition = -0x85; /* No Priv */
+             } else {
+               XDPRINTF((5,0,"CREAT FILE:%s: Handle=%d", fh->name, fhandle));
+               fh->fd       = creat(fh->name, 0777);
+               if (fh->fd < 0) completition = -0x84; /* no create Rights */
+             }
            } else {
-             XDPRINTF((5,0,"CREAT FILE:%s: Handle=%d", fh->name, fhandle));
-             fh->fd   = creat(fh->name, 0777);
-             if (fh->fd < 0) completition = -0x84; /* no create Rights */
+             XDPRINTF((5,0,"CREAT FILE, ever with attrib:0x%x, access:0x%x, fh->name:%s: handle:%d",
+               attrib,  access, fh->name, fhandle));
+             fh->fd = open(fh->name, O_CREAT|O_TRUNC|O_RDWR, 0777);
+             if (fh->fd < 0) completition = -0x85; /* no delete /create Rights */
+           }
+           if (fh->fd > -1) {
+             close(fh->fd);
+             fh->fd   = open(fh->name, O_RDWR);
+             fh->offd = 0L;
+             stat(fh->name, &stbuff);
            }
          } else {
-           XDPRINTF((5,0,"CREAT FILE, ever with attrib:0x%x, access:0x%x, fh->name:%s: handle:%d",
-             attrib,  access, fh->name, fhandle));
-           fh->fd = open(fh->name, O_CREAT|O_TRUNC|O_RDWR, 0777);
-           if (fh->fd < 0) completition = -0x85; /* no delete /create Rights */
+           int statr = stat(fh->name, &stbuff);
+           int acm  = (access & 2) ? (int) O_RDWR /*|O_CREAT*/ : (int)O_RDONLY;
+           if ( (!statr && (stbuff.st_mode & S_IFMT) != S_IFDIR)
+                || (statr && (acm & O_CREAT))){
+              XDPRINTF((5,0,"OPEN FILE with attrib:0x%x, access:0x%x, fh->name:%s: fhandle=%d",attrib,access, fh->name, fhandle));
+              fh->fd = open(fh->name, acm, 0777);
+              fh->offd = 0L;
+              if (fh->fd > -1) {
+                if (statr) stat(fh->name, &stbuff);
+              } else completition = -0x9a;
+           }
+
          }
 
          if (fh->fd > -1) {
-           close(fh->fd);
-           fh->fd   = open(fh->name, O_RDWR);
-           fh->offd = 0L;
-           stat(fh->name, &stbuff);
-         }
-       } else {
-         int statr = stat(fh->name, &stbuff);
-         int acm  = (access & 2) ? (int) O_RDWR /*|O_CREAT*/ : (int)O_RDONLY;
-         if ( (!statr && (stbuff.st_mode & S_IFMT) != S_IFDIR)
-              || (statr && (acm & O_CREAT))){
-            XDPRINTF((5,0,"OPEN FILE with attrib:0x%x, access:0x%x, fh->name:%s: fhandle=%d",attrib,access, fh->name, fhandle));
-            fh->fd = open(fh->name, acm, 0777);
-            fh->offd = 0L;
-            if (fh->fd > -1) {
-              if (statr) stat(fh->name, &stbuff);
-            } else completition = -0x9a;
-         }
-
-       }
-
-       if (fh->fd > -1) {
-         get_file_attrib(info, &stbuff, &nwpath);
+           get_file_attrib(info, &stbuff, &nwpath);
 #ifdef TEST_FNAME
-         if (got_testfn) test_handle = fhandle;
+           if (got_testfn) test_handle = fhandle;
 #endif
-         return(fhandle);
-       }
+           return(fhandle);
+         }
+       } /* else (NOT DEVICE) */
      }
-
      XDPRINTF((5,0,"OPEN FILE not OK ! fh->name:%s: fhandle=%d",fh->name, fhandle));
      free_file_handle(fhandle);
 #ifdef TEST_FNAME
@@ -916,6 +930,8 @@ static int do_delete_file(NW_PATH *nwpath, FUNC_SEARCH *fs)
   char           unname[256];
   strcpy(unname, build_unix_name(nwpath, 0));
   XDPRINTF((5,0,"DELETE FILE unname:%s:", unname));
+  if (get_volume_options(nwpath->volume, 1) & VOL_OPTION_IS_PIPE)
+      return(0); /* don't delete 'pipe commands' */
   if (!unlink(unname)) return(0);
   return(-0x8a); /* NO Delete Privileges */
 }
@@ -956,12 +972,21 @@ int nw_close_datei(int fhandle)
   if (fhandle > 0 && (fhandle <= anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (fh->fd > -1) {
-      close(fh->fd);
+      int result = 0;
+      int result2;
+      if (fh->flags & 2) {
+        if (fh->f) {
+          result=pclose(fh->f);
+          if (result) result = -1;
+        }
+        fh->f = NULL;
+      } else result=close(fh->fd);
       fh->fd = -1;
-      if (fh->tmodi > 0L) {
+      if (fh->tmodi > 0L && !(fh->flags&2)) {
         struct utimbuf ut;
         ut.actime = ut.modtime = fh->tmodi;
         utime(fh->name, &ut);
+        fh->tmodi = 0L;
       }
 #ifdef TEST_FNAME
       if (fhandle == test_handle) {
@@ -969,8 +994,9 @@ int nw_close_datei(int fhandle)
         nw_debug    = -99;
       }
 #endif
-      return(free_file_handle(fhandle));
-    }
+      result2=free_file_handle(fhandle);
+      return((result == -1) ? -0xff : result2);
+    } else return(free_file_handle(fhandle));
   }
   return(-0x88); /* wrong filehandle */
 }
@@ -1149,6 +1175,13 @@ int mv_file(int qdirhandle, uint8 *q, int qlen,
   int completition=conn_get_kpl_path(&quellpath, qdirhandle, q, qlen, 0);
   if (!completition > -1){
     completition=conn_get_kpl_path(&zielpath,    zdirhandle, z, zlen, 0);
+    if (completition > -1) {
+      if (get_volume_options(quellpath.volume, 1) &
+           VOL_OPTION_IS_PIPE ||
+          get_volume_options(zielpath.volume, 1) &
+            VOL_OPTION_IS_PIPE)
+          completition = -0x9c;
+    }
     if (completition > -1){
       char unquelle[256];
       char unziel[256];
@@ -1203,10 +1236,11 @@ int nw_init_connect(void)
   uint8    *login   = (uint8*) "LOGIN/";
   NW_PATH  nwlogin;
   FILE *f= open_nw_ini();
+
   if (f != (FILE*) NULL){
     uint8  buff[256];
     struct stat stbuff;
-    int    what;
+    int            what;
     int k        = MAX_NW_DIRS;
     NW_DIR *d    = &(dirs[0]);
     strcpy(nwlogin.path, login);
@@ -1222,57 +1256,30 @@ int nw_init_connect(void)
       d->drive     = 0;
       d++;
     }
-    if (!connect_is_init) {
-      k = -1;
-      connect_is_init++;
-      while (++k < MAX_NW_VOLS) {
-        vols[k].unixname = NULL;
-        vols[k].sysname  = NULL;
-        vols[k].options  = 0;
-      }
-    } else {
+
+    if (connect_is_init) {
       k = 0;
       while (k++ < anz_fhandles)   free_file_handle(k);
       k = 0;
       while (k++ < anz_dirhandles) free_dir_handle(k);
-    }
-    used_vols = 0;
+    } else connect_is_init++;
+
     while (0 != (what = get_ini_entry(f, 0, (char*)buff, sizeof(buff)))) {
-      if ( what == 1 && used_vols < MAX_NW_VOLS && strlen(buff) > 3){
-        uint8 sysname[256];
-        uint8 unixname[256];
-        char  optionstr[256];
-        char  *p;
-        int   len;
-        int   founds = sscanf((char*)buff, "%s %s %s",sysname, unixname, optionstr);
-        if (founds > 1) {
-          new_str(vols[used_vols].sysname,  sysname);
-          len = strlen(unixname);
-          if (unixname[len-1] != '/') {
-            unixname[len++] = '/';
-            unixname[len]   = '\0';
-          }
-          vols[used_vols].options = 0;
-          new_str(vols[used_vols].unixname, unixname);
-          if (founds > 2) {
-            for (p=optionstr; *p; p++) {
-              switch (*p) {
-                case 'k' : vols[used_vols].options |= 1;
-                default : break;
-              }
-            }
-          }
-          used_vols++;
-        }
-      } else if (what == 10) { /* GID */
+      if (what == 10) { /* GID */
         default_gid = atoi(buff);
       } else if (what == 11) { /* UID */
         default_uid = atoi(buff);
       } else if (what == 103) { /* Debug */
         nw_debug = atoi(buff);
       }
-    }
+    } /* while */
+    nw_init_volumes(f);
     fclose(f);
+
+    if (used_nw_volumes < 1) {
+      errorp(0, "No Volumes defined. Look at ini file entry 1, Abort !!", NULL);
+      return(-1);
+    }
 
     if (stat(build_unix_name(&nwlogin, 0), &stbuff)) {
       errorp(0, "Stat error LOGIN Directory, Abort !!",
@@ -1500,8 +1507,8 @@ int nw_get_directory_path(int dir_handle, uint8 *name)
   name[0] = '\0';
   if (dir_handle > 0 && --dir_handle < (int)used_dirs) {
     int volume = dirs[dir_handle].volume;
-    if (volume > -1 && volume < used_vols){
-      result=sprintf((char*)name, "%s:%s", vols[volume].sysname, dirs[dir_handle].path);
+    if (volume > -1 && volume < used_nw_volumes){
+      result=sprintf((char*)name, "%s:%s", nw_volumes[volume].sysname, dirs[dir_handle].path);
       if (name[result-1] == '/') name[--result] = '\0';
     } else result = -0x98;
   }
@@ -1515,54 +1522,12 @@ int nw_get_vol_number(int dir_handle)
   int     result   = -0x9b; /* wrong handle */
   if (dir_handle > 0 && --dir_handle < (int)used_dirs) {
     result = dirs[dir_handle].volume;
-    if (result < 0 || result >= used_vols) result = -0x98; /* wrong volume */
+    if (result < 0 || result >= used_nw_volumes) result = -0x98; /* wrong volume */
   }
   XDPRINTF((5,0,"nw_get_vol_number:0x%x: von Handle=%d", result, dir_handle+1));
   return(result);
 }
 
-int nw_get_volume_number(uint8 *volname, int namelen)
-/* Get Volume Number with name */
-/* returns Volume Nummer or if error < 0 */
-{
-  int result = -0x98; /* Volume not exist */
-  uint8   vname[255];
-  int j = used_vols;
-  strmaxcpy((char*)vname, (char*)volname, namelen);
-  upstr(vname);
-  while (j--) {
-    if (!strcmp(vols[j].sysname, vname)) {
-      result = j;
-      break;
-    }
-  }
-  XDPRINTF((5,0,"GET_VOLUME_NUMBER of:%s: result = 0x%x", vname, result));
-  return(result);
-}
-
-int nw_get_volume_name(int volnr, uint8 *volname)
-/* returns < 0 if error, else len of volname  */
-{
-  int  result = -0x98; /* Volume not exist */;
-  if (volnr < used_vols) {
-    if (volname != NULL) {
-      strcpy(volname, vols[volnr].sysname);
-      result = strlen(volname);
-    } else result= strlen(vols[volnr].sysname);
-  } else {
-    if (NULL != volname) *volname = '\0';
-    if (volnr < MAX_NW_VOLS) result=0;
-  }
-  if (nw_debug > 4) {
-    char xvolname[10];
-    if (!volname) {
-      volname = xvolname;
-      *volname = '\0';
-    }
-    XDPRINTF((5,0,"GET_VOLUME_NAME von:%d = %s: ,result=0x%x", volnr, volname, result));
-  }
-  return(result);
-}
 
 int nw_get_eff_dir_rights(int dir_handle, uint8 *data, int len, int modus)
 /* modus 0=only_dir, 1=dirs and files */
@@ -1676,23 +1641,6 @@ int nw_scan_dir_info(int dir_handle, uint8 *data, int len, uint8 *subnr,
                      subname, subdatetime, owner, dirname));
 }
 
-int nw_get_fs_usage(char *volname, struct fs_usage *fsu)
-/* returns 0 if OK, else errocode < 0 */
-{
-  int volnr = nw_get_volume_number(volname, strlen(volname));
-  return((volnr>-1 && !get_fs_usage(vols[volnr].unixname, fsu)) ? 0 : -1);
-}
-
-int nw_get_vol_info(int volnr)
-/* returns >= 0 if OK, else errocode < 0 */
-{
-  int result = -0x98; /* Volume not exist */;
-  if (volnr > -1 && volnr < used_vols) {
-    result =0;
-  }
-  XDPRINTF((5,0,"NW_GET_VOL_INFO von VOLNR:%d, result=0x%x", volnr, result));
-  return(result);
-}
 
 typedef struct {
   uint8   time[2];
@@ -1718,13 +1666,13 @@ typedef struct {
   uint8              reserved_2[28];
 } NW_DOS_FILE_INFO;
 
-static void xun_date_2_nw(time_t time, uint8 *d)
+void xun_date_2_nw(time_t time, uint8 *d)
 {
   uint16 i = un_date_2_nw(time, NULL);
   memcpy(d, &i, 2);
 }
 
-static void xun_time_2_nw(time_t time, uint8 *d)
+void xun_time_2_nw(time_t time, uint8 *d)
 {
   uint16 i = un_time_2_nw(time, NULL);
   memcpy(d, &i, 2);
@@ -1845,11 +1793,6 @@ int nw_scan_a_root_dir(uint8   *rdata,
   } else return(completition); /* wrong path */
 }
 
-
-
-
-
-
 /* <======================================================================> */
 /* minimal queue handling to enable very simple printing */
 /* qick and dirty  !!!!!!!!!!!!!!! */
@@ -1859,7 +1802,7 @@ static int anz_jobs=0;
 
 typedef struct {
   uint32  fhandle;
-  int     old_job; /* is old structure */
+  int     old_job;        /* is old structure */
   union  {
     QUEUE_JOB      n;
     QUEUE_JOB_OLD  o;
@@ -1901,8 +1844,12 @@ static void free_queue_job(int q_id)
 {
   if (q_id > 0 && q_id <= anz_jobs) {
     INT_QUEUE_JOB **pp=&(queue_jobs[q_id-1]);
-    uint32 fhandle = (*pp)->fhandle;
-    if (fhandle > 0) nw_close_datei(fhandle);
+    uint32 fhandle   = (*pp)->fhandle;
+    if (fhandle > 0) {
+      FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
+      fh->flags &= (~4);
+      nw_close_datei(fhandle);
+    }
     if (q_id == anz_jobs) {
       xfree(*pp);
       --anz_jobs;
@@ -1944,6 +1891,11 @@ static int create_queue_file(char   *job_file_name,
                                        (int)  *job_file_name,
                                         &fnfo, 0x6, 0x6, 1);
 
+  if (result > 0){
+    FILE_HANDLE *fh=&(file_handles[result-1]);
+    fh->flags = 4; /* don't reuse after close */
+  }
+
   XDPRINTF((5,0,"creat queue file bez=`%s` handle=%d",
                                          job_bez, result));
   return(result);
@@ -1979,7 +1931,7 @@ int nw_creat_queue(int connection, uint8 *queue_id, uint8 *queue_job,
                                  jo->q.o.job_bez);
 
       if (result > -1) {
-        jo->fhandle = (uint32) result;
+        jo->fhandle     = (uint32) result;
         U32_TO_BE32(jo->fhandle, jo->q.o.job_file_handle);
         U16_TO_BE16(0,           jo->q.o.job_file_handle+4);
         result = 0;
@@ -2049,6 +2001,7 @@ int nw_close_file_queue(uint8 *queue_id,
       FILE *f=NULL;
       strmaxcpy(unixname,     fh->name, sizeof(unixname)-1);
       strmaxcpy(printcommand, prc, prc_len);
+      fh->flags &= (~4);
       nw_close_datei(fhandle);
       jo->fhandle = 0L;
       if (NULL != (f = fopen(unixname, "r"))) {
@@ -2059,12 +2012,14 @@ int nw_close_file_queue(uint8 *queue_id,
           int  k;
           is_ok++;
           while ((k = fread(buff, 1, sizeof(buff), f)) > 0) {
-            if (1 != fwrite(buff, k, 1, fout)) is_ok=0;
+            if (1 != fwrite(buff, k, 1, fout)) {
+              XDPRINTF((1,0,"Cannot write to pipe `%s`", printcommand));
+              is_ok=0;
+            }
           }
           pclose(fout);
         } else
-          XDPRINTF((1,0,"Cannot open pipe `%s`", "lpr"));
-
+          XDPRINTF((1,0,"Cannot open pipe `%s`", printcommand));
         fclose(f);
         if (is_ok) {
           unlink(unixname);
@@ -2072,7 +2027,7 @@ int nw_close_file_queue(uint8 *queue_id,
         }
       } else XDPRINTF((1,0,"Cannot open queue-file `%s`", unixname));
     } else
-      XDPRINTF((2,0,"nw_close_file_queue fhandle=%d", fhandle));
+      XDPRINTF((2,0,"fhandle=%d NOT OK anz_fhandles=%d", fhandle, anz_fhandles));
     free_queue_job(jo_id);
   }
   return(result);

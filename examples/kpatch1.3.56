@@ -1,6 +1,30 @@
---- ORG/af_ipx.c	Sat Jan  6 13:54:59 1996
-+++ af_ipx.c	Thu Jan 11 14:36:21 1996
-@@ -994,7 +994,9 @@
+--- af_ipx.c	Sat Jan  6 13:54:59 1996
++++ af_ipx.c	Sun Jan 21 20:36:36 1996
+@@ -507,8 +507,10 @@
+ 			/*
+ 			 *	Don't charge sender
+ 			 */
+-			if(skb->sk)
++			if(skb->sk) {
+ 				skb->sk->wmem_alloc-=skb->truesize;
++                                skb->sk = NULL;
++                         }
+ 			/*
+ 			 *	Will charge receiver
+ 			 */
+@@ -519,8 +521,10 @@
+ 		 */
+ 		if (memcmp(ipx_broadcast_node, node, IPX_NODE_LEN) == 0) 
+ 		{
+-			if (!send_to_wire && skb->sk)
++			if (!send_to_wire && skb->sk) {
+ 				skb->sk->wmem_alloc-=skb->truesize;
++                                skb->sk = NULL;
++                        }
+ 			ipxitf_demux_socket(intrfc, skb, send_to_wire);
+ 			if (!send_to_wire) 
+ 				return 0;
+@@ -994,7 +998,9 @@
  			return -EAGAIN;
  		rt->ir_next=ipx_routes;
  		ipx_routes=rt;
@@ -11,7 +35,7 @@
  
  	rt->ir_net = network;
  	rt->ir_intrfc = intrfc;
-@@ -1108,9 +1110,15 @@
+@@ -1108,9 +1114,15 @@
  	ipx->ipx_tctrl=0;
  	ipx->ipx_type=usipx->sipx_type;
  	skb->h.raw = (unsigned char *)ipx;

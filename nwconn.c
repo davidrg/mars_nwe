@@ -20,6 +20,7 @@
 
 #include "net.h"
 #include <dirent.h>
+#include "nwvolume.h"
 #include "connect.h"
 #include "namspace.h"
 
@@ -1289,6 +1290,16 @@ static void sig_hup(int rsig)
   signal(SIGHUP,   sig_hup);
 }
 
+#if 0
+static void sig_child(int isig)
+{
+  int status;
+  int pid=wait(&status);
+  if (pid > -1) kill(pid, SIGKILL); /* evtl Toechter killen */
+  signal(SIGCHLD, sig_child);
+}
+#endif
+
 static void set_sig(void)
 {
   signal(SIGTERM,  sig_quit);
@@ -1296,6 +1307,7 @@ static void set_sig(void)
   signal(SIGHUP,   sig_hup);
   signal(SIGINT,   SIG_IGN);
   signal(SIGPIPE,  SIG_IGN);
+ /*  signal(SIGCHLD,  sig_child); */
 }
 
 int main(int argc, char **argv)

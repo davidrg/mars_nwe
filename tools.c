@@ -1,4 +1,4 @@
-/* tools.c  07-Jan-96 */
+/* tools.c  22-Jan-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,7 +18,6 @@
 
 #include "net.h"
 #include <stdarg.h>
-#include <sys/vfs.h>
 
 int  nw_debug=0;
 FILE *logfile=stdout;
@@ -201,6 +200,14 @@ void get_ini_debug(int module)
   if (debug > -1) nw_debug = debug;
 }
 
+static void sig_segv(int isig)
+{
+  char *s= "PANIC signal SIGSEGV" ;
+  XDPRINTF((0, 0, s));
+  fprintf(stderr, s);
+  exit(99);
+}
+
 void init_tools(int module)
 {
   char buff[300];
@@ -244,6 +251,7 @@ void init_tools(int module)
     XDPRINTF((1, 0, "Starting Version: %d.%02dpl%d",
          _VERS_H_, _VERS_L_, _VERS_P_ ));
   }
+  signal(SIGSEGV, sig_segv);
 }
 
 void exit_tools(int what)
@@ -292,30 +300,3 @@ uint8 *downstr(uint8 *s)
   return(s);
 }
 
-/* next is stolen from GNU-fileutils */
-static long adjust_blocks (long blocks, int fromsize, int tosize)
-{
-  if (fromsize == tosize)	/* E.g., from 512 to 512.  */
-    return blocks;
-  else if (fromsize > tosize)	/* E.g., from 2048 to 512.  */
-    return blocks * (fromsize / tosize);
-  else				/* E.g., from 256 to 512.  */
-    return (blocks + (blocks < 0 ? -1 : 1)) / (tosize / fromsize);
-}
-
-int get_fs_usage(char *path, struct fs_usage *fsp)
-{
-  struct statfs fsd;
-  if (statfs (path, &fsd) < 0) return (-1);
-  XDPRINTF((3, 0,
-    "blocks=%d, bfree=%d, bavail=%d, files=%d, ffree=%d, bsize=%d",
-    fsd.f_blocks, fsd.f_bfree, fsd.f_bavail,
-    fsd.f_files, fsd.f_ffree,  fsd.f_bsize));
-#define convert_blocks(b) adjust_blocks ((b), fsd.f_bsize, 512)
-  fsp->fsu_blocks = convert_blocks (fsd.f_blocks);
-  fsp->fsu_bfree  = convert_blocks (fsd.f_bfree);
-  fsp->fsu_bavail = convert_blocks (fsd.f_bavail);
-  fsp->fsu_files  = fsd.f_files;
-  fsp->fsu_ffree  = fsd.f_ffree;
-  return(0);
-}

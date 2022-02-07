@@ -1,4 +1,4 @@
-/* net.h 08-Jan-96 */
+/* net.h 22-Jan-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -58,27 +58,35 @@
 #endif
 
 #define U16_TO_BE16(u, b) { uint16 a=(u); \
-	       *(  (uint8*) (b) )    = *( ((uint8*) (&a)) +1); \
-	       *( ((uint8*) (b)) +1) = *(  (uint8*) (&a)); }
+               *(  (uint8*) (b) )    = *( ((uint8*) (&a)) +1); \
+               *( ((uint8*) (b)) +1) = *(  (uint8*) (&a)); }
 
 
 #define U32_TO_BE32(u, ar) { uint32 a= (u); uint8 *b= ((uint8*)(ar))+3; \
-	       *b-- = (uint8)a; a >>= 8;  \
-	       *b-- = (uint8)a; a >>= 8;  \
-	       *b-- = (uint8)a; a >>= 8;  \
-	       *b   = (uint8)a; }
+               *b-- = (uint8)a; a >>= 8;  \
+               *b-- = (uint8)a; a >>= 8;  \
+               *b-- = (uint8)a; a >>= 8;  \
+               *b   = (uint8)a; }
 
 #define U16_TO_16(u, b) { uint16 a=(u); memcpy(b, &a, 2); }
 #define U32_TO_32(u, b) { uint32 a=(u); memcpy(b, &a, 4); }
 
 #define GET_BE16(b)  (     (int) *(((uint8*)(b))+1)  \
-	             | ( ( (int) *( (uint8*)(b) ) << 8)   ) )
+                     | ( ( (int) *( (uint8*)(b)   )  << 8) ) )
 
 #define GET_BE32(b)  (   (uint32)   *(((uint8*)(b))+3)  \
-	           | (  ((uint32)   *(((uint8*)(b))+2)) << 8)   \
-	           | (  ((uint32)   *(((uint8*)(b))+1)) << 16)   \
-	           | (  ((uint32)   *( (uint8*)(b)    ) << 24) ) )
+                   | (  ((uint32)   *(((uint8*)(b))+2) ) << 8)  \
+                   | (  ((uint32)   *(((uint8*)(b))+1) ) << 16) \
+                   | (  ((uint32)   *( (uint8*)(b)   ) ) << 24) )
 
+
+#define GET_16(b)    (     (int) *( (uint8*)(b)   )  \
+                     | ( ( (int) *(((uint8*)(b))+1)  << 8) ) )
+
+#define GET_32(b)    (   (uint32)   *( (uint8*)(b)   )  \
+                   | (  ((uint32)   *(((uint8*)(b))+1) ) << 8)  \
+                   | (  ((uint32)   *(((uint8*)(b))+2) ) << 16) \
+                   | (  ((uint32)   *(((uint8*)(b))+3) ) << 24) )
 
 #define MAX_U32    ((uint32)0xffffffffL)
 #define MAX_U16    ((uint16)0xffff)
@@ -131,34 +139,34 @@
 typedef union {
   struct S_SIP { /* Server Identification Packet, siehe auch SAP */
      uint8      response_type[2]; /*hi-lo */
-	                          /* 2 periodic bzw. Shutdown */
-	                          /*   bzw. General Service Response */
-	                          /* 4 nearest Service Response      */
+                                  /* 2 periodic bzw. Shutdown */
+                                  /*   bzw. General Service Response */
+                                  /* 4 nearest Service Response      */
      uint8      server_type[2];   /*hi-lo */
-	                          /* 0x0    unknown      */
-	                          /* 0x1    user         */
-	                          /* 0x2    user/group   */
-	                          /* 0x3    Print Queue */
-	                          /* 0x4    File Server   */
-	                          /* 0x5    Job Server   */
-	                          /* 0x6    Gateway      */
-	                          /* 0x7    Printserver    */
-	                          /* 0x9    Archive Server */
-	                          /* 0x24   Remote Bridge Server */
-	                          /* 0x47   Advertising Print Server */
-	                          /* 0x107  Netware 386  */
-	                          /* 0xFFFF (-1) WILD    */
+                                  /* 0x0    unknown      */
+                                  /* 0x1    user         */
+                                  /* 0x2    user/group   */
+                                  /* 0x3    Print Queue */
+                                  /* 0x4    File Server   */
+                                  /* 0x5    Job Server   */
+                                  /* 0x6    Gateway      */
+                                  /* 0x7    Printserver    */
+                                  /* 0x9    Archive Server */
+                                  /* 0x24   Remote Bridge Server */
+                                  /* 0x47   Advertising Print Server */
+                                  /* 0x107  Netware 386  */
+                                  /* 0xFFFF (-1) WILD    */
 
      uint8      server_name[MAX_SERVER_NAME];
      ipxAddr_t  server_adr;
      uint8      intermediate_networks[2]; /* hi-lo */
-	                                  /* normal  0  */
-	                                  /* down    16 */
+                                          /* normal  0  */
+                                          /* down    16 */
   } sip; /* Server Identifikation Packet */
   struct S_SQP {  /* Service Query Packet */
      uint8       query_type[2];  /* hi low */
-	                         /* 1 general  Service Query */
-	                         /* 3 nearest Server Query   */
+                                 /* 1 general  Service Query */
+                                 /* 3 nearest Server Query   */
      uint8       server_type[2]; /* hi low  s.o. */
   } sqp;
   struct S_SAP {
@@ -259,7 +267,7 @@ typedef struct S_NCPREQUEST    NCPREQUEST;
 #define PACKT_ERROR   3 /* Error Packet */
 #define PACKT_EXCH    4 /* Packet Exchange Packet */
 #define PACKT_SPX     5 /* SPX Packet  */
-	                /* 16 - 31 Experimental */
+                        /* 16 - 31 Experimental */
 #define PACKT_CORE   17 /*  Core Protokoll (NCP) */
 
 
@@ -302,7 +310,7 @@ typedef struct {
 
   uint8   target_id[4];           /* 0xff, 0xff, 0xff, 0xff */
   uint8   target_execute_time[6]; /* all 0xff               */
-  uint8   job_entry_time[6];      /* all zero    	    */
+  uint8   job_entry_time[6];      /* all zero               */
   uint8   job_id[4];              /* ?? alles 0 HI-LOW   */
   uint8   job_typ[2];             /* z.B. Printform HI-LOW */
   uint8   job_position[2];        /* ?? alles 0  low-high ? */
@@ -328,7 +336,7 @@ typedef struct {
   uint8   client_id[4];
   uint8   target_id[4];           /* 0xff, 0xff, 0xff, 0xff */
   uint8   target_execute_time[6]; /* all 0xff               */
-  uint8   job_entry_time[6];      /* all zero    	    */
+  uint8   job_entry_time[6];      /* all zero               */
   uint8   job_id[2];              /* ?? alles 0 HI-LOW   */
   uint8   job_typ[2];             /* z.B. Printform HI-LOW */
   uint8   job_position;           /* zero */
@@ -353,14 +361,14 @@ typedef struct {
   uint8   tabsize;                /* normal 0x8       */
   uint8   anz_copies[2];          /* copies 0x0, 0x01 */
   uint8   print_flags[2];         /*        0x0, 0xc0  z.B. with banner */
-  uint8   max_lines[2];           /* 	    0x0, 0x42 */
-  uint8   max_chars[2];           /* 	    0x0, 0x84 */
-  uint8   form_name[16];          /* 	    "UNKNOWN" */
-  uint8   reserved[6];            /* 	    all zero  */
-  uint8   banner_user_name[13];   /* 	    "SUPERVISOR"  */
-  uint8   bannner_file_name[13];  /* 	    "LST:"        */
+  uint8   max_lines[2];           /*        0x0, 0x42 */
+  uint8   max_chars[2];           /*        0x0, 0x84 */
+  uint8   form_name[16];          /*        "UNKNOWN" */
+  uint8   reserved[6];            /*        all zero  */
+  uint8   banner_user_name[13];   /*        "SUPERVISOR"  */
+  uint8   bannner_file_name[13];  /*        "LST:"        */
   uint8   bannner_header_file_name[14];  /* all zero      */
-  uint8   file_path_name[80];     	 /* all zero 	  */
+  uint8   file_path_name[80];            /* all zero      */
 } QUEUE_PRINT_AREA;
 
 
@@ -368,7 +376,7 @@ extern int nw_init_connect(void);
 extern int nw_free_handles(int task);
 
 extern int nw_creat_open_file(int dir_handle, uint8 *data, int len,
-	        NW_FILE_INFO *info, int attrib, int access, int mode);
+                NW_FILE_INFO *info, int attrib, int access, int mode);
 
 extern int nw_read_datei(int  fhandle, uint8 *data, int size, uint32 offset);
 extern int nw_seek_datei(int  fhandle, int modus);
@@ -377,31 +385,31 @@ extern int nw_lock_datei(int  fhandle, int offset, int size, int do_lock);
 extern int nw_close_datei(int fhandle);
 
 extern int nw_server_copy(int qfhandle, uint32 qoffset,
-	                  int zfhandle, uint32 zoffset,
-	           	  uint32 size);
+                          int zfhandle, uint32 zoffset,
+                          uint32 size);
 
 extern int nw_delete_datei(int dir_handle,  uint8 *data, int len);
 extern int nw_chmod_datei(int dir_handle, uint8 *data, int len, int modus);
 
 extern int mv_file(int qdirhandle, uint8 *q, int qlen,
-	    int zdirhandle, uint8 *z, int zlen);
+            int zdirhandle, uint8 *z, int zlen);
 
 
 
 extern int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode);
 
 extern int nw_search(uint8 *info,
-	      int dirhandle, int searchsequence,
-	      int search_attrib, uint8 *data, int len);
+              int dirhandle, int searchsequence,
+              int search_attrib, uint8 *data, int len);
 
 extern int nw_dir_search(uint8 *info,
-	      int dirhandle, int searchsequence,
-	      int search_attrib, uint8 *data, int len);
+              int dirhandle, int searchsequence,
+              int search_attrib, uint8 *data, int len);
 
 
 extern int nw_find_dir_handle( int dir_handle,
-	                       uint8      *data, /* zus„tzlicher Pfad  */
-	                       int         len); /* L„nge Pfad        */
+                               uint8      *data, /* zus„tzlicher Pfad  */
+                               int         len); /* L„nge Pfad        */
 
 extern int nw_alloc_dir_handle(
                       int dir_handle,  /* Suche ab Pfad dirhandle   */
@@ -414,8 +422,8 @@ extern int nw_alloc_dir_handle(
 
 
 extern int nw_open_dir_handle( int        dir_handle,
-	                uint8      *data,     /* zus„tzlicher Pfad  */
-	                int        len,       /* L„nge DATA         */
+                        uint8      *data,     /* zus„tzlicher Pfad  */
+                        int        len,       /* L„nge DATA         */
                         int        *volume,   /* Volume             */
                         int        *dir_id,   /* „hnlich Filehandle */
                         int        *searchsequence);
@@ -424,14 +432,11 @@ extern int nw_open_dir_handle( int        dir_handle,
 extern int nw_free_dir_handle(int dir_handle);
 
 extern int nw_set_dir_handle(int targetdir, int dir_handle,
-       	   		     uint8 *data, int len, int task);
+                             uint8 *data, int len, int task);
 
 extern int nw_get_directory_path(int dir_handle, uint8 *name);
 
 extern int nw_get_vol_number(int dir_handle);
-
-extern int nw_get_volume_number(uint8 *volname, int namelen);
-extern int nw_get_volume_name(int volnr, uint8 *volname);
 
 
 
@@ -439,11 +444,10 @@ extern int nw_get_eff_dir_rights(int dir_handle, uint8 *data, int len, int modus
 
 extern int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit);
 extern int nw_scan_dir_info(int dir_handle, uint8 *data, int len,
-	                    uint8 *subnr, uint8 *subname,
-	                    uint8 *subdatetime, uint8 *owner);
+                            uint8 *subnr, uint8 *subname,
+                            uint8 *subdatetime, uint8 *owner);
 
 #include "tools.h"
 
-extern int nw_get_fs_usage(char *volname, struct fs_usage *fsu);
 
 #endif

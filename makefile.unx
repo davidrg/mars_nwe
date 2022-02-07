@@ -1,4 +1,4 @@
-# makefile.unx 12-Jan-96
+# makefile.unx 15-Jan-96
 VPATH=..
 O=.o
 C=.c
@@ -6,7 +6,7 @@ C=.c
 DEBUG=-DDB
 V_H=0
 V_L=96
-P_L=6
+P_L=7
 #define D_P_L 1
 DISTRIB=mars_nwe
 #if D_P_L
@@ -71,7 +71,6 @@ NSLLIB=-lnsl
 
 PROGS=$(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5)
 
-
 #include "config.h"
 #ifdef FILENAME_NW_INI
 M_FILENAME_NW_INI=FILENAME_NW_INI
@@ -87,11 +86,12 @@ M_PATHNAME_PROGS="."
 
 OBJ1= $(EMUTLIOBJ) net1$(O) tools$(O)
 OBJ2= $(OBJ1) nwroute$(O)
-OBJ3= $(OBJ1) connect$(O) namspace$(O)
+OBJ3= $(OBJ1) connect$(O) namspace$(O) nwvolume$(O)
 OBJ4= $(OBJ1) nwdbm$(O) nwcrypt$(O)
 OBJ5= $(OBJ1)
 
-OBJS= net1$(O) tools$(O) connect$(O) nwdbm$(O) \
+OBJS= net1$(O) tools$(O) connect$(O) nwdbm$(O) nwroute$(O) \
+      namspace$(O) nwvolume$(O) \
       $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O)
 
 HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O)
@@ -113,10 +113,8 @@ $(PROG4):  $(PROG4)$(O) $(OBJ4)
 $(PROG5):  $(PROG5)$(O) $(OBJ5)
 	   $(CC) -o ../$(PROG5) $(PROG5)$(O) $(OBJ5) $(NSLLIB)
 
-$(PROG3)$(O):  namspace.h connect.h
-connect$(O):   namspace.h connect.h
-namspace$(O):  namspace.h connect.h
-$(OBJS):       net.h config.h
+$(HOBJ3):  namspace.h connect.h nwvolume.h
+$(OBJS):   net.h config.h
 
 $(C)$(O):
 	$(CC) -c $(CFLAGS) $(HOSTCFLAGS) $(DEBUG)\

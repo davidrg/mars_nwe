@@ -1,5 +1,5 @@
 Sorry, this is in German only.  :-(
-Aenderungen in mars_nwe bis zum : 02-Jan-96
+Aenderungen in mars_nwe bis zum : 22-Jan-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -59,3 +59,6 @@ Erste 'oeffentliche' Version
 - Es kann nun gesteuert werden (nw.ini:310), dass wdogs zu einer
   connection nur gesendet werden, falls der client ueber eine device
   net < angebbarer anzahl tics ist. (z.B. fuer IPX ueber ISDN)
+- Verarbeitung von 'PIPE Jobs' eingebaut.
+- Bug beim Drucken korrigiert. (nprint funktionierte nicht)
+
