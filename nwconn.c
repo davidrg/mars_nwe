@@ -985,7 +985,8 @@ NWCONN	1:len 15, DATA:,0x5,0x1,0x0,0x12,0xa,'0','9','0','6',
                                 &owner,
                                 (int)input->dir_handle,
                                 (int) GET_BE16(input->sequence),
-                                (int) input->search_attrib,
+                                (int) input->search_attrib & ~0x10,
+                /* this routine is only for scanning files ^^^^^^ */
                                 input->data, len);
                if (searchsequence > -1) {
                  memcpy(xdata->f, &f, sizeof(NW_FILE_INFO));

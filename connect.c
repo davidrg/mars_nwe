@@ -413,10 +413,35 @@ static int x_str_match(uint8 *s, uint8 *p, int soptions)
       case '?': if (*s && *s != '.') s++;
       		p++;
       		break;
+#if 0
       case 0xaa:
       case '*': while (*s && *s != '.') s++;
 		while (*p && *p != '.' && *p != 0xae) p++;
 		break;
+#else 
+      /* changed 27-May-98, 0.99.pl10 to handle '*' correct, 
+       * and to handle '*xy.xyz' in a `better` (non DOS) way.
+       * now I know again why my old routine was so terrible ;-)
+       */
+
+      case 0xaa:
+      case '*': ++p;
+                if (*p) {
+                  while (*s && *s != '.') {
+                    if (x_str_match(s, p, soptions))
+                      return(1);
+                    else 
+                      s++;
+                  }
+                } else { 
+                  if (*(p-1) == '*') /* last star '*' match everything */
+                    return(1);
+                  else  /* but  0xaa not */
+                    while (*s && *s != '.') s++;
+                }
+		break;
+#endif
+
       case 0xae:
       case '.': if (*s)
       		  if(*s != '.') return 0;
@@ -787,7 +812,8 @@ static void conn_build_path_fn( uint8 *vol,
    while (len-- && *data){
      if (*data == 0xae) *p1++ = '.';
      else if (*data == 0xaa|| *data == '*' ) {
-       *p1++ = '*';
+       /* *p1++ = '*'; */
+       *p1++ = *data;
        (*has_wild)++;
      } else if (*data == 0xbf|| *data == '?' ) {
        *p1++ = '?';

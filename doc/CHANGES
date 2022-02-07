@@ -1,6 +1,6 @@
-Sorry, this is in German only.
+Sorry, beginning is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 03-Mar-98
+Aenderungen in mars_nwe bis zum : 27-May-98
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -446,5 +446,11 @@ Erste 'oeffentliche' Version
   Do not know whether this is ok, but it seems so.
   Programs like Visual C linker (Borland,MS) now work correct.
 <----- ^^^^^^^^^^ pl9 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
+- changed call 0x17, 0x0f, to let it handle only files not directories.
+  (mask 0x10 attrib flag )
+- new dos search routine (from pl7) changed to handle '*' correct, for 
+  example the call 0x17, 0x0f is called by syscons change file trustees 
+  with '*' as searchstring. Also changed to handle '*xyz.xyz' in a 
+  more restrictive way. I hope this is correct now. 
+<----- ^^^^^^^^^^ pl10 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

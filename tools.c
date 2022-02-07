@@ -355,9 +355,7 @@ char *get_div_pathes(char *buff, char *name, int what, char *p, ... )
     default : buff[0]='\0';
               return(buff);
   }
-D();
   len=sprintf(buff, (name && *name) ? "%s/%s" : "%s/", wpath, name);
-D();
   if (NULL != p) {
     va_list ap;
     va_start(ap, p);
