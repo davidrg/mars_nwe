@@ -1,0 +1,81 @@
+(C)opyright (C) 1993,1995  Martin Stover, Marburg
+
+Hilfe zum Kompilieren bzw. Installieren siehe in 'INSTALL' !
+
+Dieses ist ein kleiner Versuch Grundfunktionen
+eines Novell Servers unter UNIX (LINUX) zur Verfuegung
+zu stellen. Die erste Version entstand 1993 auf einer USL1.1
+mittels TLI-Code und wurde 1994, mittels
+dem modul 'emutli' (TLI -> SOCKETS) nach Linux portiert.
+
+Leider stand mir eine vollstaendige Beschreibung der NCP-Calls
+nicht zur Verfuegung, so daá die Behandlung vieler Calls
+auf Vermutungen bzw. Ausprobieren basieren. :-(
+
+WARNUNG: Es gibt noch viele Bugs !!
+Es werden aber immer weniger. :)
+
+Kernel muss mit IPX Unterstuetzung erzeugt worden sein.
+IPX-Routen werden automatisch angelegt.
+
+Anmerkungen:
+BINDERY:    besteht aus den *.pag und *.dir Dateien.
+            diese Dateien werden, falls nicht vorhanden,
+            erzeugt und mit den Grundobjekten und Grundproperties
+            gefuellt. Der Supervisor muá in der nw.ini Datei
+            bestimmt werden (Eintrag 12).
+
+NETWORK:    Falls auch ein Novellserver am gleichem
+            Strang haengt, sollte die NETWORK Nummer
+            des Netzwerk Devices von mars_nwe auf
+            die des Novellservers gesetzt werden.
+
+LINUX
+KERNEL:     Die einzigen Linux kernelabhaengigen
+            Dateien sind emutli.[hc]
+
+Beschreibung der Prozesse
+1) nwserv : Hauptprogramm, initialisiert alles und startet 'ncpserv'.
+            schickt Broadcasts, bearbeitet SAP, RIP und WDog-Pakete
+            Falls nwserv mit beliebigen Parameter gestartet wird,
+            wird der `Testclient` Code (nwclient.c) fuer Debugging
+            Zwecke abgearbeitet.
+
+2) ncpserv: oeffnet NCP-Socket und behandelt NCP-Requests.
+            Bei NCP-Request 0x1111 (Get Connection Nr) wird fuer
+            jede Connection neuer Prozess 'nwconn' gestartet.
+            Jeder Client Request gelangt ueber NCP-SOCKET
+            nach ncpserv.
+
+3) nwconn:  Wird fuer jede Connection angelegt. Ist mit
+            nwserv ueber eine PIPE verbunden, erzeugt
+            einen Client-Schreib Socket.
+
+PROBLEME bzw. TODO's:
+Vieles :-(
+Hier nur eine *kleine* Auswahl.
+
+o - Passwortaenderungen durch Client ermoeglichen.
+o - Routing verbessern.
+o - Drucken verbessern.
+o - Saeubern !!
+o - Bindery Code vervollstaendigen.
+o - und und ...
+
+
+Viel Spass beim Ausprobieren. :)
+
+Ueber Erweiterungen, Korrekturen und insbesonderes der Beschreibung
+der fehlenden bzw. fehlerhaften NCP-Calls wuerde ich mich freuen.
+
+
+          Martin
+(mstover@freeway.de)
+
+PS: Den Anstoss, mars_nwe zu veroeffentlichen, gab die
+Veroeffentlichung von linware ( lwared ), dem Novell-Server-Emulator
+von Ales Dryak (A.Dryak@sh.cvut.cz).
+Vielleicht koennen beide Produkte voneinander profitieren.
+-----> SuperNOS ala Linux ;-)
+Novell will es ja leider nicht mehr machen. :-(
+

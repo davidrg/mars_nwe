@@ -1,0 +1,34 @@
+=========>   create programs
+1. call make.
+2. perhaps you must modify mk.li and config.h
+3. call make
+
+=========>   configure
+modify nw.ini !
+IMPORTANT !!
+Please read examples/nw.ini if you use a new version
+of mars_nwe and make the needed changes to your
+'ini' or 'conf' file.
+=========>   install
+"make install"
+"make install_ini" to overwrite your old _installed_ ini.
+
+=========>   start programs
+call nwserv ( as root !! )
+tested with Linux Version 1.2.13 and 1.3.32
+the linux-kernel must be configured with IPX=Y.
+ipx-interface and ipx-routes are setup by the program if the
+entry 4 (devices) in the nw.ini file is filled.
+
+=========>   stop programs (server down)
+If nwserv isn't daemonized, then the server can be stopped
+with ^C, otherwise the server must be shut down with a
+kill of nwserv or with the right dos client programm
+(fconsole server down) as supervisor. Entry 210 in the
+nw.ini file gives the time in seconds, before the server
+really shuts down.
+
+Viel Erfolg / good Luck  :-)
+
+Martin
+(mstover@freeway.de)

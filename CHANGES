@@ -1,0 +1,42 @@
+Sorry, this is in German only.  :-(
+Aenderungen in mars_nwe bis zum : 20-Dec-95
+--------------------------------
+Erste 'oeffentliche' Version
+^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
+???????????????????????????????
+^^^^^^^^^^ VERSION 0.95 ^^^^^^^^
+- Login's mit Passworteingabe moeglich.
+- Benutzer mit verschiedenen Rechten moeglich,
+  Mapping NW-User -> Linux-User eingebaut.
+- nwserv kann zum Daemon werden und logfile wird erzeugt.
+- Schalter fuer 'save ipx-routes after server is down' eingebaut.
+- Server kann mittels fconsole 'Server-Down' gekillt werden.
+---
+- Routing Code komplett umgeschrieben. Leider funktioniert
+  das Einrichten einer internen NETWERK-Number, ala NW 311,
+  und Einrichten mehrerer IPX-Devices erst nach Patchen des
+  IPX-Kernel Codes. Wenn der IPX-Kernel Code fuer 1.3.[456]x
+  wieder ok ist, werde ich das Anpassen bzw. werde ich es mit
+  dem lwared Kernel Code versuchen.
+  Falls aber nur ein ipx-interface gebraucht wird, muesste
+  das IPX-Routing auch ohne IPX-Kernel Patches nun einwandfrei
+  funktionieren.
+---
+- Der Server meldet nun allen Workstations, dass er down geht.
+  Das funktioniert, wenn entweder der *nicht* daemonisierte
+  nwserv mit ^C abgebrochen wird oder aber der daemonisierte
+  nwserv ein SIGINT, SIGQUIT od. SIGTERM Signal erhaelt.
+
+- Direktory Scan Fehler korrigiert.
+
+- Ein HUP signal an nwserv bewirkt, dass sowohl nwserv als
+  auch ncpserv die waerend der Laufzeit sinnvoll veraenderbaren
+  nw.ini Parameter neu einliest. z.B. :
+  - Debug Level's
+  - Print Queues
+  - User, User passwords
+
+- Server kann sich als 2.15 Server melden oder als 3.11 .
+- Drucken mit OLD Job's (pre 3.11) Struktur eingebaut.
+^^^^^^^^^^ VERSION 0.96 ^^^^^^^^
+

@@ -1,0 +1,30 @@
+=========>   Programme erzeugen
+1. make aufrufen.
+2. mk.li und config.h evtl. anpassen
+3. make aufrufen.
+
+=========>   Konfigurieren
+nw.ini bearbeiten !
+WICHTIG !!
+Bei jeder neuen Version bitte 'examples/nw.ini' kontrollieren
+und Aenderungen gegebenfalls in die eigene 'ini' bzw. 'conf'
+Datei eintragen.
+=========>   Installieren
+"make install"
+evtl. "make install_ini" um eine bereits installierte ini Datei
+zu *ueberschreiben* .
+
+=========>   Starten
+nwserv starten  ( als root !! )
+mit Linux Version 1.2.13 und 1.3.32 getestet.
+Der Linux Kernel muss mit IPX Unterstuetzung erzeugt worden sein.
+IPX-Interface bzw. Routen werden durch das Programm automatisch
+angelegt, falls in der nw.ini Datei Devices (Eintrag 4) enthalten
+sind.
+
+=========>   Stoppen (server down)
+Falls nwserv nicht daemonisiert wurde, kann der Server mit ^C
+wieder gestoppt werden, ansonsten muss nwserv per Dos Client
+(fconsole server down) gestoppt werden (Supervisor) oder per
+'kill' Befehl. Je nach Eintrag 210 in der nw.ini Datei kann
+das einige Sekunden dauern.

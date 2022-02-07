@@ -1,0 +1,25 @@
+#!/bin/sh
+# mk.li 16-Nov-95 ###
+#
+
+mk()
+{
+    MYBASE=`pwd`;
+    ERRFILE=$TMP/`basename $MYBASE`.err;
+    rm -f $ERRFILE;
+    if [ ! -d obj ] ; then mkdir obj; fi
+    cd    obj;
+    $MAKE -f ../makefile.unx $@ 2>&1 | tee $ERRFILE;
+    cd ..;
+    chmod 666 $ERRFILE
+}
+
+export CC=cc
+export CCP="cc -E"
+#export CFLAGS="-pipe -O2 -fomit-frame-pointer"
+#problems gcc2.5.8    ^^^^^^^^^^^^^^^^^^^^^^^^
+export CFLAGS="-pipe"
+export HOSTCFLAGS="-DLINUX"
+export TMP=/tmp
+MAKE=make
+mk $@
