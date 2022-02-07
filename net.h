@@ -116,6 +116,15 @@
 # define DO_DEBUG  1
 #endif
 
+#if DO_DEBUG
+#  ifndef FUNC_17_02_IS_DEBUG
+#    define FUNC_17_02_IS_DEBUG 0
+#  endif
+#else
+#  undef  FUNC_17_02_IS_DEBUG
+#  define FUNC_17_02_IS_DEBUG 0
+#endif
+
 #ifndef MAX_CONNECTIONS
 # define MAX_CONNECTIONS  5 /* maximum Number of Connections */
 #endif

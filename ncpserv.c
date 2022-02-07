@@ -1,5 +1,5 @@
 /* ncpserv.c */
-#define REVISION_DATE "10-Mar-96"
+#define REVISION_DATE "14-Mar-96"
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -495,6 +495,26 @@ static int handle_fxx(CONNECTION *c, int gelen, int func)
                      completition=0xff;
    	     	  }
                   break;
+
+#if FUNC_17_02_IS_DEBUG
+     case 0x02 :  { /* I hope this is call isn't used    */
+     	            /* now missused as a debug switch :) */
+	             struct XDATA {
+                       uint8  nw_debug;   /* old level */
+	             } *xdata = (struct XDATA*) responsedata;
+                     errorp(2, "0x17, ufunc=2", "Got debugchange =%d for module=%d",
+                           (int)*(rdata+1), (int) *rdata);
+                     if (*rdata == NWCONN)
+                        return(-1); /* let nwconn do the call */
+
+                     if (*rdata == NCPSERV) {
+                       xdata->nw_debug = (uint8) nw_debug;
+                       nw_debug = (int) *(rdata+1);
+                       data_len = 1;
+                     } else completition=0xff;
+   	     	  }
+                  break;
+#endif
 
      case 0x0c :  { /* Verify Serialization */
                      completition=0xff;

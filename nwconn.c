@@ -1,4 +1,4 @@
-/* nwconn.c 01-Mar-96       */
+/* nwconn.c 14-Mar-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -244,9 +244,10 @@ static void handle_ncp_serv()
 	           /******** Scan Dir Info   ****************/
 	                 struct INPUT {
 	                   uint8   header[7];       /* Requestheader */
-	                   uint8   div[3];           /* 0x0, dlen,  typ */
+	                   uint8   div[3];          /* 0x0, dlen,  typ */
 	                   uint8   dir_handle;      /* Verzeichnis Handle */
 	                   uint8   sub_dir_nmbr[2]; /* HI LOW */
+                                                    /* firsttime 1 */
 	                   uint8   len;             /* kann auch 0 sein */
 	                   uint8   path[2];
 	                 } *input = (struct INPUT *) (ncprequest);
@@ -635,8 +636,27 @@ static void handle_ncp_serv()
 #if 1
 	 case 0x17 : {  /* FILE SERVER ENVIRONMENT */
 	   /* uint8 len   = *(requestdata+1); */
-	   uint8 ufunc = *(requestdata+2);
+	   uint8 ufunc    = *(requestdata+2);
+           uint8 *rdata   = requestdata+3;
+
            switch (ufunc) {
+
+#if FUNC_17_02_IS_DEBUG
+             case 0x02 :  {
+                /* I hope this is call isn't used    */
+                /* now missused as a debug switch :) */
+               struct XDATA {
+                 uint8  nw_debug;   /* old level */
+               } *xdata = (struct XDATA*) responsedata;
+               if (*rdata == NWCONN) {
+                 xdata->nw_debug = (uint8)org_nw_debug;
+                 nw_debug = org_nw_debug = (int) *(rdata+1);
+                 data_len = 1;
+               } else completition=0xff;
+       	     }
+             break;
+#endif
+
              case 0x14:
              case 0x18: { /* ncpserv have change the structure */
                struct INPUT {
@@ -815,6 +835,20 @@ static void handle_ncp_serv()
                        else completition=0xfb;     /* request not known */
                      } break;
 
+	 case 0x3d : {  /* commit file, flush file buffers  */
+	               struct INPUT {
+	                 uint8   header[7];     /* Requestheader */
+	                 uint8   reserve;
+	                 uint8   ext_fhandle[2]; /* all zero   */
+	                 uint8   fhandle[4];     /* filehandle */
+	               } *input = (struct INPUT *)ncprequest;
+	               uint32 fhandle = GET_BE32(input->fhandle);
+                       XDPRINTF((2,0, "TODO: COMMIT FILE:fhandle=%ld", fhandle));
+                        /* TODO */
+                        ;
+                     } break;
+
+
 	 case 0x3e : { /* FILE SEARCH INIT  */
 	               /* returns dhandle for searchings */
 	               int  dir_handle = (int)*requestdata;
@@ -840,18 +874,6 @@ static void handle_ncp_serv()
 	               } else completition = (uint8) -rights;
 	             } break;
 
-	 case 0x3d : {  /* commit file, flush file buffers  */
-	               struct INPUT {
-	                 uint8   header[7];     /* Requestheader */
-	                 uint8   reserve;
-	                 uint8   ext_fhandle[2]; /* all zero   */
-	                 uint8   fhandle[4];     /* filehandle */
-	               } *input = (struct INPUT *)ncprequest;
-	               uint32 fhandle = GET_BE32(input->fhandle);
-                       XDPRINTF((2,0, "TODO: COMMIT FILE:fhandle=%ld", fhandle));
-                        /* TODO */
-                        ;
-                     } break;
 
 	 case 0x3f : {  /* file search continue */
 	                /* Dir_id is from file search init */
@@ -896,7 +918,7 @@ static void handle_ncp_serv()
 	             }
 	             break;
 
-	 case 0x40 : /* GET File Mode ?? */
+	 case 0x40 : /* Search for a File */
 	             {
 	               struct INPUT {
 	                 uint8   header[7];      /* Requestheader   */
@@ -907,8 +929,8 @@ static void handle_ncp_serv()
 	                 uint8   data[2];        /* Name          */
 	               } *input = (struct INPUT *)ncprequest;
 	               struct OUTPUT {
-	                 uint8   sequenz[2];    /* Antwort Sequenz */
-	                 uint8   reserve2[2];  /* z.B  0x0   0x0 */
+	                 uint8   sequenz[2];    /* answer sequence */
+	                 uint8   reserved[2];   /* z.B  0x0   0x0  */
 	                 union {
 	                   NW_DIR_INFO  d;
 	                   NW_FILE_INFO f;

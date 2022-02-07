@@ -1,4 +1,4 @@
-/* config.h: 01-Mar-96 */
+/* config.h: 14-Mar-96 */
 /* some of this config is needed by make, others by cc */
 #define DO_DEBUG      1               /* Compile in debug code       */
 #define DO_TESTING    0
@@ -7,10 +7,12 @@
 # define FILENAME_NW_INI  "./nw.ini" /* full name of ini (conf) file */
 # define PATHNAME_PROGS   "."        /* path location of progs       */
 # define PATHNAME_BINDERY "."        /* path location of bindery     */
+# define FUNC_17_02_IS_DEBUG 1
 #else
 # define FILENAME_NW_INI  "/etc/nwserv.conf" /* full name of ini (conf) file */
 # define PATHNAME_PROGS   "/sbin"     /* path location of progs       */
 # define PATHNAME_BINDERY "/etc"      /* path location of bindery     */
+# define FUNC_17_02_IS_DEBUG 0
 #endif
 
 #define NETWORK_SERIAL_NMBR 0x44444444L /* Serial Number 4 Byte      */

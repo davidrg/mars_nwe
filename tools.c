@@ -31,6 +31,8 @@ FILE *logfile=stdout;
 
 static int   in_module=0;  /* in which process i am ?   */
 static int   connection=0; /* which connection (nwconn) */
+static int   my_pid = -1;
+static void  (*sigsegv_func)(int isig);
 static char *modnames[] =
 { "???????",
   "NWSERV ",
@@ -121,7 +123,7 @@ void errorp(int mode, char *what, char *p, ...)
   int errnum      = errno;
   FILE *lologfile = logfile;
   while (1) {
-    if (mode) fprintf(lologfile, "\n!! %s %d:PANIC !!\n", get_modstr(), connection);
+    if (mode==1) fprintf(lologfile, "\n!! %s %d:PANIC !!\n", get_modstr(), connection);
     if (errnum >= 0 && errnum < _sys_nerr)
       fprintf(lologfile, "%s %d:%s:%s\n", get_modstr(), connection,  what, _sys_errlist[errnum]);
     else
@@ -219,10 +221,11 @@ void get_ini_debug(int module)
 
 static void sig_segv(int isig)
 {
-  char *s= "PANIC signal SIGSEGV" ;
-  XDPRINTF((0, 0, s));
-  fprintf(stderr, s);
-  exit(99);
+  char *s= "!!!! PANIC signal SIGSEGV at pid=%d !!!!!\n" ;
+  XDPRINTF((0, 0, s, my_pid));
+  fprintf(stderr, "\n");
+  fprintf(stderr, s, my_pid);
+  (*sigsegv_func)(isig);
 }
 
 void init_tools(int module, int conn)
@@ -269,7 +272,8 @@ void init_tools(int module, int conn)
     XDPRINTF((1, 0, "Starting Version: %d.%02dpl%d",
          _VERS_H_, _VERS_L_, _VERS_P_ ));
   }
-  signal(SIGSEGV, sig_segv);
+  sigsegv_func = signal(SIGSEGV, sig_segv);
+  my_pid = getpid();
 }
 
 void exit_tools(int what)

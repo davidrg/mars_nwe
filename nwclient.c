@@ -244,8 +244,6 @@ static int do_17_17(void)
   return(-1);
 }
 
-
-
 static int get_network_serial_number(void)
 {
   uint8  data[] = {0, 1, 0x12};
@@ -313,6 +311,26 @@ static int file_search_cont(DIR_IDS *di, int seq,
     seq        = GET_BE16(responsedata);
     XDPRINTF((1, 0, "GOT SEARCH CONT dir_id=%d, seq=%d", dir_id, seq));
     return(seq);
+  }
+  return(-1);
+}
+
+static int scan_dir_info(int dirhandle,  char *path, int sub_dir)
+{
+  uint8  *p=requestdata;
+  uint8  pathlen= (path) ? strlen(path) : 0;
+  *p++      = 0;
+  *p++      = pathlen+4;
+  *p++      = 0x2;
+
+  *p++      = dirhandle;
+  U16_TO_BE16(sub_dir, p);
+  p+=2;
+  *p++      = pathlen;
+  memcpy(p, path, pathlen);
+  VDATA(0x16, pathlen+7 , "SCAN DIR INFO");
+  if (!handle_event()) {
+    return((int)GET_BE16(responsedata+26));
   }
   return(-1);
 }
@@ -601,14 +619,28 @@ static int read_datei(int fh, int offs, int size)
 }
 
 
-
-
+#if 0
 static void test1(void)
 {
   int dirhandle = allocate_dir_handle(0, 'F', "SYS:PUBLIC", 0);
   if (dirhandle > -1) {
     scan_file_trustees(dirhandle, 6, "NET$LOG.DAT");
     scan_irgendwas(dirhandle, 6,     "NET$LOG.DAT");
+  }
+}
+#endif
+
+static void test1(void)
+{
+  int dirhandle = allocate_dir_handle(0, 'd', "SYS:", 1);
+  if (dirhandle > -1) {
+    int i;
+    scan_dir_info(dirhandle, "SYSTEM", 1);
+    scan_dir_info(dirhandle, "SYSTE*", 1);
+    i = scan_dir_info(dirhandle, "SYSTEM\\*", 1);
+    while (i > -1)
+      i = scan_dir_info(dirhandle, "", i+1);
+
   }
 }
 

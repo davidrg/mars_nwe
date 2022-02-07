@@ -544,7 +544,7 @@ static int build_path( NW_PATH *path,
                        int     len,
                        int     only_dir)
 /*
- * fills path structur with the right values
+ * fills path structure with the right values
  * if only_dir > 0, then the full path will be interpreted
  * as directory, in the other way, the last segment of path
  * will be interpreted as fn.
@@ -700,6 +700,7 @@ int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
    } else if (dirhandle) lastdirhandle = dirhandle;
 #endif
    completition = build_path(nwpath, data, len, only_dir);
+   XDPRINTF((5, 0, "conn_get_kpl_path %s", conn_get_nwpath_name(nwpath)));
    if (!completition) completition = build_verz_name(nwpath, dirhandle);
    return(completition);
 }
@@ -1049,7 +1050,7 @@ int insert_new_dir(NW_PATH *nwpath, int inode, int drive, int is_temp, int task)
   int    freehandle  = 0;
   int    timedhandle = 0;
 
-  /* first look, wether drive is allready in use */
+  /* first look, whether drive is allready in use */
   for (j = 0; j < (int)used_dirs; j++) {
     NW_DIR *d = &(dirs[j]);
     if (d->inode && !is_temp && !d->is_temp && (int)d->drive == drive) {
@@ -1183,9 +1184,9 @@ int nw_open_dir_handle( int        dir_handle,
        completition    = 0xff; /* Alle Rechte */
      }
      XDPRINTF((5,0,"NW_OPEN_DIR_2: completition = 0x%x",
-               (int)completition));
+                    completition));
    } else {
-     XDPRINTF((4,0,"NW_OPEN_DIR failed: completition = 0x%x", (int)completition));
+     XDPRINTF((4,0,"NW_OPEN_DIR failed: completition = -0x%x", -completition));
    }
    return(completition);
 }
@@ -1291,12 +1292,11 @@ static int s_nw_scan_dir_info(int dir_handle,
                        uint8 *subname, uint8 *subdatetime,
                        uint8 *owner, uint8 *wild)
 {
-   int volume;
-   int searchsequence;
-   int dir_id;
-   int rights = nw_open_dir_handle(dir_handle, data, len,
+  int volume;
+  int searchsequence;
+  int dir_id;
+  int rights = nw_open_dir_handle(dir_handle, data, len,
                            &volume, &dir_id, &searchsequence);
-
 
   if (rights > -1) {
     DIR_HANDLE *dh = &(dir_handles[dir_id-1]);
@@ -1352,18 +1352,20 @@ int nw_scan_dir_info(int dir_handle, uint8 *data, int len, uint8 *subnr,
   int   k     = len;
   uint8 *p    = data+len;
   uint8 dirname[256];
-  while (k--) {
+  while (k) {
     uint8 c = *--p;
     if (c == '/' || c == '\\' || c == ':') {
       p++;
-      k++;
       break;
     }
+    --k;
   }
   if (len && k < len) {
     strmaxcpy(dirname, p, len-k);
     len = k;
   } else dirname[0] = '\0';
+  XDPRINTF((7, 0, "nw_scan_dir_info, dirname=`%s`, len=%d, k=%d",
+    dirname, len , k));
   return(s_nw_scan_dir_info(dir_handle, data, len, subnr,
                      subname, subdatetime, owner, dirname));
 }

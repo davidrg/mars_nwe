@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 08-Mar-96
+#makefile.unx 10-Mar-96
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,8 +9,9 @@ C=.c
 
 V_H=0
 V_L=97
-P_L=0
-#define D_P_L 0
+P_L=1
+
+#define D_P_L 1
 DISTRIB=mars_nwe
 #if D_P_L
 DISTRIBF=$(DISTRIB)-$(V_H).$(V_L).pl$(P_L)
@@ -160,20 +161,20 @@ echo "********************************************************"; \
 echo ""; \
 fi; cd $(OBJDIR) )
 
-n_clean1:
+clean_d:
 	cd $(VPATH) && (\
-   find . \( -name .e.pck -o -name '~*' -o -name '*~' -o -name core \) \
+   find $(DISTRIB) \( -name .e.pck -o -name '~*' -o -name '*~' -o -name core \) \
    -exec rm {} \; \
  ; cd $(OBJDIR))
 
-n_clean: n_clean1
+n_clean:
 	rm -f *.o
 	cd $(VPATH) && (rm -f $(PROGS); cd $(OBJDIR) )
 
-n_distclean: n_clean
+n_distclean: n_clean clean_d
 	cd $(VPATH) && (rm -f *.dir *.pag; cd $(OBJDIR))
 
-n_make_dir: n_clean1
+make_dir:
 	cd $(VPATH) && (rm -rf $(OBJDIR)/$(VPATH)/$(DISTRIB) \
 ; mkdir $(DISTRIB) \
 ; mkdir $(DISTRIB)/examples \
@@ -194,7 +195,7 @@ n_make_dir: n_clean1
  $(DISTRIB)/doc/. \
 ; cd $(OBJDIR) )
 
-n_diff: n_make_dir
+n_diff: make_dir clean_d
 	cd $(VPATH) && ( \
  makepatch $(DISTRIB).org $(DISTRIB) > $(PATCHF) \
 ; gzip -9 -f $(PATCHF) \

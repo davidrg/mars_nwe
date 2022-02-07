@@ -357,6 +357,9 @@ int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
       flockd.l_start  = offset;
       flockd.l_len    = size;
       result = fcntl(fh->fd, F_SETLK, &flockd);
+      XDPRINTF((2, 0,  "nw_%s_datei result=%d, fh=%d, offset=%d, size=%d",
+        (do_lock) ? "lock" : "unlock", result, fhandle, offset, size));
+
       if (!result) return(0);
       else return(-0x21); /* LOCK Violation */
     }
