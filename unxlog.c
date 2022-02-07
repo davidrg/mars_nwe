@@ -1,4 +1,4 @@
-/* unxlog.c : 30-Apr-96 */
+/* unxlog.c : 11-Jul-98 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -21,6 +21,7 @@
 void write_utmp(int dologin, int connection, int pid,
                 ipxAddr_t *from_addr, uint8  *username)
 {
+#ifndef FREEBSD
   struct utmp loc_ut;
   struct utmp *ut;
   int    fd;
@@ -74,4 +75,5 @@ void write_utmp(int dologin, int connection, int pid,
     write(fd, (char *)ut, sizeof(struct utmp));
     close(fd);
   }
+#endif /* !FREEBSD */
 }

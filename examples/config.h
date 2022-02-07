@@ -1,4 +1,4 @@
-/* config.h: 04-Feb-98 */
+/* config.h: 11-Jul-98 */
 /* some of this config is needed by make, others by cc                     */
 
 #define DO_DEBUG      1              /* compile in debug code              */
@@ -14,7 +14,7 @@
 # define FILENAME_NW_INI  "/etc/nwserv.conf"
                                      /* full name of ini (conf) file       */
 # define PATHNAME_PROGS   "/usr/sbin" /* where to find the executables     */
-# define PATHNAME_BINDERY "/etc"     /* directory for bindery-files        */
+# define PATHNAME_BINDERY "/var/nwserv/db"  /* directory for bindery-files        */
 #endif
 
 #define PATHNAME_PIDFILES "/var/run" /* directory for 'pidfiles'           */

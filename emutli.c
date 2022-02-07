@@ -1,4 +1,4 @@
-/* emutli.c 03-Mar-98 */
+/* emutli.c 23-Jul-98 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -60,6 +60,9 @@
 */
 
 static int locipxdebug=0;
+#ifdef FREEBSD
+static struct ipx_addr fbsd_ipx;
+#endif
 
 void set_locipxdebug(int debug)
 {
@@ -91,12 +94,31 @@ void set_emu_tli(void)
 {
   int i = get_ini_int(100);
   if (i > -1) locipxdebug = i;
+#ifdef FREEBSD
+  {
+    uint32  net = 0;
+    uint8 buff[500];
+
+    if( (get_ini_entry(NULL, 3, buff, sizeof(buff)))!=3 ){
+      errorp(10, "set_emu_tli", "Missing ini entry 3");
+      return;
+    }
+    sscanf((char*)buff, "%lx", &net);
+    ipx_netlong(fbsd_ipx)=htonl(net);
+    if( ipx_iffind(NULL,&fbsd_ipx) )
+      errorp(10, "set_emu_tli", "Can't find ipx interface for net=%lx",net);
+  }
+#endif
 }
 
 int t_open(char *name, int open_mode, char * p)
 {
   int opt=1;
+#ifdef FREEBSD
+  int sock = socket(AF_IPX, SOCK_DGRAM, 0);
+#else
   int sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
+#endif  
   if (sock < 0) return(sock);
   set_sock_debug(sock);   /* debug switch */
 
@@ -120,15 +142,34 @@ int t_bind(int sock, struct t_bind *a_in, struct t_bind *a_out)
           && a_in->addr.len == sizeof(ipxAddr_t))
      ipx2sockadr(&ipxs, (ipxAddr_t*) (a_in->addr.buf));
 
+
+#ifndef FREEBSD
    ipxs.sipx_network = 0L;                    /* allways default net */
 
    memset(ipxs.sipx_node, 0, IPX_NODE_SIZE);  /* allways default node */
                                               /* Hi Volker  :)        */
-
+#else
+   ipx_netlong(ipxs.sipx_addr)=ipx_netlong(fbsd_ipx);
+   memcpy(ipxs.sipx_node, &fbsd_ipx.x_host, IPX_NODE_SIZE);
+#endif
+   
    if (bind(sock, (struct sockaddr*)&ipxs, sizeof(struct sockaddr_ipx))==-1) {
      errorp(0, "TLI-BIND", "socket Nr:0x%x", (int)GET_BE16(&(ipxs.sipx_port)));
      return(-1);
    }
+#ifdef FREEBSD
+   { 
+   int on=1;
+   if (setsockopt(sock, 0, SO_HEADERS_ON_INPUT, &on, sizeof(on))) {
+     errorp(0, "setsockopt SO_HEADERS_ON_INPUT", NULL);
+     return (-1);
+   }
+   if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on,sizeof(on))==-1){
+     errorp(0, "setsockopt SO_BROADCAST", NULL);
+     return(-1);
+   }
+   }
+#endif
    if (a_out != (struct t_bind*) NULL) {
      if (getsockname(sock, (struct sockaddr*)&ipxs, &maxplen) == -1){
        errorp(0, "TLI-GETSOCKNAME", NULL);
@@ -185,7 +226,7 @@ int poll( struct pollfd *fds, unsigned long nfds, int timeout)
      p->revents=0;
      p++;
    }
-   if (timeout > 1000) {
+   if (timeout >= 1000) {
      time_out.tv_sec    = timeout / 1000;
      time_out.tv_usec   = 0;
    } else {
@@ -209,6 +250,7 @@ int poll( struct pollfd *fds, unsigned long nfds, int timeout)
    return(result);
 }
 
+
 inline int t_rcvudata(int fd, struct t_unitdata *ud, int *flags)
 {
    struct sockaddr_ipx ipxs;
@@ -216,6 +258,29 @@ inline int t_rcvudata(int fd, struct t_unitdata *ud, int *flags)
    int result;
    ipxs.sipx_family=AF_IPX;
    if (ud->addr.maxlen < sizeof(ipxAddr_t)) return(-1);
+   
+#ifdef FREEBSD
+   {
+     unsigned char tmpbuf[IPX_MAX_DATA+sizeof(struct ipx)];
+     
+     struct ipx *ipxhdr=(struct ipx*)tmpbuf;
+     fd_set rfd;
+     FD_ZERO(&rfd);
+     FD_SET(fd,&rfd);
+     result=select(fd+1, &rfd, NULL, NULL, NULL);
+     if(result<0) return(-1);
+     result = recvfrom(fd, tmpbuf, 
+          min(sizeof(tmpbuf), ud->udata.maxlen+sizeof(struct ipx)), 0,
+                       (struct sockaddr *) &ipxs, &sz);
+     result-=sizeof(struct ipx);   
+     if( result<0 ) return(-1);
+     memcpy(ud->udata.buf,tmpbuf+sizeof(struct ipx),result);
+     if (ud->opt.maxlen) {
+        *((uint8*)ud->opt.buf) = ipxhdr->ipx_pt;
+        ud->opt.len            = 1;
+     }
+   }
+#else
    result = recvfrom(fd, ud->udata.buf, ud->udata.maxlen, 0,
                          (struct sockaddr *) &ipxs, &sz);
 
@@ -224,6 +289,8 @@ inline int t_rcvudata(int fd, struct t_unitdata *ud, int *flags)
       *((uint8*)ud->opt.buf) = ipxs.sipx_type;
       ud->opt.len            = 1;
    }
+#endif
+   
    ud->udata.len=result;
    sock2ipxadr((ipxAddr_t*) (ud->addr.buf), &ipxs);
    ud->addr.len = sizeof(ipxAddr_t);
@@ -265,7 +332,15 @@ inline int t_sndudata(int fd, struct t_unitdata *ud)
    memset(&ipxs, 0, sizeof(struct sockaddr_ipx));
    ipxs.sipx_family=AF_IPX;
    ipx2sockadr(&ipxs, (ipxAddr_t*) (ud->addr.buf));
+#ifdef FREEBSD
+   {
+     struct ipx ipxdp;
+     ipxdp.ipx_pt = (ud->opt.len) ? (uint8) *((uint8*)(ud->opt.buf)) : 0;
+     setsockopt(fd, 0, SO_DEFAULT_HEADERS, &ipxdp, sizeof(ipxdp));
+   }
+#else
    ipxs.sipx_type    = (ud->opt.len) ? (uint8) *((uint8*)(ud->opt.buf)) : 0;
+#endif   
    result = sendto(fd,(void *)ud->udata.buf,
           ud->udata.len, 0, (struct sockaddr *) &ipxs, sizeof(ipxs));
 

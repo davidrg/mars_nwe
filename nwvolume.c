@@ -20,7 +20,13 @@
 
 #include <dirent.h>
 #include <errno.h>
-#include <sys/vfs.h>
+
+#ifdef FREEBSD
+# include <sys/param.h>
+# include <sys/mount.h>
+#else
+# include <sys/vfs.h>
+#endif
 #include <pwd.h>
 
 #ifndef LINUX

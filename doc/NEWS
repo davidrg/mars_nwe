@@ -1,3 +1,6 @@
+------10-May-98--- 0.99.pl12 ---------
+- changed default bindery directory location:
+  /etc  -> /var/nwserv/db  ( section 45 ) 
 ------10-May-98--- 0.99.pl9 ---------
 - changed default attrib directory location:
   /var/lib/nwserv/attrib -> /var/nwserv/attrib. ( section 46 ) 

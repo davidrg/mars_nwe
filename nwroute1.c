@@ -123,8 +123,8 @@ void get_servers(void)
   SQP               sqp;
   ipxAddr_t         wild;
   memset(&wild, 0,  sizeof(ipxAddr_t));
-#ifdef xxxLINUX
-  U32_TO_BE32(internal_net, wild.net);
+#ifdef FREEBSD
+  U32_TO_BE32(internal_net, wild.net);  /* ask ONLY IPXrouted  */
   memcpy(wild.node, my_server_adr.node, IPX_NODE_SIZE);
 #else
   memset(wild.node, 0xFF, IPX_NODE_SIZE);
@@ -150,8 +150,8 @@ void send_sap_rip_broadcast(int mode)
   IPX_DATA    ipx_data;
   ipxAddr_t   wild;
   memset(&wild, 0, sizeof(ipxAddr_t));
-#ifdef xxxLINUX
-  U32_TO_BE32(internal_net, wild.net);
+#ifdef FREEBSD
+  U32_TO_BE32(internal_net, wild.net);  /* tell ONLY to IPXrouted  */
   memcpy(wild.node, my_server_adr.node, IPX_NODE_SIZE);
 #else
   memset(wild.node, 0xFF, IPX_NODE_SIZE);

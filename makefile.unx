@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 29-May-98
+#makefile.unx 11-Jul-98
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=99
-P_L=11
+P_L=12
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -93,21 +93,30 @@ M_PATHNAME_PROGS=PATHNAME_PROGS
 M_PATHNAME_PROGS="."
 #endif
 
-#ifndef INTERNAL_RIP_SAP
-#define INTERNAL_RIP_SAP  1
-#endif
+M_PATHNAME_BINDERY=PATHNAME_BINDERY
 
 #ifdef  LINUX
-EMUTLIOBJ=emutli$(O)
-EMUTLIOBJ1=emutli1$(O)
-# if INTERNAL_RIP_SAP
-NWROUTE_O=nwroute$(O)
+# ifdef FREEBSD
+EMUTLIOBJ=emutli$(O) ipxif$(O)
+NWROUTE_O=nwroute1$(O)
+NWROUTED=
 # else
+#  ifndef INTERNAL_RIP_SAP
+#    define INTERNAL_RIP_SAP  1
+#  endif
+EMUTLIOBJ=emutli$(O)
+#  if INTERNAL_RIP_SAP
+EMUTLIOBJ1=emutli1$(O)
+NWROUTE_O=nwroute$(O)
+#  else
+EMUTLIOBJ1=
 NWROUTE_O=nwroute1$(O)
 NWROUTED=$(PROG7)
+#  endif
 # endif
 #else
 NWROUTE_O=nwroute1$(O)
+NWROUTED=
 #endif
 
 INSTALLPROGS=$(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5) $(PROG6) $(NWROUTED)
@@ -121,7 +130,7 @@ nwattrib$(O) trustee$(O)
 OBJ4= $(OBJ1)
 OBJ5= $(OBJ1)
 OBJ6= $(OBJ1) nwdbm$(O) nwcrypt$(O) unxlog$(O) sema$(O) nwqueue$(O)
-OBJ7= $(OBJ1) $(EMUTLIOBJ1)
+OBJ7= $(OBJ1) emutli1$(O)
 OBJ8= $(OBJ6)
 
 OBJS= $(EMUTLIOBJ) net1$(O) tools$(O) \
@@ -195,6 +204,19 @@ n_install:
           echo "remove old version in /sbin ?" ; \
           (cd /sbin && rm -i nwserv nwbind ncpserv nwconn nwclient nwrouted) ; \
         fi ;
+	@-if [ -r /etc/nwobj.pag ] ; then \
+          ( \
+	  if [ ! -r $(M_PATHNAME_BINDERY) ] ; then \
+           if $(VPATH)/tools.sh yesno "move bindery files from /etc to $(M_PATHNAME_BINDERY) ?" ; then \
+             mkdir -p $(M_PATHNAME_BINDERY); \
+             (cd /etc && mv \
+             nwiobj.pag nwiobj.dir nwobj.pag nwobj.dir \
+             nwprop.pag nwprop.dir nwval.pag nwval.dir \
+             $(M_PATHNAME_BINDERY) ) ; \
+           fi; \
+          fi; \
+          ) \
+        fi ;
 	@cd $(VPATH) && (if [ -r $(M_FILENAME_NW_INI) ] ; then \
 echo ""; \
 echo "********************************************************"; \
@@ -246,6 +268,7 @@ make_dir:
 ; ln -f  \
  $(STERN).[ch] \
  makefile.unx \
+ tools.sh \
  Makefile \
  COPYING  \
  README  \

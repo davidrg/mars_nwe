@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 03-Mar-98
+# mk.li 11-Jul-98
 # please edit this file !
 
 mk()
@@ -90,6 +90,28 @@ fi
      TMP=/tmp
      INSTALL=/usr/ucb/install
    ;;
+
+########## FreeBSD ############
+# created by Boris Popov
+   freebsd)
+     V_VPATH=".."
+     OBJDIR="obj"
+     CC=gcc
+     CPP="gcc -E"
+#    CFLAGS="-pipe -O2 -fomit-frame-pointer"
+#    problems gcc2.5.8 ^^^^^^^^^^^^^^^^^^^^^
+     CFLAGS="-pipe -Wall"
+
+     HOSTCFLAGS="-DFREEBSD -DLINUX"
+
+     CRYPTLIB="-lcrypt  -lipx"
+
+     NSLLIB=""
+     MAKE=make
+     TMP=/tmp
+     INSTALL=install
+     ;;
+
    *) echo "mk.li: Unknown or not supported OS, probably you must set \$UNX"
    ;;
 esac

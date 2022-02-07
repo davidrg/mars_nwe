@@ -330,9 +330,7 @@ ersten Start von "nwserv" angelegt. Der Volume-Name ist ueblicherweise
 "SYS".
 Beim Anlegen und Eintragen der Optionen fuer das Volume  SYS unbedingt
 auf Gross-  und  Kleinschreibung  achten,  sonst  sind  diese  Dateien
-nachher  fuer  den Client nicht  Sichtbar. Alle  weiteren Volumes sind
-Optional und  koennen beliebige  Verzeichnisse  (ausser /)  freigeben.
-Auf Verzeichniss  "/" hat  nur der  root=Supervisor  Zugriff.  Volumes
+nachher  fuer  den Client nicht  sichtbar. Volumes
 koennen   mit  NFS  gemountete  Verzeichnisse,  CD-Roms,  Floppys  und
 beliebige  unter   Linux  mountbare  Filesystems  sein.   Die  einzige
 Einschraenkung besteht in  der Beschraenkung  auf entweder alles gross

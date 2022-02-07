@@ -1,4 +1,4 @@
-/* emutli.h 28-Apr-96 */
+/* emutli.h 11-Jul-98 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -20,7 +20,21 @@
 #ifndef _EMUTLI_H_
 #define _EMUTLI_H_
 
-#include <linux/ipx.h>
+#ifdef FREEBSD
+# include <netipx/ipx.h>
+# define sipx_node sipx_addr.x_host.c_host
+# define sipx_network sipx_addr.x_net.c_net
+# define ipx_netlong(iaddr) (((union ipx_net_u *)(&((iaddr).x_net)))->long_e)
+
+# define ETHERTYPE_IPX	0x8137
+# define IPX_RT_8022	ETHERTYPE_IPX
+# define IPX_RT_8023	ETHERTYPE_IPX
+# define IPX_RT_SNAP	ETHERTYPE_IPX
+# define IPX_RT_BLUEBOOK	ETHERTYPE_IPX
+ int  ipx_iffind(char *ifname,struct ipx_addr *addr);
+#else
+# include <linux/ipx.h>
+#endif
 
 typedef unsigned char       uint8;
 typedef unsigned short int uint16;

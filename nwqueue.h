@@ -48,5 +48,5 @@ extern int nw_creat_queue(int q_typ, uint8 *q_name, int q_name_len,
 extern int nw_destroy_queue(uint32 q_id);
 
 extern void exit_queues(void);
-extern void init_queues(void);
+extern void init_queues(int entry18_flags_p);
 #endif

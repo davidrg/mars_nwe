@@ -742,18 +742,18 @@ static int get_dh_entry(DIR_HANDLE *dh,
       dh->dirpos   = (off_t)0;
       dh->sequence = 0;
     }
-    seekdir(f, dh->dirpos);
+    SEEKDIR(f, dh->dirpos);
 
     if (dh->sequence != *sequence) {
       while (dh->sequence < *sequence) {
         if (NULL == readdir(f)) {
-          dh->dirpos = telldir(f);
+          dh->dirpos = TELLDIR(f);
           release_dh_f(dh, 1);
           return(0);
         }
         dh->sequence++;
       }
-      dh->dirpos = telldir(f);
+      dh->dirpos = TELLDIR(f);
     }
     XDPRINTF((5,0,"get_dh_entry seq=0x%x, attrib=0x%x path:%s:, entry:%s:",
                 *sequence, attrib, dh->unixname, entry));
@@ -790,7 +790,7 @@ static int get_dh_entry(DIR_HANDLE *dh,
     } /* while */
     dh->kpath[0] = '\0';
     *sequence  = dh->sequence;
-    dh->dirpos = telldir(f);
+    dh->dirpos = TELLDIR(f);
     release_dh_f(dh, (dirbuff==NULL));
   } /* if */
   return(okflag);

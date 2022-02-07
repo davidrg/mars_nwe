@@ -42,8 +42,8 @@ typedef struct S_INT_QUEUE_JOB {
   int     server_task;
   uint32  server_id;
   uint8   job_description[50];
-  uint8   client_area[152];
   time_t  file_entry_time;   /* for filenamehandling */  
+  uint8   client_area[152];  /* must be int aligned  */
   struct S_INT_QUEUE_JOB *next;
 } INT_QUEUE_JOB;
 
@@ -72,6 +72,8 @@ typedef struct S_NWE_QUEUE {
 } NWE_QUEUE;
 
 NWE_QUEUE *nwe_queues=NULL;
+
+static int entry18_flags;
 
 static NWE_QUEUE *new_queue(uint32 id)
 {
@@ -461,6 +463,10 @@ int nw_close_queue_job(uint32 q_id, int job_id,
     if (jo) {
       int result=sizeof(jo->client_area);
       int i;
+      QUEUE_PRINT_AREA *qpa=(QUEUE_PRINT_AREA*)jo->client_area;
+      if (entry18_flags&0x1) { /* always suppress banner */
+        qpa->print_flags[1] &= ~0x80;
+      }
       jo->job_control_flags &= ~0x20;
       memcpy(responsedata, jo->client_area, result);
       i = nw_get_q_prcommand(q_id, responsedata+result+1);
@@ -924,13 +930,14 @@ int nw_destroy_queue(uint32 q_id)
 }
 
 
-void init_queues(void)
+void init_queues(int entry18_flags_p)
 {
   NETOBJ obj;
   uint8 buf[300];
   int result;
   uint8 *wild="*";
   uint32 last_obj_id=MAX_U32;
+  entry18_flags=entry18_flags_p;
   exit_queues();
   strmaxcpy(buf, sys_unixname, sys_unixnamlen);
   XDPRINTF((3,0, "init_queues:unixname='%s'", buf));

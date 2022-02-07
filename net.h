@@ -189,7 +189,7 @@ extern int errno;
 #endif
 
 #ifndef PATHNAME_BINDERY
-# define PATHNAME_BINDERY "/etc"  /* location of bindery files */
+# define PATHNAME_BINDERY "/var/nwserv/db"  /* location of bindery files */
 #endif
 
 #ifndef PATHNAME_PIDFILES
@@ -288,6 +288,11 @@ extern int errno;
 # endif
 # ifndef   INTERNAL_RIP_SAP
 #  define  INTERNAL_RIP_SAP    1
+# endif
+# ifdef FREEBSD
+/* FreeBSD has own rip/sap router */
+#  undef   INTERNAL_RIP_SAP
+#  define  INTERNAL_RIP_SAP    0
 # endif
 #else
 /* USL has rip/sap router builtin */

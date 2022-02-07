@@ -1,0 +1,82 @@
+This is a port of Mars_nwe, a free NetWare(tm) emulator for Linux and 
+UnixWare to FreeBSD. An original program was written by Martin Stover, 
+Marburg, Germany. Port to FreeBSD was made by Boris Popov (bp@butya.kz).
+
+	Notes given below related only to FreeBSD. For full description
+of Mars_nwe, please read README file.
+
+	1. Kernel configuration
+	
+	To enable kernel support for IPX protol you must include
+keyword "options  IPX" and rebuild kernel.
+
+
+	2. Interface configuration
+	
+	If it's first NCP server in your network you can select
+any network number. If not, take it from Netware server configuration.
+Network number must be the same as assigned to frame Ethernet_II.
+
+	After net number is selected you can configure interface:
+ifconfig ed0 ipx 0x101. 
+
+	If FreeBSD machine have a two network cards you must choose
+different network numbers for each card.
+
+
+	3. Running IPXrouted
+	
+	FreeBSD have its own SAP/RIP daemon which must be run before
+Mars_nwe and after interface configuration. IPXrouted must be running
+with switch '-s'. If Mars_nwe will be the only Netware-like server
+the following patch must be applied to IPXrouted:
+
+----------------------------------------------------
+--- sap_tables.c.old	Mon Feb 16 19:54:32 1998
++++ sap_tables.c	Mon Jul 10 16:14:45 1998
+@@ -134,6 +134,7 @@
+ 		for(sap = sh->forw; sap != (sap_entry *)sh; sap = sap->forw) {
+ 			if (ServType != sap->sap.ServType)
+ 				continue;
++#if 0
+ 			if (ifp == sap->ifp)
+ 				continue;
+ 
+@@ -147,6 +148,7 @@
+ 					goto next;
+ 				csap = csap->clone;
+ 			}
++#endif
+ 
+ 			if (ntohs(sap->sap.hops) < besthops) {
+ 				best = sap;
+----------------------------------------------------
+
+
+	4. Client configuration
+	
+	This port of Mars_nwe was tested with VLM and Client32
+client software. Because FreeBSD support only Ethernet_II frame
+it is necessary to create net.cfg file (for VLM) to enable this
+frame:
+
+LINK DRIVER NE2000
+    Frame Ethernet_802.3
+    Frame Ethernet_II
+    
+
+	5. Configuring Mars_nwe
+	
+	Section 3 of nw.ini file specified network number in hexadecimal
+format. In general, this must be an "internal net" but kernel lacks support
+for that and for now select same net number which assigned to interface.
+
+	Section 4 are completly ignored.
+	
+
+	6. Problems
+	
+	Because this is first release for FreeBSD you can encounter
+different problems with compilation, configuration, etc. Please send
+questions and suggestions to bp@butya.kz.
+

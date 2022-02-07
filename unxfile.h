@@ -1,4 +1,4 @@
-/* unxfile.h:  05-Feb-98 */
+/* unxfile.h:  23-Jul-98 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -24,5 +24,18 @@ extern int unx_xmkdir(char *unixname, int mode);
 extern int unx_xrmdir(char *unixname);
 
 extern int unx_ftruncate(int fd, uint32 size);
+
+#ifdef FREEBSD
+# define SEEKDIR(dh,to)        {\
+  rewinddir(dh);\
+  while(TELLDIR(dh)!=(to)) \
+    if(readdir(dh)==NULL) break;\
+  }
+# define TELLDIR(dh)   ((dh)->dd_loc+(dh)->dd_seek)
+#else
+# define SEEKDIR(dh,to)	seekdir((dh),(to))
+# define TELLDIR(dh)	telldir((dh))
+#endif
+
 #endif
 

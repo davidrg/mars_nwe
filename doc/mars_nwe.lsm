@@ -1,16 +1,16 @@
 Begin3
 Title:          mars_nwe
-Version:        0.99.pl11
-Entered-date:   07-Jun-98
+Version:        0.99.pl12
+Entered-date:   23-Jul-98
 Description:    Full netware-emulator (src), beta.
                 Supports file-services, bindery-services,
                 printing-services, routing-services.
 Keywords:       novell, netware, server, ipx, ncp, tli
 Author:         mstover@compu-art.de  (Martin Stover)
 Maintained-by:  mstover@compu-art.de  (Martin Stover)
-Primary-site:   http://www.compu-art.de/download/mars_nwe-0.99.pl11.tgz
+Primary-site:   http://www.compu-art.de/download/mars_nwe-0.99.pl12.tgz
                 270 kB
-Alternate-site: ftp://ftp.gwdg.de/pub/linux/misc/ncpfs/mars_nwe/mars_nwe-0.99.pl11.tgz
-Platforms:      Linux (1.2.xx, 1.3.xx, 2.xx), UnixWare (2.xx)
+Alternate-site: ftp://ftp.gwdg.de/pub/linux/misc/ncpfs/mars_nwe/mars_nwe-0.99.pl12.tgz
+Platforms:      Linux (1.2.xx, 1.3.xx, 2.xx), FreeBSD, UnixWare (2.xx)
 Copying-policy: GPL
 End

@@ -1,4 +1,4 @@
-/* nwdbm.c  12-May-98  data base for mars_nwe */
+/* nwdbm.c  15-Jun-98  data base for mars_nwe */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -2292,6 +2292,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
   uint32 server_id= 0x03000001;
   uint32 q1_id    = 0x0E000001;
   uint32 ps1_id   = 0x0F000001;
+  int    entry18_flags=0;  /* for queue handling */
   FILE *f;
   int  auto_ins_user = 0;
   char auto_ins_passwd[100];
@@ -2334,6 +2335,8 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
         entry8_flags = hextoi((char*)buff);
       } else if (17 == what) { /* entry17_flags */
         entry17_flags = hextoi((char*)buff);
+      } else if (18 == what) { /* entry18_flags */
+        entry18_flags = hextoi((char*)buff);
       } else if (21 == what) {  /* QUEUES */
         char name[200];
         char directory[200];
@@ -2579,7 +2582,7 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
     
     if (is_nwe_start)  {
       /* do only init_queues when starting nwserv */
-      init_queues();  /* nwqueue.c */
+      init_queues(entry18_flags);  /* nwqueue.c */
     }
 
     return(0);

@@ -1205,7 +1205,7 @@ static int server_is_down=0;
 
 static int usage(char *prog)
 {
-#if !IN_NWROUTED
+#if IN_NWROUTED || INTERNAL_RIP_SAP
   fprintf(stderr, "usage:\t%s [-V|-h|-f|-u|-k[q]|y]\n", prog);
   fprintf(stderr, "or:\t%s -a device frame netnum\n", prog);
   fprintf(stderr, "or:\t%s -d device frame\n", prog);
@@ -1213,6 +1213,7 @@ static int usage(char *prog)
   fprintf(stderr, "usage:\t%s [-V|-h|-u|-k[q]]\n", prog);
 #endif
   fprintf(stderr, "\t-V: print version\n");
+#if IN_NWROUTED || INTERNAL_RIP_SAP
   fprintf(stderr, "\t-a: add interface, frames = '802.2' '802.3' 'etherii' 'snap'\n");
   fprintf(stderr, "\t-d: delete interface.\n");
   fprintf(stderr, "\t-h: send HUP to main process\n");
@@ -1220,6 +1221,7 @@ static int usage(char *prog)
   fprintf(stderr, "\t-u: update int. routing table\n");
   fprintf(stderr, "\t-k: stop main process, wait for it.\n");
   fprintf(stderr, "\t-kq: don't wait till stop of main process\n");
+#endif
 #if !IN_NWROUTED
   fprintf(stderr, "\t y: start testclient code.\n");
 #endif
@@ -1234,6 +1236,9 @@ int main(int argc, char **argv)
     fprintf(stderr, "You must have root permission !\n");
     exit(1);
   }
+#ifdef FREEBSD
+  set_emu_tli();
+#endif
   tzset();
   while (++j < argc)  {
     char *a=argv[j];
@@ -1265,18 +1270,19 @@ int main(int argc, char **argv)
               else if (!strcmp(buf, "TOKEN"))
                 frame=IPX_FRAME_TR_8022;
 # endif
-              
               if (*a == 'a' && frame > -1) {
                 char dummy;
                 if (sscanf(argv[j+3], "%ld%c", &netnum, &dummy) != 1)
                     sscanf(argv[j+3], "%lx", &netnum);
               }
+#if IN_NWROUTED || INTERNAL_RIP_SAP
               if (netnum > 0)
                 result=add_device_net(argv[j+1], frame, netnum); 
               else if ( *a == 'd') {
                 exit_dev(argv[j+1], frame); 
                 result=0;
               } else
+#endif
                 return(usage(argv[0]));
               return((result<0) ? 1 : 0);
             } else

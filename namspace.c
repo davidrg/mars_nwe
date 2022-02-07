@@ -1636,11 +1636,11 @@ int nw_search_file_dir(int namespace, int datastream,
       }
 
       if (dsh->dirpos) {
-        seekdir(ds->fdir, dsh->dirpos);
+        SEEKDIR(ds->fdir, dsh->dirpos);
         if ((    (dirbuff=readdir(ds->fdir)) == NULL
               || (dirbuff->d_ino != dsh->found_inode))
                  && dsh->found_inode>0) {
-          seekdir(ds->fdir, 0L);
+          SEEKDIR(ds->fdir, 0L);
           XDPRINTF((5, 0, "dirbuff->d_ino %d != dsh->found_inode=%d ",
                       (dirbuff)?dirbuff->d_ino:0, dsh->found_inode));
           dsh->lastsequence=0;
@@ -1649,7 +1649,7 @@ int nw_search_file_dir(int namespace, int datastream,
             dsh->lastsequence++;
         }
         if (!dirbuff)  /* inode not found */
-          seekdir(ds->fdir, 0L);
+          SEEKDIR(ds->fdir, 0L);
       }
       if (dirbuff==NULL) {
         dsh->lastsequence=0;
@@ -1691,7 +1691,7 @@ int nw_search_file_dir(int namespace, int datastream,
                          info);
         xfree(funixname);
         *count=1;
-        dsh->dirpos = telldir(ds->fdir);
+        dsh->dirpos = TELLDIR(ds->fdir);
         dirbuff     = readdir(ds->fdir);
         dsh->found_inode=0;
         *perhaps_more=0;
@@ -1710,7 +1710,7 @@ int nw_search_file_dir(int namespace, int datastream,
             dsh->found_inode=dirbuff->d_ino;
             break;
           }
-          dsh->dirpos = telldir(ds->fdir);
+          dsh->dirpos = TELLDIR(ds->fdir);
           dirbuff     = readdir(ds->fdir);
           dsh->lastsequence++;
         } /* while */

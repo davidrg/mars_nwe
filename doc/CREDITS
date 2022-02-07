@@ -64,6 +64,9 @@ Louis Zammit Mangion <lzamm@phys.um.edu.mt>
 Matt Paley <mtpa@mail.nerc-bas.ac.uk>
         adding QUOTA support, login time restrictions
 
+Boris Popov <bp@butya.kz>
+        ported mars_nwe to FreeBSD
+
 Jiri A. Randus <Jiri.Randus@vslib.cz>
         testing bindery code
 
