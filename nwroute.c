@@ -1,4 +1,4 @@
-/* nwroute.c 12-May-96 */
+/* nwroute.c 28-Oct-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -438,9 +438,9 @@ static void send_sap_to_addr(int entry, int hops, int ticks,
     memset(&ipx_data, 0, sizeof(ipx_data.sip));
     strcpy((char*)ipx_data.sip.server_name, nw->name);
     memcpy(&ipx_data.sip.server_adr, &nw->addr, sizeof(ipxAddr_t));
-    XDPRINTF((4, 0, "%s SERVER=%s, typ=0x%x, ticks=%d, hops=%d",
+    XDPRINTF((4, 0, "%s SERVER=%s, typ=0x%x, ticks=%d, hops=%d, sock=0x%x",
              (respond_typ==4) ? "NEAREST" : "GENERAL", nw->name,
-                  nw->typ, ticks, hops));
+                  nw->typ, ticks, hops, (int)GET_BE16(nw->addr.sock)));
     U16_TO_BE16(respond_typ, ipx_data.sip.response_type);
     U16_TO_BE16(nw->typ,     ipx_data.sip.server_type);
     U16_TO_BE16(hops,        ipx_data.sip.intermediate_networks);
@@ -529,16 +529,34 @@ static void send_sap_broadcast(int mode)
   }
 }
 
-static FILE *open_route_info_fn(int force)
+static FILE *open_route_info_fn(int force, FILE *ff, int section)
 {
   static int tacs=0;
   FILE   *f=NULL;
+  if (section>1 && !(print_route_mode&2))
+     return(ff);
   if (print_route_tac > 0) {
     if (!tacs || force) {
-      if (NULL != (f=fopen(pr_route_info_fn,
-                           (print_route_mode) ? "w" : "a"))) {
-        tacs = print_route_tac-1;
-      } else print_route_tac=0;
+      char fnbuf[300];
+      char *fn;
+      if (print_route_mode&2) {
+        sprintf(fnbuf, "%s.%d", pr_route_info_fn, section);
+        fn = fnbuf;
+      } else {
+        fn=pr_route_info_fn;
+      }
+      f=fopen(fn, (print_route_mode&0x1) ? "w" : "a");
+      if (section == 1) {
+        if (NULL != f)
+          tacs = print_route_tac-1;
+        else
+          print_route_tac=0;
+      } else {
+        if (NULL != f)
+          fclose(ff);
+        else
+          f = ff; /* we use old file */
+      }
     } else tacs--;
   }
   return(f);
@@ -546,13 +564,14 @@ static FILE *open_route_info_fn(int force)
 
 void print_routing_info(int force)
 {
-  FILE *f= open_route_info_fn(force);
+  FILE *f= open_route_info_fn(force, NULL, 1);
   if (f) {
     int k=-1;
+    int i;
     time_t xtime;
     time(&xtime);
     fprintf(f, "%s", ctime(&xtime) );
-    fprintf(f, "<--------- Devices ---------------->\n");
+    fprintf(f, "<--------- %d Devices ---------------->\n", anz_net_devices);
     fprintf(f, "%-15s %-15s %5s  Network Status\n", "DevName", "Frame", "Ticks");
     while (++k < anz_net_devices) {
       uint8 frname[30];
@@ -564,7 +583,17 @@ void print_routing_info(int force)
                            : ( (nd->is_up==1) ? "UP"
                                               : "ADDED") );
     }
-    fprintf(f, "<--------- Routing Table ---------->\n");
+    if (print_route_mode&2) {
+      f= open_route_info_fn(1, f, 2);
+      fprintf(f, "%s", ctime(&xtime) );
+    }
+    i=0;
+    k=-1;
+    while (++k < anz_routes) {
+      NW_ROUTES *nr = nw_routes[k];
+      if (nr->net) i++;
+    }
+    fprintf(f, "<--------- %d Routes ---------->\n", i);
     fprintf(f, "%8s Hops Ticks %9s Router Node\n", "Network", "RouterNet");
     k=-1;
     while (++k < anz_routes) {
@@ -576,15 +605,25 @@ void print_routing_info(int force)
                  (int)nr->rnode[3], (int)nr->rnode[4], (int)nr->rnode[5]);
       }
     }
+    if (print_route_mode&2) {
+      f= open_route_info_fn(1, f, 3);
+      fprintf(f, "%s", ctime(&xtime) );
+    }
+    i=0;
     k=-1;
-    fprintf(f, "<--------- Server Table ---------->\n");
+    while (++k < anz_servers) {
+      NW_SERVERS *ns = nw_servers[k];
+      if (ns->typ) i++;
+    }
+    fprintf(f, "<--------- %d Servers ---------->\n", i);
     fprintf(f, "%-20s %4s %9s Hops Server-Address\n","Name", "Typ", "RouterNet");
+    k=-1;
     while (++k < anz_servers) {
       NW_SERVERS *ns = nw_servers[k];
       if (ns->typ) {
         char sname[50];
         strmaxcpy(sname, ns->name, 20);
-        fprintf(f, "%-20s %4d  %08lX %4d %s\n", sname, ns->typ,
+        fprintf(f, "%-20s %4x  %08lX %4d %s\n", sname, ns->typ,
              ns->net, ns->hops, xvisable_ipx_adr(&(ns->addr), 1));
       }
     } /* while */
@@ -716,8 +755,7 @@ int test_ins_device_net(uint32 rnet)
   if ( foundfree < 0 ) {
     if (anz_net_devices < MAX_NET_DEVICES) {
       NW_NET_DEVICE **pnd=&(net_devices[anz_net_devices++]);
-      nd=*pnd= (NW_NET_DEVICE*)xmalloc(sizeof(NW_NET_DEVICE));
-      memset(nd, 0, sizeof(NW_NET_DEVICE));
+      nd=*pnd= (NW_NET_DEVICE*)xcmalloc(sizeof(NW_NET_DEVICE));
       nd->ticks  = 1;
     } else {
       XDPRINTF((1, 0, "too many devices > %d, increase MAX_NET_DEVICES in config.h", anz_net_devices));

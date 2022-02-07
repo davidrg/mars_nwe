@@ -198,7 +198,8 @@ int fn_os2_match(uint8 *s, uint8 *p, int soptions)
 
       switch  (pc) {
         case '.' :
-        case 1000:  if (*s && ('.' != *s++) ) return(0);
+        case 1000:  if ( (*p!= 0xff || (*(p+1) != '*' &&  *(p+1) != 0xaa))
+                      && *s && ('.' != *s++) ) return(0);
                     break;
 
         case '?' :

@@ -6,12 +6,12 @@ Ein schneller Loesungsansatz ergab das 'PIPE Filesystem'.
 
 In dem Pipe Filesystem koennen Shell Scripte oder
 Linux Programme hinterlegt werden.
-Diese Programme werden bei dem Client (z.B. DOS) wie einfache
+Diese Programme werden von dem Client (z.B. DOS) wie einfache
 Dateien behandelt.
-Ein Oeffnen dieser Dateien ueber den Client bewirkt
+Ein Lese oder Schreibzugriff auf diese Dateien ueber den Client bewirkt
 einen popen dieser Programme. Der Server uebergibt
-als 1. Parameter entweder 'CREAT', 'READ' oder 'WRITE'
-je nach Modus der jeweiligen Openfile Operation.
+als 1. Parameter entweder 'READ' oder 'WRITE'
+je nach Modus des ersten Zugriffes (Read oder Write).
 Das 'PIPE-Filesystem' bietet damit eine direkte Schnittstelle
 zwischen Client Anwendungen und Linux Programmen.
 
@@ -20,8 +20,6 @@ Shell Script, welches im PIPE-Filesystem hinterlegt wurde.
 
 #!/bin/sh
 case "$1" in
-'CREAT')
-        ;;
 'WRITE')
         cd /u3 && tar -xf -  2>> /tmp/tar.in
         # restore directory /u3/mar
@@ -39,31 +37,22 @@ lokale Datei 'kopiert' werden ( -> Sichern ) bzw. es
 kann die lokale Datei auf diese 'Pipe Datei' kopiert werden.
 ( -> Ruecksichern )
 
-Ein einfaches Drucken kann z.B. mit folgendem Script realisiert werden.
-#!/bin/sh
-case "$1" in
-'WRITE')
-        /usr/bin/lpr
-        ;;
-*)
-	;;
-esac
-
-Der Aufruf diverser Unix Programme kann mit folgenden Script
-erfolgen das auf die entsprechenden Programmnamen gelinkt wurde.
+Ein einfaches Drucken kann z.B. mit folgendem Mini Script realisiert werden.
+Anstatt des Scriptes reicht in diesem Fall natuerlich auch ein link auf
+/usr/bin/lpr.
 
 #!/bin/sh
-case "$1" in
-'READ')
-        /usr/bin/`basename $0`
-        ;;
-*)
-	;;
-esac
+/usr/bin/lpr
 
+Dadurch kann ein capture unter DOS/Windows entfallen.
+
+In dem Verzeichnis examples gibt es als zusaetzliches Beispiel
+die Programmpaare unxcomm<->comm und sendm<->unxsendm.
+Mittels unxcomm/comm ist es sehr einfach moeglich einige
+Linux Befehle vom Client aus aufzurufen.
+z.B. : ps, lpq, lprm usw.
 
 Ueber weitere dokumentierte Anwendungen bzw. Anregungen zu dem
 PIPE-Filesystem wuerde ich mich freuen.
 
 Martin
-

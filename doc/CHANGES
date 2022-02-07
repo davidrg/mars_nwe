@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 04-Oct-96
+Aenderungen in mars_nwe bis zum : 09-Nov-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -187,7 +187,7 @@ Erste 'oeffentliche' Version
 - nwserv.stations erweitert um 'station connect restrictions'.
 - Datei Access um 'supplementary groups' erweitert.
   Open File ruft gegebenfalls  setegid() auf.
-- Als File-Creator wird nun der aktuelle mars_nwer User zurueckgegeben,
+- Als File-Creator wird nun der aktuelle mars_nwe User zurueckgegeben,
   falls st_uid == uid aktueller User.
 - call 0x3d in 0x3b (commit file) umbenannt.
 - segmentation violation in build_verz_name (connect.c) korrigiert.
@@ -219,4 +219,31 @@ Erste 'oeffentliche' Version
   Sonderbehandlung von handle 1.
 - Login Restrictions. (station restrictions) eingebaut.
 <----- ^^^^^^^^^^ pl4 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Namespace Routinen (0x57), Unterfunktionen:
+  0x09 : (Set Short Dir Handle)
+  0x14 : (Search For File Or Subdir Set)
+  0x1c : (Get Full Path String)
+  0x1d : (Get eff rights)
+  eingebaut.  ( fuer client32 )
+- call 0x18 (EndOfJob) schliesst nun alle noch offenen Dateien
+  der aktuellen Task.
+- File Server Copy (0x4a) funktioniert nun korrekt.
+- neuer Schalter in config.h eingebaut: 'HANDLE_ALL_SAP_TYPS'
+  dadurch wird nicht nur TYP 4 herausgefiltert, sondern es werden
+  alle SAP-Typen in die ServerTabelle bzw. Bindery eingetragen.
+  Anregung von paul.sweetland@bbc.co.uk.
+- sicheres Protokoll zwischen nwserv u. nwbind bzw. ncpserv
+  eingebaut.
+- Schalter 302 erweitert um 0x2 fuer split Routing Datei.
+- OS/2 namespace Dateimatchroutine abgeaendert, so dass Wildcard
+  '*.*' auf alle Dateien funktioniert.
+- sehr einfache eff. rights Emulation eingebaut.
+- NCP responses task ist nun gleich request task.
+- Entry 8 um Schalter 0x2 erweitert.
+- Openfile routine, share open etwas abgeaendert.
+- IPX_MAX_DATA vergroessert. IPX_DATA_GR_546 abgeaendert.
+- kleinen patch ( upper/lowercase Handling ) von
+  Sven Norinder <snorinder@sgens.ericsson.se>
+  in nwconn,mv_dir eingebaut.
+<----- ^^^^^^^^^^ pl5 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

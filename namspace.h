@@ -1,4 +1,4 @@
-/* namspace.h 07-Feb-96 : NameSpace Services, mars_nwe */
+/* namspace.h 09-Nov-96 : NameSpace Services, mars_nwe */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -32,7 +32,11 @@ typedef struct {
   uint8  base[4];     /* Base or short Handle, handle is base[0] !! */
   uint8  flag;        /* 0=handle, 1=base, 0xff=not path nor handle */
   uint8  components;  /* nmbrs of pathes, components                */
-  uint8  pathes[1];   /* form len+name                              */
+  uint8  pathes[1];   /* form len+name  (like Pascal)               */
+  /* ATTENTION
+   * a pathlen of 0 means '..' (cd dir ..) !!
+   * first seen with Novell client32
+   */
 } NW_HPATH;
 
 typedef struct {
@@ -65,10 +69,6 @@ typedef struct {
 #define INFO_MSK_DIR_ENTRY_INFO             0x00000400
 #define INFO_MSK_RIGHTS_INFO                0x00000800
 
-/* File Attributes */
-#define FILE_ATTR_NORMAL                    0x00000000
-#define FILE_ATTR_DIR                       0x00000010
-#define FILE_ATTR_SHARE                     0x00000080
 
 /* Search Attributes */
 #define W_SEARCH_ATTR_DIR                   0x00008000

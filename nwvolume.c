@@ -1,4 +1,4 @@
-/* nwvolume.c  08-Aug-96 */
+/* nwvolume.c  07-Nov-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,6 +32,18 @@
 
 NW_VOL    nw_volumes[MAX_NW_VOLS];
 int       used_nw_volumes=0;
+
+static void volume_to_namespace_map(int volume, NW_VOL *vol)
+{
+  struct stat statb;
+  DEV_NAMESPACE_MAP dnm;
+  if (stat(vol->unixname, &statb)) {
+    XDPRINTF((1, 0, "cannot stat vol=%d, `%s`", volume, vol->unixname));
+  }
+  dnm.dev       = statb.st_dev;
+  dnm.namespace = 0; /* NAMESPACE DOS */
+  (void) nw_vol_inode_to_handle(volume, statb.st_ino, &dnm);
+}
 
 void nw_init_volumes(FILE *f)
 /* f = inifile Pointer, must be opened !! */
@@ -123,7 +135,8 @@ void nw_init_volumes(FILE *f)
           vol->max_maps_count = MAX_DEV_NAMESPACE_MAPS;
           vol->high_inode     = 0xfffffff;
         }
-
+        if (vol->unixnamlen)
+          volume_to_namespace_map(used_nw_volumes-1, vol);
       }
     }
   } /* while */
@@ -141,10 +154,15 @@ void nw_setup_home_vol(int len, uint8 *fn)
       unixname[len]   = '\0';
     }
   }
-  while (k--) {
+  while (k--) { /* now set all HOME volumes */
     if (nw_volumes[k].options & VOL_OPTION_IS_HOME)  {
+      int i = -1;
+      while (++i < nw_volumes[k].maps_count)
+        xfree(nw_volumes[k].dev_namespace_maps[i]);
+      nw_volumes[k].maps_count = 0;
       nw_volumes[k].unixnamlen = len;
       new_str(nw_volumes[k].unixname, unixname);
+      volume_to_namespace_map(k, &(nw_volumes[k]));
     }
   }
 }

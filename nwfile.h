@@ -1,9 +1,10 @@
-/* nwfile.h 11-May-96 */
+/* nwfile.h 19-Oct-96 */
 #ifndef _NWFILE_H_
 #define _NWFILE_H_
 #include "nwqueue.h"
 
 typedef struct {
+  int    task;          /* for which task		     */
   int      fd;          /* filehandle from system open/creat */
   long   offd;          /* actual file offset                */
 #if USE_MMAP
@@ -26,11 +27,11 @@ typedef struct {
 
 extern void sig_bus_mmap(int rsig);
 
-extern void init_file_module(void);
+extern void init_file_module(int task);
 
 extern int file_creat_open(int volume, uint8 *unixname,
                            struct stat *stbuff,
-                           int attrib, int access, int creatmode);
+                           int attrib, int access, int creatmode, int task);
 
 extern int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit);
 

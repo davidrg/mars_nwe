@@ -1,4 +1,4 @@
-/* config.h: 18-Jul-96 */
+/* config.h: 04-Nov-96 */
 /* some of this config is needed by make, others by cc                     */
 
 #define DO_DEBUG      1              /* compile in debug code              */
@@ -32,7 +32,9 @@
 #define MAX_CONNECTIONS        5     /* max. number of simultaneous        */
                                      /* connections handled by mars_nwe    */
 
-#define IPX_DATA_GR_546        1     /* allow ipx packets > 546+30 Byte    */
+#define IPX_DATA_GR_546        1     /* 0 = max. IPX Packets = 546  +30 Byte ( 512 Byte RWBuff) */
+                                     /* 1 = max. IPX packets = 1058 +30 Byte (1024 Byte RWBuff) */
+                                     /* 2 = max. IPX packets = 1470 +30 Byte (1444 Byte RWBuff) */
 
 #define USE_MMAP               1     /* use mmap systen call               */
 
@@ -58,6 +60,10 @@
 #define MAX_NW_SERVERS        40     /* max. number of nw-servers on your  */
                                      /* network                            */
 
+#define HANDLE_ALL_SAP_TYPS    0     /* if set to 0 only SAP-Typ 4 Servers */
+                                     /* will be put into routing table and */
+                                     /* if set to 1 all SAP Typs will be   */
+                                     /* used.  	    	    	      	   */
 /* <---------------  next is for linux only ---------------------------->  */
 #define INTERNAL_RIP_SAP    1        /* use internal/own rip/sap routines  */
 /* -------------------- */

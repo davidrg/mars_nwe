@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "04-Oct-96"
+#define REVISION_DATE "01-Nov-96"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -63,44 +63,6 @@ static void write_to_nwserv(int what, int connection, int mode,
 
 #define nwserv_down_server() \
    write_to_nwserv(0xffff, 0, 0, NULL, 0)
-
-static int open_ipx_sockets(void)
-{
-  struct t_bind bind;
-  bind.addr.len    = sizeof(ipxAddr_t);
-  bind.addr.maxlen = sizeof(ipxAddr_t);
-  bind.addr.buf    = (char*)&my_addr;
-  bind.qlen        = 0; /* immer */
-#if 0
-  ncp_fd=t_open("/dev/ipx", O_RDWR, NULL);
-  if (ncp_fd < 0) {
-    t_error("t_open !Ok");
-    return(-1);
-  }
-  U16_TO_BE16(SOCK_BINDERY, my_addr.sock);
-  if (t_bind(ncp_fd, &bind, &bind) < 0){
-    t_error("t_bind in open_ipx_sockets !OK");
-    close(ncp_fd);
-    return(-1);
-  }
-#endif
-
-#if USE_PERMANENT_OUT_SOCKET
-  ipx_out_fd=t_open("/dev/ipx", O_RDWR, NULL);
-  if (ipx_out_fd > -1) {
-    U16_TO_BE16(SOCK_AUTO, my_addr.sock); /* dynamic socket */
-    if (t_bind(ipx_out_fd, &bind, &bind) < 0) {
-      if (nw_debug) t_error("2. t_bind in open_ipx_sockets !OK");
-      t_close(ipx_out_fd);
-      ipx_out_fd = -1;
-    }
-  } else {
-    if (nw_debug) t_error("2. t_open !Ok");
-  }
-
-#endif
-  return(0);
-}
 
 typedef struct {
    ipxAddr_t  client_adr;      /* address remote client */
@@ -1280,6 +1242,7 @@ static void handle_fxx(int gelen, int func)
 
   U16_TO_BE16(0x3333,           ncpresponse->type);
   ncpresponse->sequence       = ncprequest->sequence;
+  ncpresponse->task           = ncprequest->task;
   ncpresponse->connection     = ncprequest->connection;
   ncpresponse->reserved       = 0;
   ncpresponse->completition   = completition;
@@ -1352,7 +1315,7 @@ static int xread(IPX_DATA *ipxd, int *offs, uint8 *data, int size)
   return(size);
 }
 
-static void handle_ctrl(void)
+static void handle_ctrl()
 /* reads packets from nwserv/ncpserv */
 {
   IPX_DATA ipxd;
@@ -1364,8 +1327,10 @@ static void handle_ctrl(void)
   if   (data_len == sizeof(int)) {
     XDPRINTF((2, 0, "GOT CTRL what=0x%x, len=%d",
                      what, ipxd.owndata.d.size));
-    switch (what) {
 
+    (void)send_own_reply(ipx_out_fd, 0, ipxd.owndata.h.sequence, &from_addr);
+
+    switch (what) {
       case  0x2222 :  /* insert connection */
         if (sizeof (int) ==
           xread(&ipxd, &offs, (uint8*)&(conn), sizeof(int))) {
@@ -1409,9 +1374,9 @@ static void handle_ctrl(void)
         if (sizeof(int) == data_len && conn == what)
            sent_down_message();
         break;
-
       default : break;
     } /* switch */
+
   } else {
     errorp(1, "handle_ctrl", "wrong data len=%d", data_len);
   }
@@ -1461,11 +1426,9 @@ int main(int argc, char *argv[])
   set_emu_tli();
 #endif
 
-  if (open_ipx_sockets()) {
-    errorp(1, "open_ipx_sockets", NULL);
-    exit(1);
-  }
-
+#if USE_PERMANENT_OUT_SOCKET
+  ipx_out_fd=open_ipx_socket(NULL, 0);
+#endif
   XDPRINTF((1, 0, "USE_PERMANENT_OUT_SOCKET %s",
                 (ipx_out_fd > -1) ? "enabled" : "disabled"));
 
@@ -1509,12 +1472,11 @@ int main(int argc, char *argv[])
                && IPXCMPNODE(from_addr.node, my_addr.node)
                && IPXCMPNET (from_addr.net,  my_addr.net)) {
         /* comes from nwserv, i hope :)  */
-
         handle_ctrl();
-
       } else {
-        XDPRINTF((1, 0, "NWBIND-LOOP got wrong type 0x%x func=0x%x",
-           (int) GET_BE16(ncprequest->type), (int) ncprequest->function));
+        XDPRINTF((1, 0, "NWBIND-LOOP got wrong type 0x%x func=0x%x from %s",
+           (int) GET_BE16(ncprequest->type),
+           (int) ncprequest->function, visable_ipx_adr(&from_addr) ));
       }
     }
     if (got_sig == SIGHUP) {

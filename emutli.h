@@ -94,8 +94,6 @@ struct pollfd {
 
 extern void set_locipxdebug(int debug);
 extern void set_sock_debug(int sock);
-extern void sock2ipxadr(ipxAddr_t *i, struct sockaddr_ipx *so);
-extern void ipx2sockadr(struct sockaddr_ipx *so, ipxAddr_t *i);
 extern void set_emu_tli(void);
 
 extern int  poll(struct pollfd *fds, unsigned long nfds, int timeout);

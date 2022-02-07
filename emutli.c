@@ -1,5 +1,5 @@
 #define DO_IPX_SEND_TEST 1
-/* emutli.c 28-Apr-96 */
+/* emutli.c 04-Oct-96 */
 /*
  * One short try to emulate TLI with SOCKETS.
  */
@@ -51,16 +51,18 @@ void set_sock_debug(int sock)
   }
 }
 
-void sock2ipxadr(ipxAddr_t *i, struct sockaddr_ipx *so)
-{
-   memcpy(i->net,  &so->sipx_network, IPX_NET_SIZE + IPX_NODE_SIZE);
-   memcpy(i->sock, &so->sipx_port, 2);
+#define sock2ipxadr(i, so) \
+{  \
+   memcpy((i)->net, &(so)->sipx_network, IPX_NET_SIZE + IPX_NODE_SIZE); \
+   (i)->sock[0] = ((uint8*)(&(so)->sipx_port))[0]; \
+   (i)->sock[1] = ((uint8*)(&(so)->sipx_port))[1]; \
 }
 
-void ipx2sockadr(struct sockaddr_ipx *so, ipxAddr_t *i)
-{
-   memcpy(&so->sipx_network, i->net, IPX_NET_SIZE + IPX_NODE_SIZE);
-   memcpy(&so->sipx_port,    i->sock, 2);
+#define ipx2sockadr(so, i) \
+{  \
+   memcpy(&(so)->sipx_network, (i)->net, IPX_NET_SIZE + IPX_NODE_SIZE); \
+   ((uint8*)(&(so)->sipx_port))[0]  = (i)->sock[0]; \
+   ((uint8*)(&(so)->sipx_port))[1]  = (i)->sock[1]; \
 }
 
 void set_emu_tli(void)

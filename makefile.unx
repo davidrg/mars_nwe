@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 11-Sep-96
+#makefile.unx 04-Oct-96
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=98
-P_L=4
+P_L=5
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -118,6 +118,7 @@ OBJ8= $(OBJ6)
 OBJS= $(EMUTLIOBJ) net1$(O) tools$(O) \
       $(EMUTLIOBJ1) $(NWROUTE_O) \
       connect$(O) namspace$(O) nwvolume$(O) nwfile$(O) unxfile$(O)\
+      nwqueue$(O) nameos2$(O) \
       nwdbm$(O) nwcrypt$(O) unxlog$(O)  \
       $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O) $(PROG6)$(O) \
       $(PROG7)$(O) $(PROG8)$(O)
@@ -164,6 +165,8 @@ $(C)$(O):
 
 n_all:   $(PROGS)
 	 @echo "don't forget to do a 'make install' as root !" >> $(VPATH)/.mk.notes
+	 @echo "please take a look into doc/NEWS !" >> $(VPATH)/.mk.notes
+
 
 n_routed: $(PROG7)
 
@@ -191,7 +194,12 @@ echo "$(M_FILENAME_NW_INI) created from nw.ini"; \
 echo ""; \
 echo "********************************************************"; \
 echo ""; \
-fi; cd $(OBJDIR) )
+fi; \
+echo "If you have problems, please read 'doc/BUGS' before"; \
+echo "sending mail to mailinglist or me."; \
+echo ""; \
+echo "********************************************************"; \
+cd $(OBJDIR) )
 
 n_reboot: n_install
 	  -nwserv -k

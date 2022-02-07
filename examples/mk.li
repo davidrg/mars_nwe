@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 10-Jul-96 ###
+# mk.li 19-Oct-96
 # please edit this file !
 
 mk()
@@ -15,7 +15,25 @@ mk()
     if [ $V_VPATH = '..' ] ; then
       cd ..;
     fi
-    chmod 666 $ERRFILE
+    if [ -f $ERRFILE ] ; then
+      chmod 666 $ERRFILE
+    fi
+}
+
+print_error()
+{
+  if [ "$UNX" = 'linux' ]; then
+    if [ ! -f /usr/include/ndbm.h ] ; then
+      echo "-------------------------------------------------------------"
+      echo "probably you have a broken Linux installation because"
+      echo "'/usr/include/ndbm.h' the include file for the Linux database"
+      echo "is missing."
+      echo "-------------------------------------------------------------"
+    fi
+  fi
+  echo ""
+  echo "The errors are also reported in '$ERRFILE'"
+  echo "============================================================="
 }
 
 TOLOWER='tr "[A-Z]" "[a-z]"'
@@ -23,7 +41,8 @@ UNX=`uname -s | $TOLOWER`
 MASCHINE=`uname -m`
 MK_PPID=$$
 export MK_PPID
-trap 'echo "Error: Try again :)" && exit 1'  1
+
+trap 'print_error; exit 1' 1
 
 case $UNX in
    linux)
@@ -55,7 +74,7 @@ fi
      TMP=/tmp
      INSTALL=install
      ;;
-########### USL UNIX ##############
+########### SYSV (UnixWare) ##############
    unix_sv)
      V_VPATH="."
      OBJDIR="."

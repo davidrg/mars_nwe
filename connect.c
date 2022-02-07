@@ -1,4 +1,4 @@
-/* connect.c  04-Oct-96 */
+/* connect.c  07-Nov-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,7 +42,7 @@ int       used_dirs=0;
 int       act_uid=-1;
 int       act_gid=-1;
 int       act_obj_id=0L;  /* not login                  */
-int       entry8_flags=0; /* special login/logout/flags */
+int       entry8_flags=0; /* special flags, see examples nw.ini, entry 8 */
 int       act_umode_dir=0;
 int       act_umode_file=0;
 
@@ -793,7 +793,7 @@ static int nw_path_ok(NW_PATH *nwpath)
       d++;
     } /* while */
     if (!stat(build_unix_name(nwpath, 1 | 2 ), &stbuff)
-      && (stbuff.st_mode & S_IFMT) == S_IFDIR)
+      && S_ISDIR(stbuff.st_mode))
       return(stbuff.st_ino);
     result = -0x9c;   /* wrong path */
   }
@@ -1009,53 +1009,91 @@ time_t nw_2_un_time(uint8 *d, uint8 *t)
   return(mktime(&s_tm));
 }
 
-static int un_nw_attrib(struct stat *stb, int attrib, int mode)
+int un_nw_attrib(struct stat *stb, int attrib, int mode)
 /* mode: 0 = un2nw , 1 = nw2un */
 {
   /* Attribute */
   /* 0x01   readonly     */
   /* 0x02   hidden       */
   /* 0x04   System       */
+  /* 0x10   IS_DIR       */
   /* 0x20   Archive Flag */
   /* 0x80   Sharable     */  /* TLINK (TCC 2.0) don't like it ???? */
 
   if (!mode) {
+    int is_dir=S_ISDIR(stb->st_mode);
     /* UNIX access -> NW access */
-    attrib = 0x20;
+    if (!is_dir) {
+      attrib = FILE_ATTR_A;
+    } else {
+      attrib = FILE_ATTR_DIR;
+    }
     if (act_uid) {
       /* if not root */
       int acc=get_real_access(stb);
       if (!(acc & W_OK)) {
-        attrib |= 0x1;    /* RO    */
+        attrib |= FILE_ATTR_R;    /* RO    */
       }
       if (!(acc & R_OK)) {
-        attrib |= 0x2;   /* We say hidden here */
+        attrib |= FILE_ATTR_H;   /* We say hidden here */
       }
     }
     /* only shared if gid == gid &&  x Flag */
-    if ((act_gid == stb->st_gid) && (stb->st_mode & S_IXGRP))
-       attrib |= 0x80;  /* shared flag */
+    if (!is_dir) {
+      if ((act_gid == stb->st_gid) && (stb->st_mode & S_IXGRP))
+         attrib |= FILE_ATTR_SHARE;  /* shared flag */
+    }
     return(attrib);
   } else {
     /* NW access -> UNIX access */
     int mode = S_IRUSR | S_IRGRP;
-    if (attrib & 0x2)   /* hidden */
+    if (attrib & FILE_ATTR_H)   /* hidden */
       stb->st_mode &= ~mode;
     else
       stb->st_mode |= mode;
 
     mode = S_IWUSR | S_IWGRP;
-    if (attrib & 0x1)   /* R/O */
+    if (attrib & FILE_ATTR_R)   /* R/O */
       stb->st_mode &= ~mode;
     else
       stb->st_mode |= mode;
 
-    if (attrib & 0x80)   /* Shared */
+    if (attrib & FILE_ATTR_SHARE)   /* Shared */
       stb->st_mode |= S_IXGRP;
     else
       stb->st_mode &= ~S_IXGRP;
     return(stb->st_mode);
   }
+}
+
+int un_nw_rights(struct stat *stb)
+/* returns eff rights of file/dir */
+/* needs some more work          */
+{
+  int rights=0xfb; /* first all rights, but not TRUSTEE_O */
+  if (act_uid) {
+    /* if not root */
+    int is_dir = S_ISDIR(stb->st_mode);
+    int acc=get_real_access(stb);
+    int norights= TRUSTEE_A;  /* no access control rights */
+    if (!(acc & W_OK)) {
+      if (is_dir) {
+        norights |= TRUSTEE_C;
+        norights |= TRUSTEE_E;
+      } else {
+        norights |= TRUSTEE_W;  /* RO */
+      }
+    }
+    if (!(acc & R_OK)) {
+      if (is_dir) {
+        norights |= TRUSTEE_F;  /* SCAN */
+      } else {
+        norights |= TRUSTEE_R;  /* Not for Reading */
+      }
+    }
+    rights &= ~norights;
+  } else rights|= TRUSTEE_S;  /* Supervisor */
+  return(rights);
 }
 
 static int get_file_attrib(NW_FILE_INFO *f, struct stat *stb,
@@ -1088,8 +1126,12 @@ static int get_dir_attrib(NW_DIR_INFO *d, struct stat *stb,
   strncpy((char*)d->name, (char*)nwpath->fn, sizeof(d->name));
   d->attrib=0;  /* d->name could be too long */
   upstr(d->name);
-  d->attrib     = 0x10; /* Verzeichnis         */
+  d->attrib     = (uint8) un_nw_attrib(stb, 0, 0);
+#if 0  /* changed: 02-Nov-96 */
   d->ext_attrib = 0xff; /* effektive rights ?? */
+#else
+  d->ext_attrib = (uint8) un_nw_rights(stb); /* effektive rights ?? */
+#endif
   un_date_2_nw(stb->st_mtime, d->create_date, 1);
   un_time_2_nw(stb->st_mtime, d->create_time, 1);
   U32_TO_BE32(get_file_owner(stb), d->owner_id);
@@ -1277,8 +1319,14 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
   NW_PATH zielpath;
   int completition=conn_get_kpl_path(&quellpath, dir_handle, q, qlen, 0);
   if (!completition > -1){
+#if 1
+    /* I do not know anymore why I did these ??? */
     memcpy(&zielpath, &quellpath, sizeof(NW_PATH));
     strmaxcpy(zielpath.fn, z, zlen);
+#else
+    /* and NOT these, perhaps this will also be ok ?! -- TODO -- */
+    completition=conn_get_kpl_path(&zielpath, dir_handle, z, zlen, 0);
+#endif
     if (completition > -1) {
       int optq = get_volume_options(quellpath.volume, 1);
       int optz = get_volume_options(zielpath.volume,  1);
@@ -1286,6 +1334,11 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
                (optz & VOL_OPTION_IS_PIPE)) completition = -0x8b;
       else if ((optq & VOL_OPTION_READONLY) ||
                (optz & VOL_OPTION_READONLY)) completition = -0x8b;
+      /* patch from Sven Norinder <snorinder@sgens.ericsson.se> :09-Nov-96 */
+      else if (optz & VOL_OPTION_DOWNSHIFT)
+        downstr(zielpath.fn);
+      else
+        upstr(zielpath.fn);
     }
     if (completition > -1){
       int result;
@@ -1353,7 +1406,7 @@ static int change_dir_entry( NW_DIR *dir,     int volume,
 void nw_exit_connect(void)
 {
   if (connect_is_init) {
-    init_file_module();
+    init_file_module(-1);
   }
 }
 
@@ -1386,7 +1439,7 @@ int nw_init_connect(void)
       d++;
     }
 
-    init_file_module();
+    init_file_module(-1);
 
     if (connect_is_init) {
       k = 0;
@@ -1458,6 +1511,7 @@ int nw_free_handles(int task)
       }
       d++;
     }
+    init_file_module(task);
   }
   return(0);
 }
@@ -1591,7 +1645,7 @@ int nw_open_dir_handle( int        dir_handle,
 
 /*
  * Routine returns handle to use in searchroutines.
- * RETURN=errcode ( <0 ) or ACCES Rights
+ * RETURN=errcode ( <0 ) or eff. ACCES Rights
 */
 
 {
@@ -1603,11 +1657,13 @@ int nw_open_dir_handle( int        dir_handle,
 
      completition = new_dir_handle((ino_t)completition, &nwpath);
      if (completition > -1) {
+       struct stat stb;
        DIR_HANDLE *dh  = &(dir_handles[completition-1]);
+       stat(dh->unixname, &stb);
        *volume         = dh->volume;
        *dir_id         = completition;
        *searchsequence = MAX_U16;
-       completition    = 0xff;       /* all rights */
+       completition    = (uint8)un_nw_rights(&stb);  /* eff. rights */
      }
      XDPRINTF((5,0,"NW_OPEN_DIR_2: completition = 0x%x",
                     completition));
@@ -1636,24 +1692,32 @@ int nw_free_dir_handle(int dir_handle, int task)
   } else return(-0x9b); /* wrong handle */
 }
 
+int alter_dir_handle(int targetdir, int volume, uint8 *path,
+                     int inode, int task)
+/* targetdir will be changed */
+{
+  if (targetdir > 0 && --targetdir < used_dirs
+    && dirs[targetdir].is_temp != 2) {
+    /* do not change special temphandles */
+    XDPRINTF((5,0,"Change dhandle:%d(%d) -> '%d:%s'", targetdir+1, task,
+              volume, path));
+    return(change_dir_entry(&dirs[targetdir],
+                    volume, path, inode,
+                    -1, -1, 0, task));
+    /* here the existing handle is only modified */
+  } else return(-0x9b); /* BAD DIR Handle */
+}
+
+
 int nw_set_dir_handle(int targetdir, int dir_handle,
                           uint8 *data, int len, int task)
 /* targetdirs gets path of dirhandle + data */
 {
   NW_PATH nwpath;
   int inode = conn_get_kpl_path(&nwpath, dir_handle, data, len, 1);
-  if (inode > -1){
-    if (targetdir > 0 && --targetdir < used_dirs
-      && dirs[targetdir].is_temp != 2) {
-      /* do not change special temphandles */
-      XDPRINTF((2,0,"Change dhandle:%d(%d) -> `%s`", targetdir+1, task,
-                 conn_get_nwpath_name(&nwpath)));
-      return(change_dir_entry(&dirs[targetdir],
-                      nwpath.volume, nwpath.path, inode,
-                      -1, -1, 0, task));
-      /* here the existing handle is only modified */
-    } else return(-0x9b); /* BAD DIR Handle */
-  }
+  if (inode > -1)
+    inode = alter_dir_handle(targetdir, nwpath.volume, nwpath.path,
+                              inode, task);
   return(inode);  /* invalid PATH */
 }
 
@@ -1698,15 +1762,15 @@ int nw_get_eff_dir_rights(int dir_handle, uint8 *data, int len, int modus)
   if (completition < 0) return(completition);
   strcpy(unname, build_unix_name(&nwpath, 0));
   if (stat(unname, &stbuff) ||
-    (!modus && (stbuff.st_mode & S_IFMT) != S_IFDIR) ) {
+    (!modus && !S_ISDIR(stbuff.st_mode)) ) {
     completition = -0x9c;
-  } else completition=0xff; /* all rights */
+  } else completition=un_nw_rights(&stbuff); /* eff. rights */
   return(completition);
 }
 
 int nw_creat_open_file(int dir_handle, uint8 *data, int len,
             NW_FILE_INFO *info, int attrib, int access,
-            int creatmode)
+            int creatmode, int task)
 /*
  * creatmode: 0 = open | 1 = creat | 2 = creatnew  & 4 == save handle
  * attrib ??
@@ -1718,7 +1782,7 @@ int nw_creat_open_file(int dir_handle, uint8 *data, int len,
   if (completition > -1) {
      struct stat stbuff;
      completition=file_creat_open(nwpath.volume, (uint8*)build_unix_name(&nwpath, 0),
-                      &stbuff, attrib, access, creatmode);
+                      &stbuff, attrib, access, creatmode, task);
 
      if (completition > -1)
        get_file_attrib(info, &stbuff, &nwpath);
@@ -1771,7 +1835,7 @@ static int s_nw_scan_dir_info(int dir_handle,
           U32_TO_BE32(get_file_owner(&stbuff),  owner);
           un_date_2_nw(stbuff.st_mtime, subdatetime,   1);
           un_time_2_nw(stbuff.st_mtime, subdatetime+2, 1);
-          return(0xff);
+          return(un_nw_rights(&stbuff));
         }
         strcpy((char*)dirname, (char*)wild);
       } /* while */
@@ -1784,7 +1848,7 @@ static int s_nw_scan_dir_info(int dir_handle,
         U32_TO_BE32(get_file_owner(&stbuff),  owner);
         un_date_2_nw(stbuff.st_mtime, subdatetime,   1);
         un_time_2_nw(stbuff.st_mtime, subdatetime+2, 1);
-        return(0xff);
+        return(un_nw_rights(&stbuff));
       }
     }
     /* return(-0x9c);  NO MORE INFO */
@@ -1824,7 +1888,8 @@ void get_dos_file_attrib(NW_DOS_FILE_INFO *f,
                                int         volume,
                                uint8        *path)
 {
-  uint8 spath[14];
+  uint8  spath[14];
+  uint32 nw_owner=get_file_owner(stb);
   int voloptions=get_volume_options(volume, 1);
   f->namlen=min(strlen((char*)path), 12);
   strmaxcpy(spath, path, 12);
@@ -1839,9 +1904,12 @@ void get_dos_file_attrib(NW_DOS_FILE_INFO *f,
     f->attributes[0] = (uint8) un_nw_attrib(stb, 0, 0);
   un_date_2_nw(stb->st_mtime, f->created.date, 0);
   un_time_2_nw(stb->st_mtime, f->created.time, 0);
+  U32_TO_BE32(nw_owner, f->created.id);
 
-  U32_TO_BE32(get_file_owner(stb), f->created.id);
-  memcpy(&(f->updated), &(f->created), sizeof(NW_DOS_FILE_INFO));
+  un_date_2_nw(stb->st_mtime, f->updated.date, 0);
+  un_time_2_nw(stb->st_mtime, f->updated.time, 0);
+  U32_TO_BE32(nw_owner, f->updated.id);
+
   un_date_2_nw(stb->st_atime, f->last_access_date, 0);
   U32_TO_32(stb->st_size, f->size);
 }
@@ -1856,7 +1924,7 @@ void get_dos_dir_attrib(NW_DOS_DIR_INFO *f,
   strmaxcpy(spath, path, 12);
   upstr(spath);
   strncpy((char*)f->name, (char*)spath, f->namlen);
-  f->attributes[0] = 0x10;    /* Dir  */
+  f->attributes[0] = (uint8) un_nw_attrib(stb, 0, 0);
   un_date_2_nw(stb->st_mtime, f->created.date,0);
   un_time_2_nw(stb->st_mtime, f->created.time,0);
   U32_TO_BE32(get_file_owner(stb), f->created.id);
@@ -1893,7 +1961,7 @@ int nw_scan_a_directory(uint8   *rdata,
          conn_get_nwpath_name(&nwpath),
          stbuff.st_uid, stbuff.st_gid));
 
-       if ( (stbuff.st_mode & S_IFMT) == S_IFDIR) {
+       if ( S_ISDIR(stbuff.st_mode)) {
           get_dos_dir_attrib(&(scif->u.d), &stbuff,
                              nwpath.volume, nwpath.fn);
        } else {
@@ -1936,7 +2004,6 @@ static int my_match(uint8 *s, uint8 *p)
     } else if (dot) {
       if (dot++ > 3) return(0);
     } else if (len == 8) return(0);
-
     if (*s != *p && ((!isalpha(*p)) || (!isalpha(*s))
       || (*p | 0x20) != (*s | 0x20)))
       return(0);
@@ -1949,10 +2016,26 @@ static int get_match(uint8 *unixname, uint8 *p)
 {
   DIR       *d;
   uint8     *pp;
+#if 0
+  uint8     *p1;
+#endif
+  int       inode=0;
   if (!p || !*p)   return(1);
   *p        = '\0';
   pp=p+1;
   while (*pp == '/') ++pp;
+#if 0
+  p1=strchr(pp, '/');
+  if (!p1) p1=pp+strlen(pp);
+  if (p1 > pp+4 && *(p1-4) == '.'
+                && *(p1-3) == '_'
+                && *(p1-2) == '_'
+                && *(p1-1) == '_' ) {
+    *(p1-4) = '\0';
+    inode=atoi(pp);
+    *(p1-4) = '.';
+  }
+#endif
   if (NULL != (d=opendir(unixname))) {
     struct dirent *dirbuff;
     XDPRINTF((10, 0, "opendir OK unixname='%s' pp='%s'", unixname, pp));
@@ -1961,7 +2044,7 @@ static int get_match(uint8 *unixname, uint8 *p)
       int len;
       if (dirbuff->d_ino) {
         XDPRINTF((10, 0, "get match found d_name='%s'", dirbuff->d_name));
-        if (0 != (len=my_match(dirbuff->d_name, pp))) {
+        if ((dirbuff->d_ino ==inode) || 0 != (len=my_match(dirbuff->d_name, pp))) {
           memcpy(pp, dirbuff->d_name, len);
           XDPRINTF((10, 0, "get match, match OK"));
           closedir(d);

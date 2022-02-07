@@ -30,7 +30,7 @@ static int usage(char *progname)
 
 int main(int argc, char **argv)
 {
-  char *unxcomm=getenv("UNXCOMM");
+  char *unxcomm=getenv(ENV_UNXCOMM);
   if (NULL == unxcomm) unxcomm=DEFAULT_COMM;
   if (argc > 1) {
     int fdout = open(unxcomm, O_RDWR);

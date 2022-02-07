@@ -1,4 +1,4 @@
-/* net.h 03-May-96 */
+/* net.h 25-Oct-96 */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -82,23 +82,21 @@ extern int errno;
                *(  (uint8*) (b) )    = *( ((uint8*) (&a)) +1); \
                *( ((uint8*) (b)) +1) = *(  (uint8*) (&a)); }
 
-#if 0
-/* I don't know anymore why I did coded it in this form */
-#define X_U32_TO_BE32(u, ar) { uint32 a= (uint32)(u); uint8 *b= ((uint8*)(ar))+3; \
-               *b-- = (uint8)a; a >>= 8;  \
-               *b-- = (uint8)a; a >>= 8;  \
-               *b-- = (uint8)a; a >>= 8;  \
-               *b   = (uint8)a; }
-#else
 #define X_U32_TO_BE32(u, b) { uint32 a=(uint32)(u); \
                *( (uint8*) (b))  = *( ((uint8*) (&a))+3); \
                *( ((uint8*) (b)) +1) = *( ((uint8*) (&a))+2); \
                *( ((uint8*) (b)) +2) = *( ((uint8*) (&a))+1); \
                *( ((uint8*) (b)) +3) = *(  (uint8*) (&a)); }
-#endif
 
-#define X_U16_TO_16(u, b) { uint16 a=(uint16)(u); memcpy(b, &a, 2); }
-#define X_U32_TO_32(u, b) { uint32 a=(uint32)(u); memcpy(b, &a, 4); }
+#define X_U16_TO_16(u, b) { uint16 a=(uint16)(u); \
+                      ((uint8*)b)[0] = ((uint8*)&a)[0]; \
+                      ((uint8*)b)[1] = ((uint8*)&a)[1]; }
+
+#define X_U32_TO_32(u, b) { uint32 a=(uint32)(u); \
+                      ((uint8*)b)[0] = ((uint8*)&a)[0]; \
+                      ((uint8*)b)[1] = ((uint8*)&a)[1]; \
+                      ((uint8*)b)[2] = ((uint8*)&a)[2]; \
+                      ((uint8*)b)[3] = ((uint8*)&a)[3]; }
 
 #define GET_BE16(b)  (     (int) *(((uint8*)(b))+1)  \
                      | ( ( (int) *( (uint8*)(b)   )  << 8) ) )
@@ -236,10 +234,21 @@ extern int errno;
 # define MAX_NW_SERVERS MAX_NW_ROUTES
 #endif
 
+#ifndef HANDLE_ALL_SAP_TYPS
+# define HANDLE_ALL_SAP_TYPS 0
+#endif
+
 #if IPX_DATA_GR_546
-#  define IPX_MAX_DATA      1058
+#  if IPX_DATA_GR_546 == 2
+#    define IPX_MAX_DATA      1470
+#    define RW_BUFFERSIZE     1444
+#  else
+#    define IPX_MAX_DATA      1058
+#    define RW_BUFFERSIZE     1024
+#  endif
 #else
-#  define IPX_MAX_DATA       546
+#  define IPX_MAX_DATA         546
+#  define RW_BUFFERSIZE        512
 #endif
 
 #ifndef SOCK_EXTERN
@@ -366,15 +375,22 @@ typedef union {
     uint8   function;        /* Function  */
   } ncprequest;
   struct S_OWN_DATA {
-    uint8   type[2];         /* 0xeeee  */
-    uint8   sequence;
-    uint8   connection;
+    struct {
+      uint8   type[2];       /* 0xeeee  */
+      uint8   sequence;
+      uint8   reserved;      /* its good for alignement  */
+    } h;                     /* header */
     struct {
       int     size;          /* size of next two entries */
       int     function;
       uint8   data[1];
     } d;
   } owndata;
+  struct S_OWN_REPLY {
+    uint8   type[2];         /* 0xefef  */
+    uint8   sequence;
+    uint8   result;          /* perhaps we need it */
+  } ownreply;
   char data[IPX_MAX_DATA];
 } IPX_DATA;
 
@@ -389,8 +405,7 @@ typedef struct S_DIAGRESP      DIAGRESP;
 typedef struct S_NCPRESPONSE   NCPRESPONSE;
 typedef struct S_NCPREQUEST    NCPREQUEST;
 typedef struct S_OWN_DATA      OWN_DATA;
-
-#define OWN_DATA_IPX_BASE_SIZE 8
+typedef struct S_OWN_REPLY     OWN_REPLY;
 
 /*  SOCKETS  */
 #define SOCK_AUTO        0x0000  /* Autobound Socket               */

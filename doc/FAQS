@@ -12,3 +12,22 @@ A: This is for automatic inserting UNIX Users as mars_nwe users.
    All of these automatic inserted users will get the password
    as the crypted bindery password.
 
+Q: File write will not work under WIN3.1, WfW
+A: Try updating C:\WINDOWS\SYSTEM\STORAGE.DLL. I find that earlier
+   versions of this file evince the problem you describe under Windows 3.1
+   and 3.11.  Precisely when this problem went away in STORAGE.DLL I don't
+   know, but versions dated October 1994 or later are working for us.
+   ( John Rigby )
+
+Q: I do not have longfilenamesupport.
+A: Give the volume the 'O' flag.
+   Set section 6 in nwserv.conf to > 0.
+   Win95, by default, does not use long filenames on a netware 3.11
+   server.  This is documented in the resource kit help file and
+   elsewhere.  You should read that to find out the ramifications, but
+   with real netware I've had good luck using the recommended registry
+   settings.  Here is a registry import file:
+   REGEDIT4
+   [HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\VxD\NWREDIR]
+   "SupportLFN"=hex:02
+

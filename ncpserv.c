@@ -1,4 +1,4 @@
-/* ncpserv.c 20-Mar-96 */
+/* ncpserv.c 01-Nov-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -119,34 +119,11 @@ static void write_to_nwserv(int what, int connection, int mode,
 
 static int open_ipx_sockets(void)
 {
-  struct t_bind bind;
-  ncp_fd=t_open("/dev/ipx", O_RDWR, NULL);
-  if (ncp_fd < 0) {
-    t_error("t_open !Ok");
+  ncp_fd  = open_ipx_socket(&my_addr, SOCK_NCP);
+  if (ncp_fd < 0)
     return(-1);
-  }
-  U16_TO_BE16(SOCK_NCP, my_addr.sock); /* NCP_SOCKET */
-  bind.addr.len    = sizeof(ipxAddr_t);
-  bind.addr.maxlen = sizeof(ipxAddr_t);
-  bind.addr.buf    = (char*)&my_addr;
-  bind.qlen        = 0; /* ever 0 */
-  if (t_bind(ncp_fd, &bind, &bind) < 0){
-    t_error("t_bind in open_ipx_sockets !OK");
-    close(ncp_fd);
-    return(-1);
-  }
 #if USE_PERMANENT_OUT_SOCKET
-  ipx_out_fd=t_open("/dev/ipx", O_RDWR, NULL);
-  if (ipx_out_fd > -1) {
-    U16_TO_BE16(0, my_addr.sock); /* dynamic socket */
-    if (t_bind(ipx_out_fd, &bind, &bind) < 0) {
-      if (nw_debug) t_error("2. t_bind in open_ipx_sockets !OK");
-      t_close(ipx_out_fd);
-      ipx_out_fd = -1;
-    }
-  } else {
-    if (nw_debug) t_error("2. t_open !Ok");
-  }
+  ipx_out_fd = open_ipx_socket(NULL, 0);
 #endif
   return(0);
 }
@@ -479,6 +456,9 @@ static int handle_ctrl(void)
 
   if   (data_len == sizeof(int)) {
     XDPRINTF((2, 0, "GOT CTRL what=0x%x, len=%d", what, ipxd->owndata.d.size));
+#if 1
+    (void)send_own_reply(ipx_out_fd, 0, ipxd->owndata.h.sequence, &from_addr);
+#endif
     switch (what) {
       case 0x5555 : /* clear_connection, from wdog process */
         if (sizeof (int) ==
@@ -517,9 +497,14 @@ static void handle_ncp_request(void)
     XDPRINTF((20, 0, "NCPSERV-LOOP von %s", visable_ipx_adr(&from_addr)));
     if ((type = GET_BE16(ncprequest->type)) == 0x2222
                                     || type == 0x5555) {
+
       int connection = (int)ncprequest->connection;
       XDPRINTF((10,0, "GOT 0x%x in NCPSERV connection=%d", type, connection));
-
+#if 0
+      ncp_response(0x9999, ncprequest->sequence,
+    	                    connection, ncprequest->task,
+    	                    0x0, 0, 0);
+#endif
       if ( connection > 0 && connection <= anz_connect) {
         CONNECTION *c = &(connections[connection-1]);
 
@@ -537,7 +522,8 @@ static void handle_ncp_request(void)
                   && !c->retry++) {
                 /* perhaps nwconn is busy  */
                 ncp_response(0x9999, ncprequest->sequence,
-    	                         connection, 0, 0x0, 0, 0);
+    	                    connection, ncprequest->task,
+    	                    0x0, 0, 0);
                 XDPRINTF((2, 0, "Send Request being serviced to connection:%d", connection));
                 return;
               }
@@ -561,9 +547,7 @@ static void handle_ncp_request(void)
               if ( (uint8) (c->sequence+1) == (uint8) ncprequest->sequence)
 #endif
               {
-#if 1
                 clear_connection(connection);
-#endif
                 ncp_response(0x3333,
                              ncprequest->sequence,
                              connection,
@@ -589,6 +573,7 @@ static void handle_ncp_request(void)
           type, ncprequest->connection,
           anz_connect));
       }
+
       if (type == 0x5555 || (type == 0x2222 && ncprequest->function == 0x19)) {
         compl = 0;
         cstat = 0;
@@ -598,7 +583,7 @@ static void handle_ncp_request(void)
       }
       ncp_response(0x3333, ncprequest->sequence,
     	               ncprequest->connection,
-    	               (type== 0x5555) ? 0 : 1,     /* task  */
+    	               (type== 0x5555) ? 0 : ncprequest->task,     /* task  */
     	               compl, /* completition */
     	               cstat, /* conn status  */
     	               0);
@@ -688,6 +673,7 @@ int main(int argc, char *argv[])
 #ifdef LINUX
   set_emu_tli();
 #endif
+
   if (open_ipx_sockets()) {
     errorp(1, "open_ipx_sockets", NULL);
     return(1);

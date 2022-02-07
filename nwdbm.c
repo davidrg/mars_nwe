@@ -1247,7 +1247,7 @@ int nw_test_adr_access(uint32 obj_id, ipxAddr_t *client_adr)
     }
   }
   XDPRINTF((1, 0, "No access for Station %s", visable_ipx_adr(client_adr)));
-  return(-0xff); /* perhaps I find a better result later */
+  return(-0xdb); /* unauthorized login station */
 }
 
 #if 0

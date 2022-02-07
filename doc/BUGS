@@ -1,0 +1,36 @@
+If you have problems.
+---------------------
+- LOOK FOR KERNEL IPX CODE INSTALLED.
+  CONFIG_IPX=y (or m and ipx modul loaded (insmod ipx)).
+- Look for using NO 'full internal net'. (kernel switch)
+  CONFIG_IPX_INTERN=n.
+- Please always read doc/INSTALL[.ger], doc/README[.ger],
+  doc/FAQS and examples/nw.ini.
+  Very important sections in nwserv.conf(nw.ini) are:
+  Section  1: volumes
+  Section  3: Number of the internal network
+  Section  4: IPX-devices
+  Section  6: version-"spoofing"
+  Section 12: supervisor-login
+  If you do not have success, please make one try with
+  the distributed config file(s) without changing it.
+- Important NEWS are reported in doc/NEWS.
+- set nwserv.conf debug switches 101 .. 10x to '1',
+  make a new try with a new started nwserv and look
+  into the log-file (/tmp/nw.log).
+  Perhaps you can recognize the problem. :)
+
+some short notes for problem- or bug-reports.
+---------------------------------------------
+- report your running environment
+  full mars_nwe version, example: 0.98.pl5
+  linux-kernel,                   2.0.23
+  exact typ of client (NCPFS, DOS (NETX,VLM), OS/2, Win .. )
+  changes you made into nwserv.conf(nw.ini), config.h.
+- report whether your client runs correct under a 'real Novell-Server'.
+  ( if you have one ;) )
+
+Known problems / solutions:
+---------------------------
+- see doc/FAQS
+

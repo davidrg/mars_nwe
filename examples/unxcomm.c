@@ -1,6 +1,12 @@
+/* unxcomm.c 24-Oct-96 */
 /* simple UNX program to work together with 'comm'   */
+/* to domonstrate usage of pipefilesystem */
+
 #include <stdio.h>
 #include <fcntl.h>
+#include <sys/time.h>
+#include <sys/types.h>
+
 
 static char **build_argv(int bufsize, char *command, int len)
 /* routine returns **argv for use with execv routines */
@@ -38,15 +44,28 @@ static char **build_argv(int bufsize, char *command, int len)
 }
 #define MAXARGLEN 1024
 
+int bl_read(int fd, void *buf, int size)
+{
+  fd_set fdin;
+  struct timeval t;
+  int result;
+  FD_ZERO(&fdin);
+  FD_SET(fd, &fdin);
+  t.tv_sec   = 1;   /* 1 sec should be enough */
+  t.tv_usec  = 0;
+  result = select(fd+1, &fdin, NULL, NULL, &t);
+  if (result > 0)
+    result=read(fd, buf, size);
+  return(result);
+}
+
 int main(int argc, char *argv[])
 {
-  int status=fcntl(0, F_GETFL);
   int size;
   char buf[MAXARGLEN+1024];
-  if (status != -1) fcntl(0, F_SETFL, status|O_NONBLOCK);
   close(2);
   dup2(1,2);
-  if (-1 < (size=read(0, buf, MAXARGLEN))){
+  if (0 < (size=bl_read(0, buf, MAXARGLEN))){
     char **argvv=build_argv(sizeof(buf), buf, size);
     if (argvv) {
       char path[300];

@@ -1,4 +1,4 @@
-/* net1.h 20-Mar-96 */
+/* net1.h 25-Oct-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -34,9 +34,17 @@ extern void print_sip_data(SIP         *sip);
 extern void adr_to_ipx_addr(ipxAddr_t *p, char *s);
 extern void ipx_addr_to_adr(char *s, ipxAddr_t *p);
 
+extern int open_ipx_socket(ipxAddr_t *addr, int sock_nr);
+
 extern int send_ipx_data(int fd, int pack_typ,
 	              int data_len, char *data,
 	              ipxAddr_t *to_addr, char *comment);
+
+extern int receive_ipx_data(int fd, int *pack_typ, IPX_DATA *d,
+                     ipxAddr_t *fromaddr, int waitmsec);
+
+extern int send_own_data(int fd, IPX_DATA *d, ipxAddr_t *toaddr);
+extern int send_own_reply(int fd, int result, int sequence, ipxAddr_t *toaddr);
 
 extern int get_ipx_addr(ipxAddr_t *addr);
 

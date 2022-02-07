@@ -1,4 +1,4 @@
-/* nwconn.c 29-Sep-96       */
+/* nwconn.c 19-Oct-96       */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -278,7 +278,7 @@ static int create_queue_file(uint8   *job_file_name,
     if (result > -1) {
       struct stat stbuff;
       result=file_creat_open(result, (uint8*)unixname,
-                                   &stbuff, 0x6, 0x6, 1|4|8);
+                            &stbuff, 0x6, 0x6, 1|4|8, 0);
       if (result > -1) {
         chown(unixname, act_uid, act_gid);
         chmod(unixname, 0660);

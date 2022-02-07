@@ -1,6 +1,30 @@
-/* connect.h 29-Sep-96 */
+/* connect.h 06-Nov-96 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
+
+/* some TRUSTEE defines */
+#define TRUSTEE_R    0x01  /* Read Rights */
+#define TRUSTEE_W    0x02  /* Write Rights */
+#define TRUSTEE_O    0x04  /* Open, not used ?? by Novell */
+#define TRUSTEE_C    0x08  /* Creat */
+#define TRUSTEE_E    0x10  /* Erase */
+#define TRUSTEE_A    0x20  /* Access Control */
+#define TRUSTEE_F    0x40  /* File Scan      */
+#define TRUSTEE_M    0x80  /* Modify         */
+/* ........................................ */
+#define TRUSTEE_S   0x100  /* Supervisor     */
+
+
+/* <-------------- File Attributes -------------> */
+#define FILE_ATTR_NORMAL    0x00000000
+#define FILE_ATTR_R         0x00000001
+#define FILE_ATTR_H         0x00000002
+#define FILE_ATTR_S         0x00000004
+#define FILE_ATTR_DIR       0x00000010
+#define FILE_ATTR_A         0x00000020
+#define FILE_ATTR_SHARE     0x00000080
+
+
 typedef struct {
   DIR    *f;
   char   unixname[256]; /* kompletter unixname       */
@@ -112,7 +136,7 @@ extern void nw_exit_connect(void);
 extern int nw_free_handles(int task);
 
 extern int nw_creat_open_file(int dir_handle, uint8 *data, int len,
-                NW_FILE_INFO *info, int attrib, int access, int mode);
+                NW_FILE_INFO *info, int attrib, int access, int mode, int task);
 
 extern int nw_delete_datei(int dir_handle,  uint8 *data, int len);
 extern int nw_set_file_information(int dir_handle, uint8 *data, int len,
@@ -165,6 +189,9 @@ extern int nw_open_dir_handle( int        dir_handle,
 
 extern int nw_free_dir_handle(int dir_handle, int task);
 
+extern int alter_dir_handle(int targetdir, int volume, uint8 *path,
+                     int inode, int task);
+
 extern int nw_set_dir_handle(int targetdir, int dir_handle,
                              uint8 *data, int len, int task);
 
@@ -198,10 +225,9 @@ extern int     used_dirs;
 extern int     act_uid;
 extern int     act_gid;
 extern int     act_obj_id;   /* not login == 0             */
+extern int     entry8_flags; /* special flags, see examples nw.ini, entry 8 */
 extern int     act_umode_dir;
 extern int     act_umode_file;
-
-extern int     entry8_flags; /* special login/logout/flags */
 
 extern int conn_get_kpl_path(NW_PATH *nwpath, int dirhandle,
 	                  uint8 *data,   int len, int only_dir) ;
@@ -233,6 +259,8 @@ extern int fn_dos_match(uint8 *s, uint8 *p, int options);
 
 extern void   un_date_2_nw(time_t time, uint8 *d, int high_low);
 extern time_t nw_2_un_time(uint8 *d, uint8 *t);
+extern int    un_nw_attrib(struct stat *stb, int attrib, int mode);
+extern int    un_nw_rights(struct stat *stb);
 
 extern void   un_time_2_nw(time_t time, uint8 *d, int high_low);
 

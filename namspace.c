@@ -1,8 +1,7 @@
-/* namspace.c 09-Aug-96 : NameSpace Services, mars_nwe */
+/* namspace.c 09-Nov-96 : NameSpace Services, mars_nwe */
 
 /* !!!!!!!!!!!! NOTE !!!!!!!!!! */
-/* Its very dirty till now. */
-/* namespace calls should be only activated for testings */
+/* Its still very dirty, but it should work fairly well */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -284,15 +283,28 @@ static int add_hpath_to_nwpath(N_NW_PATH *nwpath,
   int     k         = -1;
   int     npbeg     = strlen(nwpath->path);
   uint8  *pp        = nwpath->path+npbeg;
-
+#if 0
+  int    perhaps_inode_mode = 0;
+#endif
   XDPRINTF((2, 0, "entry add_hpath_to_nwpath: %s",
                     debug_nwpath_name(nwpath)));
-
   while (!result && ++k < nwp->components) {
     int   len = (int) *(pp_pathes++);
     uint8 *p  =         pp_pathes;
     pp_pathes+=len;
-
+    if (!len) {  /* this means '..' ! */
+      if (pp > nwpath->path) {
+        pp=strrchr((char*)nwpath->path, '/');
+        if (!pp)
+          pp=nwpath->path;
+        *pp='\0';
+        npbeg = pp - nwpath->path;
+        continue;
+      } else {
+        result=-0x9c; /* wrong path */
+        goto leave_build_nwpath;
+      }
+    }
     if (!k && nwpath->volume == -1) { /* first component is volume */
       if ((nwpath->volume=nw_get_volume_number(p, len)) < 0)  {
         /* something not OK */
@@ -310,8 +322,15 @@ static int add_hpath_to_nwpath(N_NW_PATH *nwpath,
       }
 
       while (i--) {
-        if (*p == 0xae) *pp++ = '.';
-        else if (*p == 0xaa || *p == '*' ) {
+        if (*p == 0xae || *p == '.') {
+          *pp++ = '.';
+#if 0
+          if (nwpath->namespace == NAME_DOS) {
+            if (i==3 && *(p+1) == '_')
+              perhaps_inode_mode++;
+          }
+#endif
+        } else if (*p == 0xaa || *p == '*' ) {
           *pp++ = '*';
           nwpath->has_wild++;
         } else if (*p == 0xbf || *p == '?' ) {
@@ -334,7 +353,7 @@ static int add_hpath_to_nwpath(N_NW_PATH *nwpath,
       *pp = '\0';
     }  /* else */
   } /* while */
-  if (nwpath->volume < 0) result=-0x9c;
+  if (nwpath->volume < 0) result=-0x9c; /* wrong path */
 leave_build_nwpath:
   if ((!result) && (!act_obj_id) && !(entry8_flags & 1)) {
     if (nwpath->volume)
@@ -354,7 +373,7 @@ leave_build_nwpath:
   if (!result) {
     NW_VOL *v = &nw_volumes[nwpath->volume];
     if (nwpath->namespace == NAME_DOS || nwpath->namespace == NAME_OS2) {
-      if (v->options & VOL_OPTION_IGNCASE) {
+      if (v->options & VOL_OPTION_IGNCASE /* || perhaps_inode_mode*/) {
         int nplen= (int)(pp - nwpath->path) - npbeg;
         uint8 unixname[1024]; /* should be enough */
         memcpy(unixname, v->unixname, v->unixnamlen);
@@ -376,6 +395,12 @@ leave_build_nwpath:
           downstr(nwpath->path);
         else
           upstr(nwpath->path);
+#if 0
+        if (nwpath->namespace == NAME_DOS){
+
+
+        }
+#endif
       }
     }
   }
@@ -460,7 +485,6 @@ static int find_base_entry(int volume, uint32 basehandle)
       }
     }
   }
-
   /* now we test whether it is the root of volume */
   if (0 < ino) {
     struct stat statb;
@@ -594,6 +618,118 @@ static int build_base(int            namespace,
   return(result);
 }
 
+static int build_dos_name(DIR_BASE_ENTRY *e, uint8 *fname)
+{
+  uint8 *ss=e->nwpath.fn;
+  int   len=0;
+  int   pf=0;
+  int   is_ok=1;
+  int   options=get_volume_options(e->nwpath.volume, 1);
+  for (; *ss; ss++){
+    if (*ss == '.') {
+      if (pf++) {  /* no 2. point */
+        is_ok=0;
+        break;
+      }
+      len=0;
+    } else {
+      ++len;
+      if ((pf && len > 3) || len > 8) {
+        is_ok=0;
+        break;
+      }
+      if (!(options & VOL_OPTION_IGNCASE)){
+        if (options & VOL_OPTION_DOWNSHIFT){   /* only downshift chars */
+          if (*ss >= 'A' && *ss <= 'Z') {
+            is_ok=0;
+            break;
+          }
+        } else {            /* only upshift chars   */
+          if (*ss >= 'a' && *ss <= 'z') {
+            is_ok=0;
+            break;
+          }
+        }
+      }
+    }
+  }
+  if (is_ok) {
+    strcpy(fname, e->nwpath.fn);
+    upstr(fname);
+    return(strlen(fname));
+  } else {
+    return(sprintf(fname, "%ld.___", (long)e->nwpath.statb.st_ino));
+  }
+}
+
+#if 0
+typedef struct {
+  int            anz;
+  DIR_BASE_ENTRY *ee[MAX_DIR_BASE_ENTRIES];
+} BASE_COMPONENTS;
+
+static BASE_COMPONENTS *get_path_components(DIR_BASE_ENTRY *dbe)
+{
+  BASE_COMPONENTS *be=(BASE_COMPONENTS*)xcmalloc(sizeof(BASE_COMPONENTS));
+  uint8 *p=dbe->nwpath.path;
+  uint8 *lastpp = p+strlen(p);
+  int   len=0;
+  int   k=0;
+  int   done=(lastpp==dbe->nwpath.path ||
+             (lastpp==dbe->nwpath.path+1 && *(dbe->nwpath.path)== '/' ));
+
+
+  result = insert_get_base_entry(nwpath, namespace, 0);
+
+
+
+  int l;
+  while (!done) {
+    uint8 *pp=lastpp;
+    while (pp > dbe->nwpath.path && *pp!='/') --pp;
+    if (*pp != '/') {
+      done++;
+      l = lastpp-pp;
+    } else {
+      pp++;
+      l = lastpp-pp;
+      lastpp=pp-1;
+    }
+    if (!k++) {
+
+
+    } else {
+
+    }
+
+
+    if (l > 255)
+       return(-0xff);
+    len+=(l+1);
+    *(p++) = (uint8)l;
+    memcpy(p, pp, l);
+    *(p+l)='\0';
+    k++;
+    XDPRINTF((5, 0, "component=%d, path=`%s`", k ,p));
+    p+=l;
+  }
+  /* now as last element the volume */
+  l=strlen(nw_volumes[dbe->nwpath.volume].sysname);
+  len+=(l+1);
+  *(p++) = (uint8)l;
+  memcpy(p, nw_volumes[dbe->nwpath.volume].sysname, l);
+  *(p+l)='\0';
+  k++;
+  XDPRINTF((5, 0, "component=%d, path=`%s`", k ,p));
+
+  if (len > 400)
+    return(-0xff); /* we support only 'short' pathnames */
+
+}
+
+#endif
+
+
 int nw_generate_dir_path(int      namespace,
                          NW_HPATH *nwp,
                          uint8    *ns_dir_base,
@@ -619,13 +755,15 @@ int nw_generate_dir_path(int      namespace,
   return(result);
 }
 
-static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
+static int build_dir_info(DIR_BASE_ENTRY *dbe,
+                          int namespace,
+                          uint32 infomask, uint8 *p)
 {
   N_NW_PATH      *nwpath=&(dbe->nwpath);
   struct stat    *stb=&(nwpath->statb);
-  int    result      = 76;
+  int    result      = 76;  /* minimumsize */
   uint32 owner       = get_file_owner(stb);
-  memset(p, 0, result);
+  memset(p, 0, result+2);
 
   if (infomask & INFO_MSK_DATA_STREAM_SPACE) {
     U32_TO_32(stb->st_size, p);
@@ -633,12 +771,11 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
   p  += 4;
 
   if (infomask & INFO_MSK_ATTRIBUTE_INFO) {
-    uint32 mask=0L;
-    if (S_ISDIR(stb->st_mode)) mask |= FILE_ATTR_DIR;
-    U32_TO_32(mask, p);
+    uint32 attrib = (uint32) un_nw_attrib(stb, 0, 0);
+    U32_TO_32(attrib, p);
     p      += 4;
-    U16_TO_16((uint16)(mask & 0xFFFF), p);
-    p      +=2;
+    U16_TO_16((uint16)(attrib & 0xFFFF), p);
+    p      += 2;
   } else p+=6;
 
   if (infomask & INFO_MSK_DATA_STREAM_SIZE) {
@@ -658,7 +795,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     p      +=2;
     un_date_2_nw(stb->st_mtime, p, 0);
     p      +=2;
-    U32_TO_32(owner, p);
+    U32_TO_BE32(owner, p);  /* HI-LOW ! */
     p      +=4;
   } else  p+=8;
 
@@ -667,7 +804,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     p      +=2;
     un_date_2_nw(stb->st_mtime, p, 0);
     p      +=2;
-    U32_TO_32(owner, p);
+    U32_TO_BE32(owner, p); /* HI-LOW ! */
     p      +=4;
     un_date_2_nw(stb->st_atime, p, 0);  /* access date */
     p      +=2;
@@ -678,12 +815,12 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
     p      +=2;
     un_date_2_nw(0, p, 0);
     p      +=2;
-    U32_TO_32(0, p);
+    U32_TO_BE32(0, p);   /* HI-LOW */
     p      +=4;
   } else p+=8;
 
-  if (infomask & INFO_MSK_RIGHTS_INFO) {
-    U16_TO_16(0, p);
+  if (infomask & INFO_MSK_RIGHTS_INFO) { /* eff. rights ! */
+    U16_TO_16( un_nw_rights(stb), p);
   }
   p      +=2;
 
@@ -710,21 +847,26 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe, uint32 infomask, uint8 *p)
   } else p+=12;
 
   if (infomask & INFO_MSK_NAME_SPACE_INFO){
-    U32_TO_32(0, p);  /* Creator of the name space number */
+    U32_TO_32(namespace, p);  /* using namespace */
   }
   p      +=4;
 
   /* ---------------------------------------------- */
   if (infomask & INFO_MSK_ENTRY_NAME) {
-    *p = (uint8) strlen(nwpath->fn);
     result++;
-    if (*p) {
-      memcpy(p+1, nwpath->fn, (int) *p);
+    if (namespace == NAME_DOS) {
+      *p=(uint8) build_dos_name(dbe, p+1);
       result += (int) *p;
+    } else {
+      *p = (uint8) strlen(nwpath->fn);
+      if (*p) {
+        memcpy(p+1, nwpath->fn, (int) *p);
+        result += (int) *p;
+      }
     }
   }
-  XDPRINTF((3, 0, "build_dir_info:path=%s, result=%d, basehandle=0x%x, mask=0x%lx",
-          debug_nwpath_name(nwpath), result, dbe->basehandle, infomask));
+  XDPRINTF((3, 0, "build_d_i:space=%d, path=%s, result=%d, handle=0x%x, mask=0x%lx",
+          namespace, debug_nwpath_name(nwpath), result, dbe->basehandle, infomask));
   return(result);
 }
 int nw_optain_file_dir_info(int namespace,    NW_HPATH *nwp,
@@ -734,15 +876,35 @@ int nw_optain_file_dir_info(int namespace,    NW_HPATH *nwp,
 /* returns sizeof info_mask
  * the sizeof info_mask is NOT related by the infomask.
  * But the _valid_ info is.
+ * must return -0xff for file not found  !
  */
 {
   int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
   if (result > -1) {
     DIR_BASE_ENTRY *dbe=dir_base[result];
     nwp_stat(&(dbe->nwpath), "nw_optain_file_dir_info");
-    result = build_dir_info(dbe, infomask, responsedata);
+    result = build_dir_info(dbe, destnamspace, infomask, responsedata);
   } else {
     XDPRINTF((3, 0, "nw_optain_file_dir_info NOT OK result=-0x%x",
+           -result));
+  }
+  return(result);
+}
+
+int nw_get_eff_rights(int namespace,    NW_HPATH *nwp,
+                            int destnamspace,
+                            int searchattrib, uint32 infomask,
+                            uint8 *responsedata)
+{
+  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    nwp_stat(&(dbe->nwpath), "nw_get_eff_rights");
+    U16_TO_16(un_nw_rights(&(dbe->nwpath.statb)), responsedata);
+    responsedata+=2;
+    result = 2+build_dir_info(dbe, destnamspace, infomask, responsedata);
+  } else {
+    XDPRINTF((3, 0, "nw_get_eff_rights NOT OK result=-0x%x",
            -result));
   }
   return(result);
@@ -790,7 +952,7 @@ static int get_add_new_entry(DIR_BASE_ENTRY *qbe, int namespace,
 }
 
 static int namespace_fn_match(uint8 *s, uint8 *p, int namespace)
-/* for other namespaces than DOS */
+/* for other namespaces than DOS + OS2 */
 {
   int  pc, sc;
   uint state = 0;
@@ -880,18 +1042,30 @@ static int namespace_fn_match(uint8 *s, uint8 *p, int namespace)
 
 
 int nw_search_file_dir(int namespace, int datastream,
-                       uint32 searchattrib, uint32 infomask,
-                       int volume, uint32 basehandle, uint32 sequence,
-                       int len, uint8  *path, uint8 *responsedata)
+                       uint32 searchattrib, uint32 infomask, int *count,
+                       int volume, uint32 basehandle, uint32 *sequence,
+                       int len, uint8  *path, uint8 *info, int *perhaps_more)
 
 {
-  int result = find_base_entry(volume, basehandle);
+static uint32 saved_sequence=0L;
+
+  int max_counts = *count;
+  int found      = 0;
+  int result     = find_base_entry(volume, basehandle);
+  *perhaps_more  = 0;
+  *count         = 0;
+  if (len > 255) return(-0x9c); /* wrong path  */
+
   if (result > -1) {
     DIR_BASE_ENTRY    *dbe=dir_base[result];
     DIR_SEARCH_STRUCT *ds=(DIR_SEARCH_STRUCT*) xcmalloc(sizeof(DIR_SEARCH_STRUCT));
     ds->unixname   = (uint8*)nwpath_2_unix1(&(dbe->nwpath), 2, 258);
     if (NULL != (ds->fdir = opendir(ds->unixname)) ) {
       uint8          entry[257];
+      uint8          *pe=entry;
+      int            have_wild=0;
+      int            inode_search=0;
+      uint8          *is_ap=NULL; /* one after point */
       struct dirent  *dirbuff;
       struct stat    statb;
       int            dest_entry=-1;
@@ -899,13 +1073,40 @@ int nw_search_file_dir(int namespace, int datastream,
       ds->kpath        = ds->unixname+strlen(ds->unixname);
       *(ds->kpath)     = '/';
       *(++(ds->kpath)) = '\0';
-      if (sequence == MAX_U32)
-        sequence=0L;
-      if (sequence)
-        seekdir(ds->fdir, sequence);
+      if (*sequence == MAX_U32) {
+        saved_sequence=0L;
+        *sequence=0L;
+      }
+#if 0
+      if (saved_sequence) {
+        seekdir(ds->fdir, saved_sequence);
+        saved_sequence=0L;
+      } else
+#endif
+      if (*sequence)
+         seekdir(ds->fdir, *sequence);
 
       dbe->locked++;
-      strmaxcpy(entry, path, min(255, len));
+
+      while (len--) {
+        uint8 c=*path++;
+        *pe++=c;
+        if (!have_wild) {
+          if (c==0xff) {
+            if (*path == '?' || *path == '*'
+                     || *path == 0xae || *path == 0xbf || *path==0xaa)
+              have_wild++;
+          } else if (c == '.') is_ap=pe;
+        }
+      }
+      *pe='\0';
+
+      if (!have_wild && is_ap && pe - is_ap == 3 && *is_ap== '_'
+        && *(is_ap+1) == '_'  && *(is_ap+2) == '_') {
+        *(is_ap -1) = '\0';
+        inode_search=atoi(entry);
+        *(is_ap -1) = '.';
+      }
 
       if ( (namespace == NAME_DOS || namespace == NAME_OS2)
           && !(vol_options & VOL_OPTION_IGNCASE) )  {
@@ -916,30 +1117,31 @@ int nw_search_file_dir(int namespace, int datastream,
         }
       }
 
-      XDPRINTF((5,0,"nw_search_file_dir namspace=%d, searchpath='%s'",
-                        namespace, entry));
+      XDPRINTF((5,0,"nw_s_f_d namsp=%d,sequence=%d, search='%s'",
+                        namespace, *sequence, entry ));
       while ((dirbuff = readdir(ds->fdir)) != (struct dirent*)NULL){
         uint8 *name=(uint8*)(dirbuff->d_name);
         if (dirbuff->d_ino && strlen((char*)name) < 256) {
           int   flag;
           XDPRINTF((5,0,"nw_search_file_dir Name='%s'", name));
-
-          if (namespace == NAME_DOS) {
-            flag = (*name != '.' &&  fn_dos_match(name, entry, vol_options));
-          } else if (namespace == NAME_OS2) {
-            flag = (*name != '.' || (*(name+1) != '.' && *(name+1) != '\0' ))
-                   && fn_os2_match(name, entry, vol_options);
-          } else {
-            flag = (!strcmp(name, entry)
-                   || namespace_fn_match(name, entry, namespace));
-          }
-
+          if (!inode_search) {
+            if (namespace == NAME_DOS) {
+              flag = (*name != '.' &&  fn_dos_match(name, entry, vol_options));
+            } else if (namespace == NAME_OS2) {
+              flag = (*name != '.' || (*(name+1) != '.' && *(name+1) != '\0' ))
+                     && fn_os2_match(name, entry, vol_options);
+            } else {
+              flag = (!strcmp(name, entry)
+                     || namespace_fn_match(name, entry, namespace));
+            }
+          } else
+            flag = (dirbuff->d_ino == inode_search);
           if (flag) {
             strcpy(ds->kpath, name);
             XDPRINTF((5,0,"nw_search_file_dir Name found=%s unixname=%s",
                                                name, ds->unixname));
             if (!stat(ds->unixname, &statb)) {
-              flag= (searchattrib & W_SEARCH_ATTR_ALL) == W_SEARCH_ATTR_ALL;
+              flag = (searchattrib & W_SEARCH_ATTR_ALL) == W_SEARCH_ATTR_ALL;
               if (!flag) {
                 if (S_ISDIR(statb.st_mode))
                   flag=(searchattrib & FILE_ATTR_DIR);
@@ -947,11 +1149,23 @@ int nw_search_file_dir(int namespace, int datastream,
                   flag = !(searchattrib & FILE_ATTR_DIR);
               }
               if (flag) {
-                strcpy(entry, name);
-                if ((dest_entry = get_add_new_entry(dbe, namespace, entry, 0)) > -1)
-                    break;
-                else {
-                  XDPRINTF((1, 0, "nw_search_file_dir:Cannot add entry '%s'", entry));
+                if (!found) {
+                  strcpy(entry, name);
+                  if ((dest_entry = get_add_new_entry(dbe, namespace, entry, 0)) > -1) {
+                    found++;
+#if 0
+                    if (max_counts > 1) {
+                      saved_sequence = (uint32)telldir(ds->fdir);
+                      /* for next turn */
+                    } else
+#endif
+                      break;
+                  } else {
+                    XDPRINTF((1, 0, "nw_search_file_dir:Cannot add entry '%s'", entry));
+                  }
+                } else {
+                  found++;
+                  break;
                 }
               } else {
                XDPRINTF((10, 0, "type = %s not ok searchattrib=0x%x",
@@ -970,20 +1184,26 @@ int nw_search_file_dir(int namespace, int datastream,
       if (dest_entry > -1) {
         DIR_BASE_ENTRY *dest_dbe=dir_base[dest_entry];
         (void) nwp_stat(&(dest_dbe->nwpath), "nw_search_file_dir");
-        *responsedata = (uint8) volume;
-        responsedata++;
-        U32_TO_32(basehandle, responsedata);
-        responsedata+=4;
-        U32_TO_32((uint32)telldir(ds->fdir), responsedata);
-        responsedata+=4;
-        *responsedata = (uint8) 0;  /* reserved */
-        responsedata++;
-        result = 10 +
-          build_dir_info(dest_dbe,
-                         infomask|INFO_MSK_NAME_SPACE_INFO,
-                         responsedata);
-      } else
+#if 0
+        if (saved_sequence)
+          *sequence= saved_sequence;
+        else
+#endif
+        *sequence= (uint32)telldir(ds->fdir);
+        /* if (found < 2) saved_sequence=0L; */
+        result = build_dir_info(dest_dbe, datastream,
+                         infomask |INFO_MSK_NAME_SPACE_INFO,
+                         info);
+        *count=1;
+#if 0
+        *perhaps_more=(found==2) ? 0xff : 0;
+#else
+        *perhaps_more=(have_wild) ? 0xff : 0;
+#endif
+      } else {
+        saved_sequence=0L;
         result=-0xff; /* no files matching */
+      }
       dbe->locked=0;
       closedir(ds->fdir);
     } /* if NULL != ds->fdir */
@@ -993,13 +1213,15 @@ int nw_search_file_dir(int namespace, int datastream,
   return(result);
 }
 
-static int nw_open_creat_file_or_dir(int namespace,
+static int nw_open_creat_file_or_dir(
+                   int namespace,
                    int opencreatmode,
                    int attrib, uint32 infomask,
                    uint32 creatattrib,
                    int access_rights,
                    NW_HPATH *nwp, uint8 *pathes,
-                   uint8    *responsedata)
+                   uint8    *responsedata,
+                   int task)
 {
   int   result = build_base(namespace, nwp, pathes, 0, NULL);
   int   exist  = result;
@@ -1030,24 +1252,29 @@ static int nw_open_creat_file_or_dir(int namespace,
 #endif
           creatmode = 1;
         }
+
         if ((result = file_creat_open(dbe->nwpath.volume,
               nwpath_2_unix(&dbe->nwpath, 2), &(dbe->nwpath.statb),
-              attrib, access_rights, creatmode)) > -1) {
+              attrib, access_rights, creatmode, task)) > -1) {
           fhandle = (uint32) result;
+#if 0
           actionresult |= OPC_ACTION_OPEN;  /* FILE OPEN */
+#endif
           if (exist > -1 && (opencreatmode & OPC_MODE_REPLACE))
               actionresult |= OPC_ACTION_REPLACE;  /* FILE REPLACED */
         }
-      } else result=-0xff;
-    } else if (exist  > -1) result=-0x84;
+      } else
+        result=-0xff;
+    } else if
+      (exist  > -1) result=-0x84;
 
     if (result > -1) {
       U32_TO_BE32(fhandle,   responsedata);
       responsedata += 4;
-      *responsedata =(uint8) actionresult;
-      /* responsedata++ ; */
+      *responsedata     =(uint8) actionresult;
+      *(responsedata+1) = 0;
       responsedata+=2;
-      result = 6 + build_dir_info(dbe,infomask, responsedata);
+      result = 6 + build_dir_info(dbe, namespace, infomask, responsedata);
     }
   }
   XDPRINTF((3, 0, "nw_open_creat mode=0x%x, creatattr=0x%x, access=0x%x, attr=0x%x, result=%d",
@@ -1095,6 +1322,91 @@ static int nw_alloc_short_dir_handle(int namespace, int hmode,
          dbe->nwpath.statb.st_ino, 300, hmode, task);
       *volume=dbe->nwpath.volume;
     } else result=-0xff;
+  }
+  return(result);
+}
+
+static int nw_set_short_dir_handle(int namespace, int desthandle,
+                                     NW_HPATH *nwp, int task)
+{
+  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    if (S_ISDIR(dbe->nwpath.statb.st_mode)) {
+      result=alter_dir_handle(desthandle,
+              dbe->nwpath.volume, dbe->nwpath.path,
+         dbe->nwpath.statb.st_ino, task);
+    } else result=-0x9c; /* wrong path */
+  }
+  return((result > 0) ? 0 : result);
+}
+
+static int nw_get_full_path_cookies(int namespace,
+                int destnamspace,
+                NW_HPATH *nwp, int *cookieflags,
+                uint32  *cookie1, uint32 *cookie2,
+                int     *components,  uint8 *componentpath)
+
+/* SIMPLE IMPLEMENTATION, needs more work !!!! */
+{
+  int result = build_base(namespace, nwp, nwp->pathes, 0, NULL);
+  if (result > -1) {
+    DIR_BASE_ENTRY *dbe=dir_base[result];
+    uint8 *p      = componentpath;
+    uint8 *lastpp = dbe->nwpath.path+strlen(dbe->nwpath.path);
+    int   len=0;
+    int   k=0;
+    int   done=(lastpp==dbe->nwpath.path ||
+               (lastpp==dbe->nwpath.path+1 && *(dbe->nwpath.path)== '/' ));
+    int l;
+    if (*cookie1 != MAX_U32 || *cookie2 != MAX_U32)
+      return(-0xff);
+    if (strlen(dbe->nwpath.path) > 256)
+       return(-0xfb); /* we do support 'short' pathnames only */
+
+    while (!done) {
+      uint8 *pp=lastpp;
+      while (pp > dbe->nwpath.path && *--pp !='/');;
+      if (*pp == '/') {
+        if (pp < dbe->nwpath.path + 2) ++done;
+        pp++;
+        l = lastpp-pp;
+        lastpp = pp-1;
+      } else {
+        done++;
+        l = lastpp-pp;
+      }
+      if (l > 255)
+         return(-0xff);
+      else if (l > 0) {
+        len+=(l+1);
+        *(p++) = (uint8)l;
+        memcpy(p, pp, l);
+        *(p+l)='\0';
+        k++;
+        XDPRINTF((5, 0, "component=%d, path=`%s`", k ,p));
+        p+=l;
+      } else {
+        XDPRINTF((1, 0, "component=%d, l=%d", k ,l));
+      }
+    }
+    /* now as last element the volume */
+    l=strlen(nw_volumes[dbe->nwpath.volume].sysname);
+    len+=(l+1);
+    *(p++) = (uint8)l;
+    memcpy(p, nw_volumes[dbe->nwpath.volume].sysname, l);
+    *(p+l)='\0';
+    k++;
+    XDPRINTF((5, 0, "component=%d, path=`%s`", k ,p));
+
+    if (len > 400)
+      return(-0xff); /* we support only 'short' pathnames */
+
+    *components  = k;
+    *cookieflags = (S_ISDIR(dbe->nwpath.statb.st_mode)) ? 0 : 1;
+    *cookie1     = 0;
+    *cookie2     = MAX_U32; /* no more cookies */
+    return(len);
   }
   return(result);
 }
@@ -1201,7 +1513,7 @@ static int nw_modify_file_dir(int namespace,
         do_utime++;
       }
       if (do_utime) {
-      XDPRINTF((5, 0, "modify datetime 2=%2x,%2x,%2x,%2x",
+        XDPRINTF((5, 0, "modify datetime 2=%2x,%2x,%2x,%2x",
                   (int) *datetime,
                   (int) *(datetime+1),
                   (int) *(datetime+2),
@@ -1228,7 +1540,7 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
     case  0x01 :  /* open creat file or subdir */
       {
         /* NW PATH STRUC */
-        int opencreatmode      = *(p+1);
+        int      opencreatmode = (int)      *(p+1);
         int      attrib        = (int) GET_16(p+2);  /* LOW-HI */
         uint32   infomask      =       GET_32(p+4);  /* LOW-HI */
         uint32   creatattrib   =       GET_32(p+8);
@@ -1237,7 +1549,7 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
         memcpy(&nwpathstruct, p+14, sizeof(nwpathstruct));
         result  = nw_open_creat_file_or_dir(namespace, opencreatmode,
                    attrib, infomask, creatattrib, access_rights,
-                   &nwpathstruct, p+21, responsedata);
+                   &nwpathstruct, p+21, responsedata, task);
       }
       break;
 
@@ -1256,6 +1568,12 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
 
     case  0x03 :  /* Search for File or DIR */
       {
+        struct OUTPUT {
+          uint8   volume;
+          uint8   basehandle[4];
+          uint8   sequence[4];
+          uint8   reserved;
+        } *xdata= (struct OUTPUT*)responsedata;
         /* NW PATH STRUC */
         int      datastream    = (int) *(p+1);
         int      searchattrib  = (int) GET_16(p+2); /* LOW-HI */
@@ -1265,10 +1583,21 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
         uint32   sequence      = GET_32(p+13);      /* LOW-HI */
         int      len           = *(p+17);
         uint8    *path         = p+18;
-        result  = nw_search_file_dir(namespace,  datastream,
-                                     searchattrib, infomask,
-                                     volume, basehandle, sequence,
-                                     len, path, responsedata);
+        int      count = 1;
+        int      more_entries;
+        result  = nw_search_file_dir(namespace, namespace /*datastream*/,
+                                     searchattrib, infomask, &count,
+                                     volume, basehandle, &sequence,
+                                     len, path,
+                                     responsedata+sizeof(struct OUTPUT),
+                                     &more_entries);
+        if (result > -1) {
+          xdata->volume = (uint8)volume;
+          U32_TO_32(basehandle, xdata->basehandle);
+          U32_TO_32(sequence,   xdata->sequence);
+          xdata->reserved = (uint8) 0;
+          result+=sizeof(struct OUTPUT);
+        }
       }
       break;
 
@@ -1290,7 +1619,10 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
 
     case  0x06 :  /* Obtain File or Subdir Info */
       {
-        int      destnamspace  = (int) p+1;
+#if 0
+static int code = 0;
+#endif
+        int      destnamspace  = (int) *(p+1);
         int      searchattrib  = (int) GET_16(p+2); /* LOW-HI */
         uint32   infomask      = GET_32(p+4);       /* LOW-HI */
         NW_HPATH *nwpathstruct = (NW_HPATH *) (p+8);
@@ -1298,6 +1630,19 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
                                         destnamspace,
                                         searchattrib, infomask,
                                         responsedata);
+#if 0
+        if (result < 0)  {
+          /* Unix Client errormessages */
+          /* there exist *NO* result to force client to use new */
+          /* basehandles :-(( */
+          /*  most are -> IO/Error */
+          /*  -0x9c; -> no such file or dir */
+          /*  -0xfb; -> Protokoll Error     */
+          /*  -0xff; -> no such file or dir */
+          if (code < 0xff) result=-(++code);
+          else result=-0xfe;
+       }
+#endif
       }
       break;
 
@@ -1325,10 +1670,11 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
       break;
 
     case  0x09 : /* Set short Dir Handle*/
-      {
-
-
-
+      {          /* nw32client needs it */
+        int desthandle = (int)*(p+2);
+        NW_HPATH *nwp  = (NW_HPATH *)(p+4);
+        result = nw_set_short_dir_handle(namespace, desthandle, nwp, task);
+        /* NO REPLY Packet */
       }
       break;
 
@@ -1349,6 +1695,43 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
           xdata->volume     = (uint8) volume;
           U32_TO_32(0L,  xdata->reserved);
           result=sizeof(struct OUTPUT);
+        }
+      }
+      break;
+
+    case  0x14 : /* Search for File or Subdir Set */
+        /* SIMPLE IMPLEMENTATION, needs more work !!!! */
+      {
+        struct OUTPUT {
+          uint8   volume;
+          uint8   basehandle[4];
+          uint8   sequence[4];
+          uint8   more_entries;  /* NW4.1 (UNIX) says 0xff here */
+          uint8   count[2];      /* count of entries */
+        } *xdata= (struct OUTPUT*)responsedata;
+        int      datastream    = (int) *(p+1);
+        int      searchattrib  = (int) GET_16(p+2); /* LOW-HI */
+        uint32   infomask      = GET_32(p+4);       /* LOW-HI */
+        int      count         = (int)GET_16(p+8);
+        int      volume        = *(p+10);
+        uint32   basehandle    = GET_32(p+11);      /* LOW-HI */
+        uint32   sequence      = GET_32(p+15);      /* LOW-HI */
+        int      len           = *(p+19);
+        uint8    *path         = p+20;
+        int      more_entries;
+        result  = nw_search_file_dir(namespace,  namespace /*datastream*/,
+                                     searchattrib, infomask, &count,
+                                     volume, basehandle, &sequence,
+                                     len, path,
+                                     responsedata+sizeof(struct OUTPUT),
+                                     &more_entries);
+        if (result > -1) {
+          xdata->volume        = (uint8)volume;
+          U32_TO_32(basehandle, xdata->basehandle);
+          U32_TO_32(sequence,   xdata->sequence);
+          xdata->more_entries  = (uint8) more_entries;
+          U16_TO_16(count,       xdata->count);
+          result+=sizeof(struct OUTPUT);
         }
       }
       break;
@@ -1410,14 +1793,48 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
 
       }
       break;
-    case  0x1c :  /* GetFullPathString new*/
-      {
 
+    case  0x1c :  /* GetFullPathString new*/
+      {           /* nw32 client needs it */
+        /* SIMPLE IMPLEMENTATION, needs more work !!!! */
+        int      destnamspace  = (int)*(p+1);
+        int      cookieflags   = (int)GET_16(p+2);
+        uint32   cookie1       = GET_32(p+4);
+        uint32   cookie2       = GET_32(p+8);
+        NW_HPATH *nwpathstruct = (NW_HPATH *)(p+12);
+        int      components;
+        struct OUTPUT {
+          uint8   cookieflags[2];    /* 0 = DIR; 1 = FILE */
+          uint8   cookie1[4];
+          uint8   cookie2[4];
+          uint8   pathsize[2];       /* complete  components size */
+          uint8   pathcount[2];      /* component counts */
+        } *xdata= (struct OUTPUT*)responsedata;
+        result = nw_get_full_path_cookies(namespace, destnamspace,
+                         nwpathstruct,
+                          &cookieflags, &cookie1, &cookie2, &components,
+                          responsedata+sizeof(struct OUTPUT));
+        if (result > -1) {
+          U16_TO_16(cookieflags,  xdata->cookieflags);
+          U32_TO_32(cookie1,      xdata->cookie1);
+          U32_TO_32(cookie2,      xdata->cookie2);
+          U16_TO_16(result,       xdata->pathsize);
+          U16_TO_16(components,   xdata->pathcount);
+          result+=sizeof(struct OUTPUT);
+        }
       }
       break;
+
     case  0x1d :  /* GetEffDirRights new */
       {
-
+        int      destnamspace  = (int) *(p+1);
+        int      searchattrib  = (int) GET_16(p+2); /* LOW-HI */
+        uint32   infomask      = GET_32(p+4);       /* LOW-HI */
+        NW_HPATH *nwpathstruct = (NW_HPATH *) (p+8);
+        result = nw_get_eff_rights(namespace, nwpathstruct,
+                                    destnamspace,
+                                    searchattrib, infomask,
+                                    responsedata);
       }
       break;
 
@@ -1426,46 +1843,6 @@ int handle_func_0x57(uint8 *p, uint8 *responsedata, int task)
   return(result);
 }
 
-static void build_dos_name(DIR_BASE_ENTRY *e, uint8 *fname)
-{
-  uint8 *ss=e->nwpath.fn;
-  int   len=0;
-  int   pf=0;
-  int   is_ok=1;
-  int   options=get_volume_options(e->nwpath.volume, 1);
-  for (; *ss; ss++){
-    if (*ss == '.') {
-      if (pf++) {  /* no 2. point */
-        is_ok=0;
-        break;
-      }
-      len=0;
-    } else {
-      ++len;
-      if ((pf && len > 3) || len > 8) {
-        is_ok=0;
-        break;
-      }
-      if (!(options & VOL_OPTION_IGNCASE)){
-        if (options & VOL_OPTION_DOWNSHIFT){   /* only downshift chars */
-          if (*ss >= 'A' && *ss <= 'Z') {
-            is_ok=0;
-            break;
-          }
-        } else {            /* only upshift chars   */
-          if (*ss >= 'a' && *ss <= 'z') {
-            is_ok=0;
-            break;
-          }
-        }
-      }
-    }
-  }
-  if (is_ok)
-    strcpy(fname, e->nwpath.fn);
-  else
-    sprintf(fname, "%ld.___", (long)e->nwpath.statb.st_ino);
-}
 
 int get_namespace_dir_entry(int volume, uint32 basehandle,
                                    int namspace, uint8 *rdata)
@@ -1484,7 +1861,7 @@ int get_namespace_dir_entry(int volume, uint32 basehandle,
 #else
     U32_TO_32(name_2_base(&(e->nwpath), NAME_DOS, 1), scif->searchsequence);
 #endif
-    build_dos_name(e, fname);
+    (void)build_dos_name(e, fname);
     if (S_ISDIR(e->nwpath.statb.st_mode)) {
       get_dos_dir_attrib(&(scif->u.d), &e->nwpath.statb,
                               e->nwpath.volume, fname);

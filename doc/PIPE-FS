@@ -5,9 +5,10 @@ solve this problem
 
 In the PIPE filesystem either shell scripts or Linux programs can be
 stored. These programs are treated on the client side (eg DOS) like
-simple files. Opening these files via the client causes a popen of the
-programs. The server passes as the first parameter either CREAT READ
-or WRITE, depending on the mode of the corresponding openfile
+simple files. Reading or writing these files via the client causes
+a popen of the programs.
+The server passes as the first parameter either READ
+or WRITE, depending on the mode of the corresponding first read or write
 operation. This allows the PIPE filesystem to provide a direct
 interface between client applications and Linux programs.
 
@@ -16,8 +17,6 @@ simple shell script, which was stored in the PIPE-filesystem:
 
 #!/bin/sh
 case "$1" in
-'CREAT')
-        ;;
 'WRITE')
         cd /u3 && tar -xf -  2>> /tmp/tar.in
         # restore directory /u3/mar
@@ -38,28 +37,15 @@ the Copy command (->save), or the local file can be copied into this
 A simple print operation can be achieved with the following script:
 
 #!/bin/sh
-case "$1" in
-'WRITE')
-        /usr/bin/lpr
-        ;;
-*)
-	;;
-esac
+/usr/bin/lpr
 
+This allows you to print under dos/windows without capturing.
 
-
-Various unix programs can be invoked with the following script, after
-it has been linked with the required program name.
-
-#!/bin/sh
-case "$1" in
-'READ')
-        /usr/bin/`basename $0`
-        ;;
-*)
-	;;
-esac
-
+In the examples dir exist the two programpairs comm<->unxcomm
+and sendm<->unxsendm as additional examples for using 'PIPE-filesystem'.
+With comm/unxcomm it is very easy to start simple Linux programs
+by your client.
+for examples: ps, lpq, lprm ...
 
 I would appreciate hearing about further documented applications of
 the PIPE filesystem or suggestions for other ways of using it.

@@ -1,4 +1,4 @@
-/* net1.c,  20-Mar-96 */
+/* net1.c, 26-Oct-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -18,6 +18,9 @@
  */
 
 #include "net.h"
+
+#define MAX_SEND_TRIES     5
+#define MAX_WAIT_MSEC   1000  /* 1 sec should be enough */
 
 #if HAVE_TLI
 void print_t_info(struct t_info *t)
@@ -147,12 +150,36 @@ void ipx_addr_to_adr(char *s, ipxAddr_t *p)
 	     (int)p->sock[1]);
 }
 
+int open_ipx_socket(ipxAddr_t *addr, int sock_nr)
+{
+  struct t_bind   bind;
+  ipxAddr_t       addr_buff;
+  int fd=t_open("/dev/ipx", O_RDWR, NULL);
+  if (fd < 0) {
+    t_error("t_open !Ok");
+    return(-1);
+  }
+  if (NULL == addr)
+    addr = &addr_buff;
+  memset(addr, 0, sizeof(ipxAddr_t));
+  U16_TO_BE16(sock_nr, addr->sock);
+  bind.addr.len    = sizeof(ipxAddr_t);
+  bind.addr.maxlen = sizeof(ipxAddr_t);
+  bind.addr.buf    = (char*)addr;
+  bind.qlen        = 0;
+  if (t_bind(fd, &bind, &bind) < 0){
+    t_error("t_bind,open_ipx_socket");
+    t_close(fd);
+    return(-1);
+  }
+  return(fd);
+}
 
-int send_ipx_data(int fdx, int pack_typ,
+int send_ipx_data(int fd, int pack_typ,
 	              int data_len, char *data,
 	              ipxAddr_t *to_addr, char *comment)
 {
-  int                fd=fdx;
+  int                fd_is_dyna=0;
   int                result=0;
   struct             t_unitdata ud;
   uint8              ipx_pack_typ = (uint8) pack_typ;
@@ -168,32 +195,123 @@ int send_ipx_data(int fdx, int pack_typ,
   if (comment != NULL) XDPRINTF((2,0,"%s TO: ", comment));
   if (nw_debug > 1) print_ipx_addr(to_addr);
   if (fd < 0) {
-    struct t_bind   bind;
-    ipxAddr_t       addr;
-    fd=t_open("/dev/ipx", O_RDWR, NULL);
-    if (fd < 0) {
-      t_error("t_open !Ok");
+    if ((fd=open_ipx_socket(NULL, 0)) < 0)
       return(-1);
-    }
-    memset(&addr,0, sizeof(ipxAddr_t));
-    bind.addr.len    = sizeof(ipxAddr_t);
-    bind.addr.maxlen = sizeof(ipxAddr_t);
-    bind.addr.buf    = (char*)&addr;
-    bind.qlen        = 0; /* ever */
-    if (t_bind(fd, &bind, &bind) < 0){
-      t_error("t_bind in send_ipx_data");
-      t_close(fd);
-      return(-1);
-    }
+    fd_is_dyna++;
   }
   if ((result=t_sndudata(fd, &ud)) < 0){
     if (nw_debug > 1) t_error("t_sndudata !OK");
   }
-  if (fdx < 0 && fd > -1) {
+  if (fd_is_dyna) {
     t_unbind(fd);
     t_close(fd);
   }
   return(result);
+}
+
+int receive_ipx_data(int fd, int *pack_typ, IPX_DATA *d,
+                     ipxAddr_t *fromaddr, int waitmsec)
+{
+  int result=-1;
+  if (waitmsec) {
+    struct pollfd  polls[1];
+    polls[0].fd      = fd;
+    polls[0].events  = POLLIN|POLLPRI;
+    polls[0].revents = 0;
+    if (1 == poll(polls, 1, waitmsec))
+      waitmsec=0;
+  }
+  if (!waitmsec) {
+    struct     t_unitdata ud;
+    uint8      ipx_pack_typ;
+    int        flags = 0;
+    ud.opt.len       = sizeof(ipx_pack_typ);
+    ud.opt.maxlen    = sizeof(ipx_pack_typ);
+    ud.opt.buf       = (char*)&ipx_pack_typ; /* gets actual typ */
+
+    ud.addr.len      = sizeof(ipxAddr_t);
+    ud.addr.maxlen   = sizeof(ipxAddr_t);
+
+    ud.addr.buf      = (char*)fromaddr;
+    ud.udata.len     = IPX_MAX_DATA;
+    ud.udata.maxlen  = IPX_MAX_DATA;
+    ud.udata.buf     = (char*)d;
+    if (t_rcvudata(fd, &ud, &flags) < 0){
+      struct t_uderr uderr;
+      ipxAddr_t  erradr;
+      uint8      err_pack_typ;
+      uderr.addr.len      = sizeof(ipxAddr_t);
+      uderr.addr.maxlen   = sizeof(ipxAddr_t);
+      uderr.addr.buf      = (char*)&erradr;
+      uderr.opt.len       = sizeof(err_pack_typ);
+      uderr.opt.maxlen    = sizeof(err_pack_typ);
+      uderr.opt.buf       = (char*)&err_pack_typ; /* get actual typ */
+      ud.addr.buf         = (char*)&fromaddr;
+      t_rcvuderr(fd, &uderr);
+      XDPRINTF((2, 0, "Error from %s, Code = 0x%lx", visable_ipx_adr(&erradr), uderr.error));
+      if (nw_debug)
+        t_error("t_rcvudata !OK");
+      result = -1;
+    } else {
+      if (pack_typ)
+        *pack_typ=(int)ipx_pack_typ;
+      result=ud.udata.len;
+    }
+  }
+  return(result);
+}
+
+int send_own_data(int fd, IPX_DATA *d, ipxAddr_t *toaddr)
+/* returns < 0 if senderror or functionresultcode > = 0 */
+{
+static int lastsequence=0;
+  int result   = -1;
+  int tries    =  0;
+  int sendsize =  d->owndata.d.size+sizeof(d->owndata.d.size)+
+                         sizeof(d->owndata.h);
+  d->owndata.h.type[0]   = 0xee;
+  d->owndata.h.type[1]   = 0xee;
+  d->owndata.h.sequence  = (uint8) ++lastsequence;
+  d->owndata.h.reserved  = 0;
+
+  while (tries++ < MAX_SEND_TRIES && result < 0) {
+    result=send_ipx_data(fd, 17, sendsize, (char*)d,
+                     toaddr, "send_own_data");
+
+    if (result > -1) {
+      int packet_typ;
+      IPX_DATA   ipxd;
+      ipxAddr_t  fromaddr;
+      result=receive_ipx_data(fd, &packet_typ, &ipxd, &fromaddr,
+            MAX_WAIT_MSEC);
+      XDPRINTF((2, 0, "receive_ipx_data, result=%d, typ=0x%x%x, sequence=%d",
+              result,
+              (int)ipxd.ownreply.type[0],
+              (int)ipxd.ownreply.type[1],
+              (int)ipxd.ownreply.sequence ));
+      if (sizeof(OWN_REPLY) == result &&
+        ipxd.ownreply.type[0]  == 0xef &&
+        ipxd.ownreply.type[1]  == 0xef &&
+      /*   !memcmp(&fromaddr, toaddr, sizeof(ipxAddr_t)) && */
+        ipxd.ownreply.sequence == d->owndata.h.sequence) {
+        result = (int)ipxd.ownreply.result;
+      } else
+        result=-1;
+    }
+  } /* while */
+  return(result);
+}
+
+int send_own_reply(int fd, int result, int sequence, ipxAddr_t *toaddr)
+{
+  IPX_DATA   ipxd;
+  IPX_DATA   *d=&ipxd;
+  d->ownreply.type[0]   = 0xef;
+  d->ownreply.type[1]   = 0xef;
+  d->ownreply.sequence  = (uint8) sequence;
+  d->ownreply.result    = result;
+  return(send_ipx_data(fd, 17, sizeof(OWN_REPLY),
+               (char*)d, toaddr, "send_own_reply"));
 }
 
 #if 0
