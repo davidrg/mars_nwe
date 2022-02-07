@@ -1,4 +1,4 @@
-/* nwdbm.h 18-Dec-96 */
+/* nwdbm.h 20-Jan-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -192,7 +192,7 @@ extern int nw_keychange_passwd(uint32 obj_id,
 			       int   cryptedlen, uint8 *newpass,
 			       uint32 act_id);
 
-extern int nw_test_adr_access(uint32 obj_id, ipxAddr_t *client_adr);
+extern int nw_test_adr_time_access(uint32 obj_id, ipxAddr_t *client_adr);
 
 extern int nw_get_q_dirname(uint32 q_id, uint8 *buff);
 extern int nw_get_q_prcommand(uint32 q_id, uint8 *buff);

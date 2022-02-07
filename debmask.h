@@ -8,7 +8,8 @@
 */
 
 /* NWCONN */
-#define D_FH_OPEN    1   /* file open/close */
+#define D_FH_OPEN    1   /* file open/close  */
+#define D_FH_LOCK    2   /* file lock/unlock */
 
 
 #endif

@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "02-Jan-97"
+#define REVISION_DATE "20-Jan-97"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -294,6 +294,30 @@ static void handle_fxx(int gelen, int func)
       case 0xb:  /* Get Broadcast Message (new) */
       default :   completition=0xfb; /* not handled  */
     } /* switch */
+  } else if (0x16 == func) {
+    switch (ufunc) {
+      /*  QUOTA support from: Matt Paley  */
+      case 0x21 :    /* Change volume restrictions */
+      case 0x22 :    /* Remove volume restrictions */
+      case 0x29 : {  /* Read volume restrictions */
+        /* Returns 3 integers, uid, gid, 0=OK/1=Permission denied */
+        uint32 id = GET_BE32(rdata+1);
+        if (get_guid((int*) responsedata, (int*)(responsedata+sizeof(int)),
+		     id, (char *) NULL) != 0) {
+	  completition = 0xff;
+          XDPRINTF((2, 0, "quota id-uid mapping failure %d 0x%x", ufunc, id));
+        }
+        /* OK if supervisor or trying to read (0x29) own limits */
+        if (act_c->object_id == 1 ||
+	    (act_c->object_id == id && ufunc == 0x29))
+	  ((int *) responsedata)[2] = 0; /* OK */
+        else
+	  ((int *) responsedata)[2] = 1; /* Fail */
+        data_len = sizeof(int)*3;
+      }
+      break;
+      default :   completition=0xfb; /* not handled  */
+    }
   } else if (0x17 == func) { /* Fileserver Enviro */
     switch (ufunc) {
      case 0x01 :  { /* Change User Password OLD */
@@ -452,7 +476,7 @@ static void handle_fxx(int gelen, int func)
                     }
                     if (!result) {
                       internal_act = 1;
-                      result = nw_test_adr_access(obj.id, &(act_c->client_adr));
+                      result = nw_test_adr_time_access(obj.id, &(act_c->client_adr));
                       internal_act = 0;
                     }
                     if (!result)
@@ -547,10 +571,9 @@ static void handle_fxx(int gelen, int func)
                       result=nw_test_passwd(obj.id, act_c->crypt_key, rdata);
                       internal_act = 0;
                     }
-
                     if (result > -1) {
                       internal_act = 1;
-                      result = nw_test_adr_access(obj.id, &(act_c->client_adr));
+                      result = nw_test_adr_time_access(obj.id, &(act_c->client_adr));
                       internal_act = 0;
                     }
                     if (result > -1)

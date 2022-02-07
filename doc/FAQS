@@ -1,9 +1,8 @@
-last updated: 05-Dec-96
+last updated: 16-Jan-97
 Q: I don't exaclty understand the meaning of some ponits in nw.ini:
    12,13
    What will happen if I will not put PASSWORD here? Will it take it from
    /etc/passwd? I want it to be so.
-
 A: This passwords will be stored (crypted) into bindery to can handle
    the crypted login call from a standarrd Novell client.
 
@@ -41,6 +40,16 @@ Q: I have arcnet cards and I dont find the frame-typ TRXNET.
 A: The correct frame typ is handled by the arcnet driver.
    You should use the 'dummy frametyp' 802.3.
 
+Q: The CONFIG_IPX_INTERN kernel option is *not* set but
+   when I start 'nwserv' as root it sais:
+   !! NWSERV   0:PANIC !!
+   NWSERV   0:!! configuration error !!:
+   mars_nwe don't run with kernel 'full internal net'.
+   Change kernel option CONFIG_IPX_INTERN=NO (nobody needs it)
+   or use 'ipxd' and change mars_nwe INTERNAL_RIP_SAP=0.
+A: Sorry but mars_nwe can recognize this setting only at compile time,
+   so you must compile mars_nwe again with actual kernel CONFIG_IPX_INTERN=NO
+   settings.
 
 
 

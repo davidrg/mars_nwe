@@ -79,8 +79,8 @@ typedef struct {
   uint8   form_name[16];          /*        "UNKNOWN" */
   uint8   reserved[6];            /*        all zero  */
   uint8   banner_user_name[13];   /*        "SUPERVISOR"  */
-  uint8   bannner_file_name[13];  /*        "LST:"        */
-  uint8   bannner_header_file_name[14];  /* all zero      */
+  uint8   banner_file_name[13];   /*        "LST:"        */
+  uint8   banner_header_file_name[14];   /* all zero      */
   uint8   file_path_name[80];            /* all zero      */
 } QUEUE_PRINT_AREA;
 

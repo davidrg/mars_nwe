@@ -99,40 +99,40 @@ static int new_dir_handle(ino_t inode, NW_PATH *nwpath)
   DIR_HANDLE  *dh   = NULL;
   time_t  akttime   = time(NULL);
   time_t  last_time = akttime;
-  int  thandle      = 0;
+  int  thandle      = 1;
   int  nhandle      = 0;
   for (rethandle=0; rethandle < anz_dirhandles; rethandle++){
     dh=&(dir_handles[rethandle]);
     if (!dh->inode) {
-      if (!nhandle) nhandle = rethandle+1;
+      if (!nhandle)
+        nhandle = rethandle+1;
     } else if (dh->inode == inode && dh->volume == nwpath->volume){
-      /* Dieser hat Vorrang */
-      if (dh->f) closedir(dh->f);
-      dh->f         = NULL;
-      dh->timestamp = akttime;
-      nhandle       = rethandle+1;
+      nhandle   = rethandle+1;
       break;
     } else if (dh->timestamp < last_time){
       thandle   = rethandle+1;
       last_time = dh->timestamp;
     }
   }
+
   if (!nhandle){
-   if (anz_dirhandles < MAX_DIRHANDLES) {
+    if (anz_dirhandles < MAX_DIRHANDLES) {
       dh=&(dir_handles[anz_dirhandles]);
+      dh->f=NULL;
       rethandle = ++anz_dirhandles;
     } else {
       dh=&(dir_handles[thandle-1]);
-      if (dh->f) closedir(dh->f);
-      dh->f         = NULL;
       rethandle = thandle;
     }
-  } else rethandle=nhandle;
+  } else
+    rethandle=nhandle;
 
   /* init dir_handle */
   dh=&(dir_handles[rethandle-1]);
   strcpy(dh->unixname, build_unix_name(nwpath, 0));
   dh->kpath         = dh->unixname + strlen(dh->unixname);
+  if (dh->f)
+    closedir(dh->f);
   if ((dh->f        = opendir(dh->unixname)) != (DIR*) NULL){
     dh->volume      = nwpath->volume;
     dh->vol_options = nw_volumes[dh->volume].options;
@@ -145,10 +145,10 @@ static int new_dir_handle(ino_t inode, NW_PATH *nwpath)
       dh->f = NULL;
     }
   } else {
-    dh->f           = (DIR*)NULL;
+    dh->inode       = 0;
     dh->unixname[0] = '\0';
     dh->vol_options = 0;
-    dh->kpath       = (char*)NULL;
+    dh->kpath       = dh->unixname;
     rethandle       = /* -0x9c */ -0xff;
   }
   return(rethandle);

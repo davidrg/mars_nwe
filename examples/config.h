@@ -1,4 +1,4 @@
-/* config.h: 04-Nov-96 */
+/* config.h: 29-Jan-97 */
 /* some of this config is needed by make, others by cc                     */
 
 #define DO_DEBUG      1              /* compile in debug code              */
@@ -75,4 +75,5 @@
 #define MAX_RIP_ENTRIES    50        /* max. rip responses                 */
 /* -------------------- */
 #define SHADOW_PWD          0        /* change to '1' for shadow passwds   */
+#define QUOTA_SUPPORT       0        /* change to '1' for quota support    */
 

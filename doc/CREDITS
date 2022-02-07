@@ -31,6 +31,9 @@ James B. MacLean <macleajb@ednet.ns.ca>
 Louis Zammit Mangion <lzamm@phys.um.edu.mt>
         testings+bugfixes
 
+Matt Paley <mtpa@mail.nerc-bas.ac.uk>
+        adding QUOTA support, login time restrictions
+
 Jiri A. Randus <Jiri.Randus@vslib.cz>
         testing bindery code
 

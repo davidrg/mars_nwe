@@ -32,7 +32,7 @@ static  time_t 	   akttime;
 static  int        server_goes_down=0;
 static  int 	   ipx_out_fd=-1;
 #if 0
-static  int        tells_server_version=0;
+static  int        tells_server_version=1;
 #endif
 static  int        sock_nwbind=-1;
 static  int        sock_echo  =-1;

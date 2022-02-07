@@ -1,5 +1,16 @@
 # in this files are some notes for user of mars_nwe.
-------09-Nov-96--- 0.98.pl7 ----------
+------29-Jan-97--- 0.98.pl8 ----------
+- Section 6: version-"spoofing" now set to '1' (3.11) default.
+- New switch in config.h: QUOTA_SUPPORT
+- quota support added by Matt Paley
+  Before the netware quotas will work the linux quota system must be
+  started up, this is done by:
+  Ensuring that the current kernel supports quotas.
+  Adding usrquota to the option field in the appropriate /etc/fstab entry
+  Running 'quotacheck -a'
+  Running 'quotaon -a' (must be repeated after a reboot)
+- login time restrictions added by Matt Paley
+------05-Jan-97--- 0.98.pl7 ----------
 - section   8: new flag 0x4 added. (see examples/nw.ini).
 ------09-Nov-96--- 0.98.pl5 ----------
 - now Novell Client32 should works.

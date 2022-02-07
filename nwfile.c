@@ -1,4 +1,4 @@
-/* nwfile.c  31-Dec-96 */
+/* nwfile.c  14-Jan-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -683,9 +683,15 @@ int nw_server_copy(int qfhandle, uint32 qoffset,
   return(-0x88); /* wrong filehandle */
 }
 
-
 int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
 {
+  MDEBUG(D_FH_LOCK, {
+    char fname[200];
+    int r=fd_2_fname(fhandle, fname, sizeof(fname));
+    dprintf("nw_%s_datei: fd=%d, fn=`%s`,r=%d,offs=%d,len=%d",
+              (do_lock) ? "lock" : "unlock",
+              fhandle, fname,r,offset, size);
+  })
   if (fhandle > HOFFS && (--fhandle < anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {

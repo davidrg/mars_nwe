@@ -1,4 +1,4 @@
-/* nwdbm.c  19-Dec-96  data base for mars_nwe */
+/* nwdbm.c  20-Jan-97  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -41,12 +41,15 @@
 
 #define DBM_REMAINS_OPEN  1
 
-int tells_server_version=0;
+int tells_server_version=1; /* default 1 since 12-Jan-97 */
 int password_scheme=0; /* PW_SCHEME_CHANGE_PW; */
+
+static int entry8_flags = 0;
 
 static datum key;
 static datum data;
 static DBM   *my_dbm=NULL;
+
 
 #define FNPROP  0
 #define FNVAL   1
@@ -1341,7 +1344,33 @@ int nw_keychange_passwd(uint32 obj_id, uint8 *cryptkey, uint8 *oldpass,
   return(memcmp(newpass, storedpass, 16) ? 0 : 1);
 }
 
-int nw_test_adr_access(uint32 obj_id, ipxAddr_t *client_adr)
+static int nw_test_time_access(uint32 obj_id)
+/* Routine from Matt Paley */
+{
+  time_t t;
+  struct tm *tm;
+  uint8  more_segments;
+  uint8  property_flags;
+  char   *propname="LOGIN_CONTROL";
+  uint8  buff[200];
+  int    segment = 1;
+  int    half_hours;
+  int    result=nw_get_prop_val_by_obj_id(obj_id, segment,
+				   propname, strlen(propname),
+				   buff, &more_segments, &property_flags);
+  if (result < 0)
+    return(0); /* No time limits available */
+  time(&t);
+  tm = localtime(&t);
+  half_hours = tm->tm_wday*48 + tm->tm_hour*2 + ((tm->tm_min>=30)? 1 : 0);
+  if ((buff[14+(half_hours/8)] & (1<<(half_hours % 8))) != 0)
+    return(0);
+  XDPRINTF((1, 0, "No access for user %x at day %d %02d:%02d",
+	    obj_id, tm->tm_wday, tm->tm_hour, tm->tm_min));
+  return(-0xda); /* unauthorized login time */
+}
+
+static int nw_test_adr_access(uint32 obj_id, ipxAddr_t *client_adr)
 {
   uint8  more_segments;
   uint8  property_flags;
@@ -1365,8 +1394,20 @@ int nw_test_adr_access(uint32 obj_id, ipxAddr_t *client_adr)
       p+=10;
     }
   }
-  XDPRINTF((1, 0, "No access for Station %s", visable_ipx_adr(client_adr)));
+  XDPRINTF((1, 0, "No access for user %x at Station %s",
+               obj_id, visable_ipx_adr(client_adr)));
   return(-0xdb); /* unauthorized login station */
+}
+
+int nw_test_adr_time_access(uint32 obj_id, ipxAddr_t *client_adr)
+{
+  int result;
+  if (obj_id==1 && (entry8_flags & 8))
+    return(0); /* no limits for SU */
+  result=nw_test_adr_access(obj_id, client_adr);
+  if (!result)
+    result=nw_test_time_access(obj_id);
+  return(result);
 }
 
 #if 0
@@ -1632,6 +1673,9 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
           default : password_scheme = 0;
                     break;
         } /* switch */
+
+      } else if (8 == what) { /* entry8_flags */
+        entry8_flags = hextoi((char*)buff);
       } else if (21 == what) {  /* QUEUES */
         char name[100];
         char directory[200];

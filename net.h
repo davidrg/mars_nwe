@@ -262,6 +262,14 @@ extern int errno;
 # define DO_TESTING            0
 #endif
 
+#ifdef LINUX
+# ifndef QUOTA_SUPPORT
+#  define QUOTA_SUPPORT        0
+# endif
+#else
+# undef  QUOTA_SUPPORT
+# define QUOTA_SUPPORT         0
+#endif
 
 #ifdef LINUX
 # ifdef IN_NWROUTED

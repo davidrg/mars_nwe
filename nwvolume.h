@@ -1,4 +1,4 @@
-/* nwvolume.h  27-Jul-96 */
+/* nwvolume.h  17-Jan-97 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -76,7 +76,9 @@ extern int  nw_get_volume_number(uint8 *volname, int namelen);
 extern int  nw_get_volume_name(int volnr, uint8 *volname);
 extern int  nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu);
 extern int  get_volume_options(int volnr, int mode);
-extern int get_volume_inode(int volnr, struct stat *stb);
+extern int  get_volume_inode(int volnr, struct stat *stb);
+extern int  nw_set_vol_restrictions(uint8 volnr, int uid, uint32 quota);
+extern int  nw_get_vol_restrictions(uint8 volnr, int uid, uint32 *quota, uint32 *inuse);
 
 extern uint32 nw_vol_inode_to_handle(int volume, ino_t inode,
                                DEV_NAMESPACE_MAP *dnm);

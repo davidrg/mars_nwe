@@ -1,4 +1,4 @@
-/* nwvolume.c  07-Nov-96 */
+/* nwvolume.c  01-Feb-97 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -19,6 +19,7 @@
 #include "net.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <sys/vfs.h>
 
 #ifndef LINUX
@@ -39,6 +40,7 @@ static void volume_to_namespace_map(int volume, NW_VOL *vol)
   DEV_NAMESPACE_MAP dnm;
   if (stat(vol->unixname, &statb)) {
     XDPRINTF((1, 0, "cannot stat vol=%d, `%s`", volume, vol->unixname));
+    return;
   }
   dnm.dev       = statb.st_dev;
   dnm.namespace = 0; /* NAMESPACE DOS */
@@ -162,7 +164,7 @@ void nw_setup_home_vol(int len, uint8 *fn)
       nw_volumes[k].maps_count = 0;
       nw_volumes[k].unixnamlen = len;
       new_str(nw_volumes[k].unixname, unixname);
-      if (len)
+      if (len>0)
         volume_to_namespace_map(k, &(nw_volumes[k]));
     }
   }
@@ -277,7 +279,7 @@ int nw_get_volume_name(int volnr, uint8 *volname)
 }
 
 
-/* next is stolen from GNU-fileutils */
+/* stolen from GNU-fileutils */
 static long adjust_blocks (long blocks, int fromsize, int tosize)
 {
   if (fromsize == tosize)       /* E.g., from 512 to 512.  */
@@ -366,3 +368,170 @@ int get_volume_inode(int volnr, struct stat *stb)
   return(result);
 }
 
+
+#if QUOTA_SUPPORT
+
+/*  QUOTA support from: Matt Paley  */
+
+#include <sys/stat.h>
+#include <unistd.h>
+#include <mntent.h>
+
+/* Return the device special file that the specified path uses */
+const char *find_device_file(const char *path)
+{
+  struct stat   s;
+  dev_t         dev;
+  struct mntent *mntent;
+  FILE          *fp;
+  const char    *mount_device;
+
+  if (path == (char *) NULL || *path == '\0' || stat(path, &s) != 0)
+    return((char *) NULL);
+  dev = s.st_dev;
+  if ((fp=setmntent(MOUNTED, "r")) == (FILE *) NULL)
+    return((char *) NULL);
+  mount_device = (char *) NULL;
+  while (!ferror(fp)) {
+    /* mntent will be a static struct mntent */
+    mntent = getmntent(fp);
+    if (mntent == (struct mntent *) NULL)
+      break;
+    if (stat(mntent->mnt_fsname, &s) == 0) {
+      if (S_ISCHR(s.st_mode) || S_ISBLK(s.st_mode)) {
+	if (s.st_rdev == dev) {
+	  /* Found it */
+	  mount_device = mntent->mnt_fsname;
+	  break;
+	}
+      }
+    }
+  }
+  endmntent(fp);
+  return(mount_device);
+}
+
+#include <time.h>
+#include <sys/types.h>
+
+#ifdef LINUX
+# include <linux/quota.h>
+# if defined(__alpha__)
+#  include <errno.h>
+#  include <syscall.h>
+#  include <asm/unistd.h>
+int quotactl(int cmd, const char * special, int id, caddr_t addr)
+{
+  return syscall(__NR_quotactl, cmd, special, id, addr);
+}
+# else /* not __alpha__ */
+#  define __LIBRARY__
+#  include <linux/unistd.h>
+_syscall4(int, quotactl, int, cmd, const char *, special,
+	  int, id, caddr_t, addr);
+# endif /* __alpha__ */
+#endif /* LINUX */
+
+static int su_quotactl(int cmd, const char * special, int id, caddr_t addr)
+{
+  int result;
+  int euid=geteuid();
+  seteuid(0);
+  result=quotactl(cmd, special, id, addr);
+  if (seteuid(euid)) {
+    errorp(1, "seteuid", "cannot change to uid=%d\n", euid);
+    exit(1);
+  }
+  return(result);
+}
+
+
+/* NOTE: The error numbers in here are probably wrong */
+int nw_set_vol_restrictions(uint8 volnr, int uid, uint32 quota)
+{
+  const char   *device;
+  struct dqblk dqblk;
+  int          res;
+
+  XDPRINTF((2,0, "nw_set_vol_restrictions vol=%d uid=%d quota=%d blocks",
+	    volnr, uid, quota));
+
+  /* Convert from blocks to K */
+  quota *= 4;
+
+  if (volnr >= used_nw_volumes || nw_volumes == (NW_VOL *) NULL)
+    return(-0x98);
+  device=find_device_file(nw_volumes[volnr].unixname);
+  if (device == (char *) NULL)
+    return(-0x98);
+
+  /* If this call fails then it it probable that quotas are not enabled
+   * on the specified device.  Someone needs to set the error number
+   * to whatever will make most sense to netware.
+   */
+  res=su_quotactl(QCMD(Q_GETQUOTA, USRQUOTA), device, uid, (caddr_t) &dqblk);
+
+  if (res != 0)
+    return(0);
+  dqblk.dqb_bhardlimit = quota;
+  dqblk.dqb_bsoftlimit = quota;
+  if (quota == 0)
+    dqblk.dqb_ihardlimit = dqblk.dqb_isoftlimit = 0;
+  XDPRINTF((2,0, "Set quota device=%s uid=%d %d(%d)K %d(%d) files",
+	    device, uid,
+	    dqblk.dqb_bhardlimit,
+	    dqblk.dqb_curblocks,
+	    dqblk.dqb_ihardlimit,
+	    dqblk.dqb_curinodes));
+
+  (void)su_quotactl(QCMD(Q_SETQLIM, USRQUOTA), device, uid, (caddr_t) &dqblk);
+
+
+
+  return(0);
+}
+
+int nw_get_vol_restrictions(uint8 volnr, int uid, uint32 *quota, uint32 *inuse)
+{
+  const char   *device;
+  struct dqblk dqblk;
+  int          res;
+  *quota = 0x40000000;
+  *inuse = 0;
+  if (volnr >= used_nw_volumes || nw_volumes == (NW_VOL *) NULL)
+    return(-0x98);
+
+  device=find_device_file(nw_volumes[volnr].unixname);
+  if (device == (char *) NULL)
+    return(-0x98);
+
+  XDPRINTF((2,0, "Get quota for uid %d on device %s",
+	    uid, device));
+
+  res=su_quotactl(QCMD(Q_GETQUOTA, USRQUOTA), device, uid, (caddr_t) &dqblk);
+
+  if (res != 0)
+    return(0);  /* Quotas are probably not enabled */
+  if (dqblk.dqb_bhardlimit == 0) {
+    *quota = 0x40000000;
+    *inuse = 0;
+  } else {
+    *quota = dqblk.dqb_bhardlimit / 4; /* Convert from K to blocks */
+    *inuse = dqblk.dqb_curblocks / 4;
+  }
+  return(0);
+}
+
+#else
+int nw_set_vol_restrictions(uint8 volnr, int uid, uint32 quota)
+{
+  return(-0xfb);
+}
+
+int nw_get_vol_restrictions(uint8 volnr, int uid, uint32 *quota, uint32 *inuse)
+{
+  *quota = 0x40000000;
+  *inuse = 0;
+  return(0);
+}
+#endif

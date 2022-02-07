@@ -383,12 +383,24 @@ int nw_close_file_queue(uint8 *queue_id,
     INT_QUEUE_JOB *jo=queue_jobs[jo_id-1];
     int fhandle = (int)jo->fhandle;
     char unixname[300];
+    QUEUE_PRINT_AREA qpa;
+    if (jo->old_job) {
+      memcpy(&qpa, jo->q.o.client_area, sizeof(QUEUE_PRINT_AREA));
+    } else {
+      memcpy(&qpa, jo->q.n.client_area, sizeof(QUEUE_PRINT_AREA));
+    }
     strmaxcpy((uint8*)unixname, (uint8*)file_get_unix_name(fhandle), sizeof(unixname)-1);
     XDPRINTF((5,0,"nw_close_file_queue fhandle=%d", fhandle));
     if (*unixname) {
-      char printcommand[256];
+      char buff[1024];
+      char printcommand[300];
       FILE *f=NULL;
-      strmaxcpy((uint8*)printcommand, prc, prc_len);
+      if (prc_len && *(prc+prc_len-1)=='!'){
+        strmaxcpy((uint8*)buff, prc, prc_len-1);
+        sprintf(printcommand, "%s %s %s", buff,
+           qpa.banner_user_name, qpa.banner_file_name);
+      } else
+        strmaxcpy((uint8*)printcommand, prc, prc_len);
       nw_close_datei(fhandle, 1);
       jo->fhandle = 0L;
       if (NULL == (f = fopen(unixname, "r"))) {
@@ -401,7 +413,6 @@ int nw_close_file_queue(uint8 *queue_id,
         int  is_ok = 0;
         FILE_PIPE *fp = ext_popen(printcommand, geteuid(), getegid());
         if (fp) {
-          char buff[1024];
           int  k;
           is_ok++;
           while ((k = fread(buff, 1, sizeof(buff), f)) > 0) {

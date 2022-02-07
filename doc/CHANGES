@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 15-Dec-96
+Aenderungen in mars_nwe bis zum : 17-Jan-97
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -266,4 +266,11 @@ Erste 'oeffentliche' Version
   Es konnten nicht alle freigegebenen Filehandles wiederverwendet
   werden. -> "No more free file handles"
 <----- ^^^^^^^^^^ pl7 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Section 6: version-"spoofing" auf default '1' (3.11) gesetzt.
+- Fehler in connect.c, new_dir_handle() beseitigt.
+  Hinweis von: Dmitry <mamatkazin@ivc.spb.ru>
+- QUOTA support von Matt Paley eingebaut.
+- Print Queue Command Parameter erweitert um '!'
+  fuer banner_user_name, banner_file_name
+<----- ^^^^^^^^^^ pl8 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
