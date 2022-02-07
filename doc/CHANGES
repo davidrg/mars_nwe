@@ -1,6 +1,6 @@
 Sorry, beginning is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 03-Dec-98
+Aenderungen in mars_nwe bis zum : 23-May-99
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -496,4 +496,21 @@ Erste 'oeffentliche' Version
   Error appeared under Win9x with Novell Client32 when printing. 
   ( segmentation error in spool32 ) bug corrected by georg@globaltrading.net.
 <----- ^^^^^^^^^^ pl15 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- docs from Mendel Mobach (xxx.nl)
+- some fixes to let mars_nwe compile under 2.2.x kernels.
+- some BSD fixes from Boris Popov
+- fix from Paolo Prandini for the wrong return code when an user without 
+  supervisory rights tries to shutdown the server
+- nw_open_creat_file_or_dir() now does not creat file if called with 
+  opencreatmode==8 and file already exist.  ( important for Win98 )
+- dos 'rename files' now works with wildcards on both side (source and dest)
+- nw_close_file() normally do not close files which were opened
+  with different task ( same as in pl9 ). But files are allways closed if
+  they are created with task 0 or if current task = 0.
+- Routine which opened same file for more than one time deactivated,
+  because share conditions were wrong. Function was added in pl14.
+  Perhaps this routine will not be needed anymore.
+- new signal SIGUSR2 for nwconn process to give info about open files.
+  the loginfo is placed into /tmp/nwconnxxxx.log
+<----- ^^^^^^^^^^ pl16 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

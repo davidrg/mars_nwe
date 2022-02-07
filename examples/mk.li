@@ -1,5 +1,5 @@
 #!/bin/sh
-# mk.li 21-Feb-99
+# mk.li 16-May-99
 # please edit this file !
 
 mk()
@@ -98,9 +98,9 @@ fi
      OBJDIR="obj"
      CC=gcc
      CPP="gcc -E"
-#    CFLAGS="-pipe -O2 -fomit-frame-pointer"
-#    problems gcc2.5.8 ^^^^^^^^^^^^^^^^^^^^^
-     CFLAGS="-pipe -Wall"
+     if [ "x$CFLAGS" = "x" ]; then
+       CFLAGS="native"
+     fi
 
      HOSTCFLAGS="-DFREEBSD -DLINUX"
 
@@ -108,7 +108,7 @@ fi
 
      NSLLIB=""
      MAKE=make
-     TMP=/tmp
+     TMP="./"
      INSTALL="install -c"
      ;;
 
@@ -127,7 +127,9 @@ esac
 
 export CC
 export CPP
-export CFLAGS
+if [ "X$CFLAGS" != "Xnative" ]; then
+  export CFLAGS
+fi
 export HOSTCFLAGS
 export NDBMLIB
 export CRYPTLIB

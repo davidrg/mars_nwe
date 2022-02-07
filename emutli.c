@@ -21,7 +21,6 @@
  */
 
 #include "net.h"
-#include <unistd.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>

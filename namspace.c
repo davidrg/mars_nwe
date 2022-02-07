@@ -1,4 +1,4 @@
-/* namspace.c 13-May-98 : NameSpace Services, mars_nwe */
+/* namspace.c 16-May-99 : NameSpace Services, mars_nwe */
 
 /* !!!!!!!!!!!! NOTE !!!!!!!!!! */
 /* Its still dirty, but it should work fairly well */
@@ -519,7 +519,7 @@ static int add_hpath_to_nwpath(N_NW_PATH *nwpath,
 #if 0
   int    perhaps_inode_mode = 0;
 #endif
-  XDPRINTF((2, 0, "entry add_hpath_to_nwpath: %s",
+  XDPRINTF((4, 0, "entry add_hpath_to_nwpath: %s",
                     debug_nwpath_name(nwpath)));
   while (!result && ++k < nwp->components) {
     int   len = (int) *(pp_pathes++);
@@ -654,7 +654,7 @@ leave_build_nwpath:
       }
     }
   }
-  XDPRINTF((2, 0, "add_hpath_to_nwpath: result=0x%x, %s",
+  XDPRINTF((4, 0, "add_hpath_to_nwpath: result=0x%x, %s",
                   result, debug_nwpath_name(nwpath)));
   return(result);
 }
@@ -998,7 +998,7 @@ int nw_generate_dir_path(int      namespace,
     } else {
       U32_TO_32(dbe->basehandle, dos_dir_base);
     }
-    XDPRINTF((3, 0, "nw_generate_dir_path path=%s, result=%d, basehandle=0x%x",
+    XDPRINTF((4, 0, "nw_generate_dir_path path=%s, result=%d, basehandle=0x%x",
        debug_nwpath_name(&(dbe->nwpath)), result, dbe->basehandle));
     result= dbe->nwpath.volume;
   } else {
@@ -1129,7 +1129,7 @@ static int build_dir_info(DIR_BASE_ENTRY *dbe,
     }
   }
 
-  XDPRINTF((3, 0, "build_d_i:space=%d, path=%s, result=%d, handle=0x%x, mask=0x%lx",
+  XDPRINTF((4, 0, "build_d_i:space=%d, path=%s, result=%d, handle=0x%x, mask=0x%lx",
           namespace, debug_nwpath_name(nwpath), result, dbe->basehandle, infomask));
   return(result);
 }
@@ -1768,6 +1768,12 @@ static int nw_open_creat_file_or_dir(
       result = get_add_new_entry(dir_base[result], namespace, last_part,
            (creatattrib & FILE_ATTR_DIR) ? FILE_ATTR_DIR : 1);
   }
+
+  /* 16-May-99, if file exist but mode == CREAT then error */
+  if (result > -1 && exist > -1 && opencreatmode == OPC_MODE_CREAT) {
+    result = -0x85; /* No Priv */
+  }
+
   if (result > -1) {
     uint32 fhandle=0L;
     int    actionresult=0;

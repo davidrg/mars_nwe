@@ -33,6 +33,8 @@
 # define IPX_RT_BLUEBOOK	ETHERTYPE_IPX
  int  ipx_iffind(char *ifname,struct ipx_addr *addr);
 #else
+# include <linux/types.h>
+# include <netinet/in.h>
 # include <linux/ipx.h>
 #endif
 

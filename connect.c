@@ -1,5 +1,5 @@
-/* connect.c  10-Nov-98 */
-/* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
+/* connect.c  23-May-99 */
+/* (C)opyright (C) 1993-1999, Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -443,9 +443,10 @@ static int x_str_match(uint8 *s, uint8 *p, int soptions)
 #endif
 
       case 0xae:
-      case '.': if (*s)
+      case '.': if (*s) {
       		  if(*s != '.') return 0;
 		  else s++;
+                }
 		p++;
 		break;
       default : if (! ((soptions & VOL_OPTION_IGNCASE) ? 
@@ -492,63 +493,6 @@ int fn_dos_match(uint8 *s, uint8 *p, int options)
     }
   }
   return(x_str_match(s, p, options));
-}
-
-/* "Resolve" string 'topath' (possible with wildcards '?') using
- *  'frompath' as source for substitution. Make changes directly in
- *  'topath'. Return new length of topath (equal or less than original value)
- *  Routine from: Andrew Sapozhnikov
- */
-
-int apply_wildcards (uint8 *frompath, int flen, uint8 *topath, int tlen)
-{
-  int i,tlen2;
-  uint8 c,*topath2;
-
-  for (i=flen; i > 0; i--) {
-    c=frompath[i-1];
-    if (c == ':' || c == '\\' || c == '/') break;
-  }
-  frompath+=i;
-  flen-=i;
-
-  for (i=tlen; i > 0; i--) {
-    c=topath[i-1];
-    if(c == ':' || c == '\\' || c == '/')    break;
-  }
-  topath2=(topath+=i);
-  tlen2=tlen-i;
-
-  while (tlen2--) {
-    switch (c=*topath2++) {
-      case '?':
-      case 0xbf:
-            if (flen && *frompath != '.' && *frompath != 0xae) {
-              *topath++ = *frompath++;
-              flen--;
-            } else tlen--;
-            break;
-      case '.':
-      case 0xae:
-            while (flen && *frompath != '.' && *frompath != 0xae) {
-              frompath++;
-              flen--;
-            }
-            if (flen) {
-              frompath++;
-              flen--;
-            }
-            *topath++=c;
-            break;
-        default:
-            if (flen && *frompath != '.' && *frompath != 0xae) {
-              frompath++;
-              flen--;
-            }
-            *topath++=c;
-    }
-  }
-  return tlen;
 }
 
 typedef struct {
@@ -1223,6 +1167,236 @@ int nw_delete_files(int dir_handle, int searchattrib, uint8 *data, int len)
   return(completition);
 }
 
+#if 1 /* new since 22-May-99, 0.99.pl16 */
+typedef struct {
+  NW_PATH     destpath;
+  struct stat statbuf;
+} MV_FILES_STRUCT;
+
+static int do_mv_file(NW_PATH *nwpath, FUNC_SEARCH *fs)
+/*  rename one File */
+{
+  char unsource[256];
+  int  result=0;
+  MV_FILES_STRUCT *nws=(MV_FILES_STRUCT*)fs->ubuf;
+  int voloptions = get_volume_options(nwpath->volume);
+  struct stat statb;
+  strcpy(unsource, build_unix_name(nwpath, 0));
+  
+  if (stat(unsource, &statb) || 
+     tru_eff_rights_exists(nwpath->volume, unsource, &statb, 
+           TRUSTEE_W|TRUSTEE_M|TRUSTEE_R))
+          result=-0x8b;
+  else {
+    /* sourcefile is ok, now try to move to destfile */
+    char undest[256];
+    char saved_fn[256];
+    
+    uint8 *frompath = nwpath->fn;
+    uint8 *topath   = nws->destpath.fn;
+    uint8 *otopath  = saved_fn;
+    uint8 c;
+
+    /* we must save destpath, because perhaps we must modify it */
+    strmaxcpy(saved_fn, nws->destpath.fn, sizeof(saved_fn)-1);
+
+    while ((0 != (c = *otopath++)) && *frompath ) {
+      switch (c) {
+        case '?' :
+        case 0xbf:
+              if ( *frompath != '.'
+                && *frompath != 0xae )
+                *topath++ =  *frompath++;
+              break;
+
+        case '.' :
+        case 0xae:
+              while ( *frompath != '.'
+                && *frompath != 0xae
+                && *frompath)
+                frompath++;
+              
+              if (*frompath)
+                frompath++;
+              if (*frompath)
+                *topath++=c;
+              break;
+          
+          default:
+              if (*frompath != '.' && *frompath != 0xae) 
+                frompath++;
+              *topath++=c;
+              break;
+
+      } /* switch */
+    } /* while */
+    *topath='\0';
+    strcpy(undest, build_unix_name(&nws->destpath, 0));
+    /* now restore destpath.fn */
+    strcpy(nws->destpath.fn, saved_fn);
+
+    seteuid(0);
+    if (entry8_flags & 0x4)  /* new: 20-Nov-96 */
+      result = unx_mvfile_or_dir(unsource, undest);
+    else
+      result = unx_mvfile(unsource, undest);
+    reseteuid();
+    
+    switch (result) {
+      case   0      : break;                 /* ok             */
+      case   EEXIST : result = -0x92; break; /* allready exist */
+      case   EXDEV  : result = -0x9a; break; /* cross device   */
+      case   EROFS  : result = -0x8b; break; /* no rights      */
+      default       : result = -0xff; break; /* unknown error  */
+    }
+  }
+
+  return(result);
+}
+
+int nw_mv_files(int searchattrib, 
+                int sourcedirhandle, uint8 *sourcedata, int sourcedatalen,
+                int destdirhandle,   uint8 *destdata,   int destdatalen)
+{
+  NW_PATH nwpath;
+  struct stat stbuff;
+  int completition = conn_get_kpl_path(&nwpath, &stbuff, sourcedirhandle, sourcedata, sourcedatalen, 0);
+  if (completition >  -1) {
+    FUNC_SEARCH  fs;
+    MV_FILES_STRUCT mvs;
+    completition=conn_get_kpl_path(&mvs.destpath, &mvs.statbuf, 
+                 destdirhandle, destdata, destdatalen, 0);
+    if (completition > -1) {
+      char destpath[256];
+      completition=0;
+      strcpy(destpath, build_unix_name(&mvs.destpath, 1));
+      if (tru_eff_rights_exists(mvs.destpath.volume, destpath, 
+              &mvs.statbuf, TRUSTEE_W))
+        completition=-0x8b;
+      /* now destpath is tested to be writable */
+    }
+    if (completition > -1) {
+      fs.ubuf = (uint8*)&mvs;
+      completition = func_search_entry(&nwpath, searchattrib, do_mv_file, &fs);
+      if (completition < 0) return(completition);
+      else if (!completition) return(-0xff);
+      else return(0);
+    }
+  }
+  return(completition);
+}
+
+
+#else /* old version (before 22-May-99, 0.99.pl15 ) */
+
+/* "Resolve" string 'topath' (possible with wildcards '?') using
+ *  'frompath' as source for substitution. Make changes directly in
+ *  'topath'. Return new length of topath (equal or less than original value)
+ *  Routine from: Andrew Sapozhnikov
+ */
+
+static int apply_wildcards (uint8 *frompath, int flen, uint8 *topath, int tlen)
+{
+  int i,tlen2;
+  uint8 c,*topath2;
+
+  for (i=flen; i > 0; i--) {
+    c=frompath[i-1];
+    if (c == ':' || c == '\\' || c == '/') break;
+  }
+  frompath+=i;
+  flen-=i;
+
+  for (i=tlen; i > 0; i--) {
+    c=topath[i-1];
+    if(c == ':' || c == '\\' || c == '/')    break;
+  }
+  topath2=(topath+=i);
+  tlen2=tlen-i;
+
+  while (tlen2--) {
+    switch (c=*topath2++) {
+      case '?':
+      case 0xbf:
+            if (flen && *frompath != '.' && *frompath != 0xae) {
+              *topath++ = *frompath++;
+              flen--;
+            } else tlen--;
+            break;
+      case '.':
+      case 0xae:
+            while (flen && *frompath != '.' && *frompath != 0xae) {
+              frompath++;
+              flen--;
+            }
+            if (flen) {
+              frompath++;
+              flen--;
+            }
+            *topath++=c;
+            break;
+        default:
+            if (flen && *frompath != '.' && *frompath != 0xae) {
+              frompath++;
+              flen--;
+            }
+            *topath++=c;
+    }
+  }
+  return tlen;
+}
+
+int mv_file(int qdirhandle, uint8 *q, int qlen,
+            int zdirhandle, uint8 *z, int zlen)
+{
+  NW_PATH quellpath;
+  struct stat qstbuff;
+  NW_PATH zielpath;
+  struct stat zstbuff;
+  int completition;
+  zlen=apply_wildcards(q, qlen, z, zlen);
+  completition=conn_get_kpl_path(&quellpath, &qstbuff, qdirhandle, q, qlen, 0);
+
+  if (completition > -1) {
+    char qfn[256];
+    strcpy(qfn, build_unix_name(&quellpath,0));
+    completition=conn_get_kpl_path(&zielpath, &zstbuff, zdirhandle, z, zlen, 0);
+    if (completition > -1) {
+      char zpath[256];
+      completition=0;
+      strcpy(zpath, build_unix_name(&zielpath, 1));
+      if (stat(qfn, &qstbuff) || 
+        tru_eff_rights_exists(quellpath.volume, qfn, &qstbuff, 
+           TRUSTEE_W|TRUSTEE_M|TRUSTEE_R))
+          completition=-0x8b;
+      else if (tru_eff_rights_exists(zielpath.volume, zpath, &zstbuff, 
+           TRUSTEE_W))
+        completition=-0x8b;
+    }
+    if (!completition){
+      char unziel[256];
+      strcpy(unziel, build_unix_name(&zielpath,0));
+      
+      seteuid(0);
+      if (entry8_flags & 0x4)  /* new: 20-Nov-96 */
+        completition = unx_mvfile_or_dir(qfn, unziel);
+      else
+        completition = unx_mvfile(qfn, unziel);
+      reseteuid();
+      
+      switch (completition) {
+        case   0      : break;
+        case   EEXIST : completition = -0x92; break; /* allready exist */
+        case   EXDEV  : completition = -0x9a; break; /* cross device   */
+        case   EROFS  : completition = -0x8b; break; /* no rights      */
+        default       : completition = -0xff;
+      }
+    }
+  }
+  return(completition);
+}
+#endif
+
 static int do_set_file_info(NW_PATH *nwpath, FUNC_SEARCH *fs)
 {
   char unname[256];
@@ -1503,63 +1677,15 @@ int nw_mk_rd_dir(int dir_handle, uint8 *data, int len, int mode)
   return(completition);
 }
 
-int mv_file(int qdirhandle, uint8 *q, int qlen,
-            int zdirhandle, uint8 *z, int zlen)
+
+int mv_dir(int dir_handle, uint8 *sourcedata, int sourcedatalen,
+                           uint8 *destdata,   int destdatalen)
 {
   NW_PATH quellpath;
   struct stat qstbuff;
   NW_PATH zielpath;
-  struct stat zstbuff;
-  int completition;
-  zlen=apply_wildcards(q, qlen, z, zlen);
-  completition=conn_get_kpl_path(&quellpath, &qstbuff, qdirhandle, q, qlen, 0);
-
-  if (completition > -1) {
-    char qfn[256];
-    strcpy(qfn, build_unix_name(&quellpath,0));
-    completition=conn_get_kpl_path(&zielpath, &zstbuff, zdirhandle, z, zlen, 0);
-    if (completition > -1) {
-      char zpath[256];
-      completition=0;
-      strcpy(zpath, build_unix_name(&zielpath, 1));
-      if (stat(qfn, &qstbuff) || 
-        tru_eff_rights_exists(quellpath.volume, qfn, &qstbuff, 
-           TRUSTEE_W|TRUSTEE_M|TRUSTEE_R))
-          completition=-0x8b;
-      else if (tru_eff_rights_exists(zielpath.volume, zpath, &zstbuff, 
-           TRUSTEE_W))
-        completition=-0x8b;
-    }
-    if (!completition){
-      char unziel[256];
-      strcpy(unziel, build_unix_name(&zielpath,0));
-      
-      seteuid(0);
-      if (entry8_flags & 0x4)  /* new: 20-Nov-96 */
-        completition = unx_mvfile_or_dir(qfn, unziel);
-      else
-        completition = unx_mvfile(qfn, unziel);
-      reseteuid();
-      
-      switch (completition) {
-        case   0      : break;
-        case   EEXIST : completition = -0x92; break; /* allready exist */
-        case   EXDEV  : completition = -0x9a; break; /* cross device   */
-        case   EROFS  : completition = -0x8b; break; /* no rights      */
-        default       : completition = -0xff;
-      }
-    }
-  }
-  return(completition);
-}
-
-int mv_dir(int dir_handle, uint8 *q, int qlen,
-                           uint8 *z, int zlen)
-{
-  NW_PATH quellpath;
-  struct stat qstbuff;
-  NW_PATH zielpath;
-  int completition=conn_get_kpl_path(&quellpath, &qstbuff, dir_handle, q, qlen, 0);
+  int completition=conn_get_kpl_path(&quellpath, &qstbuff, dir_handle, 
+                                     sourcedata, sourcedatalen, 0);
   if (completition > -1){
     char qfn[256];
     char zpath[256];
@@ -1567,7 +1693,7 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
     completition = 0;
     strcpy(qfn, build_unix_name(&quellpath,0));
     memcpy(&zielpath, &quellpath, sizeof(NW_PATH));
-    strmaxcpy(zielpath.fn, z, zlen);
+    strmaxcpy(zielpath.fn, destdata, destdatalen);
     
     /* patch from Sven Norinder <snorinder@sgens.ericsson.se> :09-Nov-96 */
     if (get_volume_options(zielpath.volume) & VOL_OPTION_DOWNSHIFT)
@@ -1577,7 +1703,7 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
 
 #if 0
     /* this is not possible ---- */
-    completition=conn_get_kpl_path(&zielpath, &zstbuff, dir_handle, z, zlen, 0);
+    completition=conn_get_kpl_path(&zielpath, &zstbuff, dir_handle, destdata, destdatalen, 0);
     /* ----------- because ----- */
     /* for example the novell rendir.exe does something like this
      * 0x0,0xd,0xf,0x0,0x7,'T','M','P',':','\','I','I',0x2,'K','K'
@@ -1604,7 +1730,7 @@ int mv_dir(int dir_handle, uint8 *q, int qlen,
       result = unx_mvdir((uint8 *)qfn, (uint8 *)unziel);
       reseteuid();
       
-      XDPRINTF((2,0, "rendir result=%d, '%s'->'%s'",
+      XDPRINTF((4,0, "rendir result=%d, '%s'->'%s'",
                  result, qfn, unziel));
       if (!result)
         completition = 0;
@@ -1962,7 +2088,7 @@ int nw_alloc_dir_handle( int    dir_handle,  /* source directory handle   */
                            driveletter, is_temphandle, task);
      *eff_rights=tru_get_eff_rights(nwpath.volume, unixname, &stbuff);
    }
-   XDPRINTF((2,0,"Allocate %shandle:%s, Qhandle=%d, drive=%d, Task=%d, result=0x%x",
+   XDPRINTF((4,0,"Allocate %shandle:%s, Qhandle=%d, drive=%d, Task=%d, result=0x%x",
        (is_temphandle) ? "Temp" : "Perm", conn_get_nwpath_name(&nwpath),
                dir_handle, driveletter, task, inode));
    
@@ -2012,7 +2138,7 @@ int nw_free_dir_handle(int dir_handle, int task)
 {
   if (dir_handle && --dir_handle < (int)used_dirs) {
     NW_DIR *d=&(dirs[dir_handle]);
-    XDPRINTF((2,0,"free dhandle:%d, task=%d, d->inode=0x%x, used_dirs=%d",
+    XDPRINTF((4,0,"free dhandle:%d, task=%d, d->inode=0x%x, used_dirs=%d",
             dir_handle+1, task, d->inode, used_dirs));
     if (!d->inode
 #if 0
@@ -2457,7 +2583,7 @@ static int get_match(uint8 *unixname, uint8 *p)
     }
     closedir(d);
   } else {
-    XDPRINTF((2, 0, "DOS get_match opendir failed unixname='%s'", unixname));
+    XDPRINTF((3, 0, "DOS get_match opendir failed unixname='%s'", unixname));
     *p='/';
   }
   return(0);

@@ -1,4 +1,4 @@
-/* tools.c  21-Oct-98 */
+/* tools.c  16-May-99 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -33,9 +33,14 @@
 #endif
 #else
 # ifndef __USE_GNU
+#  ifdef FREEBSD
+#    define _sys_nerr    sys_nerr
+#    define _sys_errlist sys_errlist
+#  else
 extern int   _sys_nerr;
 extern char *_sys_errlist[];
 #  endif
+# endif
 #endif
 
 int    nw_debug=0;

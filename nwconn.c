@@ -1,7 +1,7 @@
-/* nwconn.c 12-Jan-99       */
+/* nwconn.c 23-May-99       */
 /* one process / connection */
 
-/* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
+/* (C)opyright (C) 1993,1999  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -223,7 +223,7 @@ static int handle_ncp_serv(void)
     if (t_sndudata(FD_NCP_OUT, &ud) < 0){
       if (nw_debug) t_error("t_sndudata !OK");
     }
-    XDPRINTF((2,0, "Sequence %d is written twice", (int)ncprequest->sequence));
+    XDPRINTF((3,0, "Sequence %d is written twice", (int)ncprequest->sequence));
     return(0);
   }
   req_printed=0;
@@ -1235,7 +1235,7 @@ NWC 2  94:len 28, DATA:,0x2,0x1a,'P','R','O','B','A','\\','U','S','E','R','D','\
                        */
                        if (buffer_size >= 512) {
                          rw_buffer_size = min(LOC_RW_BUFFERSIZE, buffer_size);
-                         XDPRINTF((2,0, "Negotiate Buffer size = 0x%04x,(%d)",
+                         XDPRINTF((3,0, "Negotiate Buffer size = 0x%04x,(%d)",
                               (int) rw_buffer_size, (int) rw_buffer_size));
                        } else {
                          XDPRINTF((1,0, "Invalid Packetsize = %d, "
@@ -1499,15 +1499,16 @@ NWC 2  94:len 28, DATA:,0x2,0x1a,'P','R','O','B','A','\\','U','S','E','R','D','\
                      {
                        struct INPUT {
                          uint8   header[7];     /* Requestheader */
-                         uint8   dir_handle;   /* ??     0x1 */
-                         uint8   reserve1;      /* z.B. 0x2 */
+                         uint8   dir_handle;    
+                         uint8   searchattrib; 
                          uint8   len;
                          uint8   data[2];        /* Name */
                        } *input = (struct INPUT *)ncprequest;
                        uint8 *p = input->data+input->len; /* reserve z.B. 0x1 */
                                                  /* + 1  = len2 */
                                                  /* + 1  = data2 */
-                       int errcode = mv_file(
+                       int errcode = nw_mv_files(
+                                       (int)input->searchattrib,
                                        (int)input->dir_handle, input->data,(int)input->len,
                                        (int)input->dir_handle, p+2, (int)*(p+1) );
 
@@ -1901,7 +1902,7 @@ NWC 2  94:len 28, DATA:,0x2,0x1a,'P','R','O','B','A','\\','U','S','E','R','D','\
   if (nw_debug && (completition == 0xfb || (do_druck == 1))) { /* UNKWON FUNCTION od. TYPE */
     pr_debug_request();
     if (completition == 0xfb)
-      XDPRINTF((0,0, "UNKNOWN FUNCTION od. TYPE: 0x%x", function));
+      XDPRINTF((0,0, "UNKNOWN FUNCTION or TYPE: 0x%x", function));
     else if (data_len){
       int j     = data_len;
       uint8  *p = responsedata;
@@ -2264,7 +2265,13 @@ static void close_all(void)
   close(FD_NCP_OUT);
 }
 
-static int  fl_get_int=0;
+static int  fl_get_int=0;   
+/* signals
+ *   &01   sig_quit
+ *   &02   sig_hup
+ *   &04   sig_usr1
+ *   &08   sig_usr2
+ */
 
 static void sig_quit(int rsig)
 {
@@ -2289,6 +2296,11 @@ static void sig_usr1(int rsig)
   fl_get_int |= 4;
 }
 
+static void sig_usr2(int rsig)
+{
+  fl_get_int |= 8;
+}
+
 static void get_new_debug(void)
 {
   get_ini_debug(3);
@@ -2301,6 +2313,23 @@ static void handle_extern_command(void)
   signal(SIGUSR1, sig_usr1);
 }
 
+static void handle_sigusr2(void)
+{
+  char fn[256];
+  FILE *f;
+  fl_get_int &= ~8;
+  sprintf(fn, "/tmp/nwconn%04d.log", act_connection);
+  seteuid(0);
+  f=fopen(fn, "w");
+  reseteuid();
+  if (f) {
+    log_file_module(f);
+    fclose(f);
+  } else
+    errorp(0, "handle_sigusr2", "cannot open %s for writing", fn);
+  signal(SIGUSR2, sig_usr2);
+}
+
 static void set_sig(void)
 {
   signal(SIGTERM,  sig_quit);
@@ -2309,6 +2338,7 @@ static void set_sig(void)
   signal(SIGPIPE,  sig_pipe);
   signal(SIGHUP,   sig_hup);
   signal(SIGUSR1,  sig_usr1);
+  signal(SIGUSR2,  sig_usr2);
   if (use_mmap)
      signal(SIGBUS,   sig_bus_mmap);  /* in nwfile.c */
 }
@@ -2328,7 +2358,7 @@ int main(int argc, char **argv)
   act_connection = atoi(*(argv+1));
   init_tools(NWCONN, 0);
   memset(saved_readbuff, 0, sizeof(saved_readbuff));
-  XDPRINTF((2, 0, "FATHER PID=%d, ADDR=%s CON:%d",
+  XDPRINTF((3, 0, "FATHER PID=%d, ADDR=%s CON:%d",
                   father_pid, *(argv+2), act_connection));
   adr_to_ipx_addr(&from_addr,   *(argv+2));
 
@@ -2347,7 +2377,7 @@ int main(int argc, char **argv)
    {
      int conn   = act_connection;
      int result = ioctl(0, SIOCIPXNCPCONN, &conn);
-     XDPRINTF((2, 0, "ioctl:SIOCIPXNCPCONN result=%d", result));
+     XDPRINTF((3, 0, "ioctl:SIOCIPXNCPCONN result=%d", result));
    }
 #  endif
 # endif
@@ -2385,6 +2415,8 @@ int main(int argc, char **argv)
         get_new_debug();
       if (fl_get_int & 4) 
         handle_extern_command();
+      if (fl_get_int & 8) 
+        handle_sigusr2();
     }
 
     if (data_len > 0) {
@@ -2456,6 +2488,6 @@ int main(int argc, char **argv)
    }
 #  endif
   close_all();
-  XDPRINTF((2,0, "leave nwconn pid=%d", getpid()));
+  XDPRINTF((3,0, "leave nwconn pid=%d", getpid()));
   return(0);
 }

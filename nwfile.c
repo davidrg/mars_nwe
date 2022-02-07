@@ -1,4 +1,4 @@
-/* nwfile.c  03-Dec-98 */
+/* nwfile.c  23-May-99 */
 /* (C)opyright (C) 1993,1998  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -22,6 +22,7 @@
 #include <utime.h>
 
 #include <sys/errno.h>
+#include <sys/time.h>
 
 #include "nwvolume.h"
 #include "nwshare.h"
@@ -203,7 +204,7 @@ static int open_with_root_access(char *path, int mode)
   return(fd);
 }
 
-
+#if 0 /* not used */
 static int reopen_file(int volume, uint8 *unixname, struct stat *stbuff, 
                    int access, int task)
 /* look for file already open and try to use it */
@@ -233,6 +234,7 @@ static int reopen_file(int volume, uint8 *unixname, struct stat *stbuff,
   }
   return(0);
 }
+#endif
 
 int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
                      int attrib, int access, int creatmode, int task)
@@ -289,11 +291,14 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
     if (S_ISDIR(stbuff->st_mode)) 
       completition = -0xff; /* directory is total wrong here */
     else {
+#if 0  /* deaktivated in 0.99.pl16, 23-May-99 */
+       /* because reopen_file do not handle share conditions correct */
       if (!(creatmode&1) && !(voloptions & VOL_OPTION_IS_PIPE)) {
         int fdx=reopen_file(volume, unixname, stbuff, access, task);
         if (fdx != 0) 
             return(fdx);
       }
+#endif
       eff_rights = tru_get_eff_rights(volume, unixname, stbuff);
       dwattrib   = get_nw_attrib_dword(volume, unixname, stbuff);
       if (creatmode&0x2) { /* creat if not exist */
@@ -350,7 +355,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
       completition=-0xff;  /* pipecommands always must exist */
     else if (creatmode&0x3) {  /* do creat */
       uint8 *p=(uint8*)strrchr(unixname, '/');
-      if (NULL != p && (p - unixname) >= volnamlen) { /* parent dir */
+      if (NULL != p && ((p - unixname)+1) >= volnamlen ) { /* parent dir */
         *p='\0';
         seteuid(0);
         completition=stat(unixname, stbuff);
@@ -368,6 +373,9 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
         *p='/';
       } else 
         completition=-0x9c;
+      if (completition==-0x9c) 
+        errorp(0, "nwfile.c", "LINE=%d, unixname='%s', p-unx=%d, volnamlen=%d", 
+                  __LINE__, unixname, (p) ? (int)(p - unixname): 0, volnamlen );
     } else
      completition=-0xff; /* should, but do not exist */
   }
@@ -488,6 +496,8 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
         free_file_handle(fhandle);
         fhandle=completition;
       }
+      if (completition==-0x9c) 
+        errorp(0, "nwfile.c", "LINE=%d, unixname='%s'", __LINE__, unixname);
     } else fhandle=-0x81; /* no more File Handles */
   } else fhandle=completition;
   
@@ -550,20 +560,29 @@ int nw_close_file(int fhandle, int reset_reuse, int task)
      */
        char fname[200];
        int r=fd_2_fname(fhandle, fname, sizeof(fname));
-       xdprintf(2, 0,"close_file of fd=%3d, task=%d differs fh->task=%d, fn=`%s`", 
+       xdprintf(2, 0,"%s close_file fd=%3d, task=%d differs fh->task=%d, fn=`%s`", 
+             (task == 0 || fh->task == 0) ? "do" : "not",
              fhandle, task, fh->task, fname);
     
+    /*  
+     * return(0); 24-May-98 , 0.99.pl9
+     */
+
     /*  21-Oct-98: I think file must be closed always,
      *  got problem with pserver which opens the file with task =0
      *  and closes it with task <> 0.
      */
-#if 0                 
-       return(0); /* 24-May-98 , 0.99.pl9 */
-#endif
-    }
 
+    /*  23-May-99: 0.99.pl16 we only close file if task = 0 or 
+     *  file open task = 0.
+     */
+     
+     if ( task && fh->task )
+        return(0); 
+    }
+    
     if (--fh->inuse > 0)  /* 03-Dec-98 */
-        return(0);
+       return(0);
 
     if (fh->fd > -1 || (fh->fd == -3 && fh->fh_flags & FH_IS_PIPE_COMMAND)) {
       int result = 0;
@@ -911,7 +930,7 @@ int nw_lock_file(int fhandle, uint32 offset, uint32 size, int do_lock)
         flockd.l_len  = (size & 0x7fffffff);
 
       result = fcntl(fh->fd, F_SETLK, &flockd);
-      XDPRINTF((2, 0,  "nw_%s_datei result=%d, fh=%d, offset=%d, size=%d",
+      XDPRINTF((4, 0,  "nw_%s_datei result=%d, fh=%d, offset=%d, size=%d",
         (do_lock) ? "lock" : "unlock", result, fhandle, offset, size));
       if (result)
          result= (do_lock) ? -0xfe : -0xff;
@@ -956,5 +975,25 @@ int get_nwfd(int fhandle)
     return(fh ? fh->fd : -1);
   }
   return(-1);
+}
+
+void log_file_module(FILE *f)
+{
+  if (f) {
+    int k=HOFFS-1;
+    int handles=0;
+    while (++k < count_fhandles) {
+      FILE_HANDLE  *fh=&(file_handles[k]);
+      if (fh && fh->fd != -1) {
+        fprintf(f,"%4d %2d %d %4d 0x%04x 0x%04x %2d '%s'\n",
+               k+1, fh->inuse, fh->modified, fh->task,
+                  fh->fh_flags, fh->access, fh->volume,
+                  fh->fname);
+        handles++;
+      }
+    }
+    fprintf(f, "count-open-files:%4d\n" , handles);
+    fflush(f);
+  }
 }
 

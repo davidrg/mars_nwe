@@ -1,4 +1,4 @@
-/* connect.h 08-May-98 */
+/* connect.h 23-May-99 */
 #ifndef _CONNECT_H_
 #define _CONNECT_H_
 
@@ -114,11 +114,12 @@ extern int nw_set_file_information(int dir_handle, uint8 *data, int len,
 extern int nw_set_file_attributes(int dir_handle, uint8 *data, int len,
                           int attrib, int newattrib);
 
-extern int mv_file(int qdirhandle, uint8 *q, int qlen,
-            int zdirhandle, uint8 *z, int zlen);
+extern int nw_mv_files(int searchattrib, 
+                        int sourcedirhandle, uint8 *sourcedata, int qlen,
+                        int zdirhandle, uint8 *destdata, int destdatalen);
 
-extern int mv_dir(int dir_handle, uint8 *q, int qlen,
-                           uint8 *z, int zlen);
+extern int mv_dir(int dir_handle, uint8 *sourcedata, int qlen,
+                           uint8 *destdata, int destdatalen);
 
 extern int nw_unlink_node(int volume, uint8 *unname, struct stat *stb);
 extern int nw_creat_node(int volume, uint8 *unname, int mode);

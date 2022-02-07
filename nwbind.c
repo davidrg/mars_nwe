@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "21-Feb-99"
+#define REVISION_DATE "23-May-99"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message and queue handling */
 
@@ -1526,7 +1526,12 @@ static void handle_fxx(int gelen, int func)
                     if (HAVE_SU_RIGHTS(act_c->object_id)) { /* only SUPERVISOR */
                        /* inform nwserv */
                        nwserv_down_server();
-                    } else completition = 0xff;
+                    } else {
+                      /* 16-May-99 
+                       * correct completition code from Paolo Prandini 
+                       */
+                      completition = 0xc6; /* not authorized */
+                    }
                     internal_act=0;
                   }
                   break;
