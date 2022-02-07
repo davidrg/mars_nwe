@@ -1238,7 +1238,7 @@ static int server_is_down=0;
 
 static int usage(char *prog)
 {
-  fprintf(stderr, "============== mars_nwe by Koan ===============\n\n") ; // (M@)
+  fprintf(stderr, "============== mars_nwe by Geos One ===============\n\n") ; // (M@)
   
   
 #if IN_NWROUTED || INTERNAL_RIP_SAP
@@ -1330,7 +1330,7 @@ int main(int argc, char **argv)
           case 'f' : init_mode = 5; break;
           case 'q' : if (init_mode == 2) init_mode=4; break;
           case 'v' :
-          case 'V' : fprintf(stderr, "\n%s:Version %d.%d.pl%d [ KOAN ]\n",
+          case 'V' : fprintf(stderr, "\n%s:Version %d.%d.pl%d [ GEOS_ONE ]\n",
                      argv[0], _VERS_H_, _VERS_L_, _VERS_P_ );
                      return(0);
           default  : return(usage(argv[0]));

@@ -173,11 +173,11 @@ extern int errno;
 #endif
 
 #ifndef MAX_CONNECTIONS
-# define MAX_CONNECTIONS  5 /* maximum Number of connections */
+# define MAX_CONNECTIONS  50 /* maximum Number of connections */
 #endif
 
 #ifndef MAX_NW_VOLS
-# define MAX_NW_VOLS     10 /* maximum Number of volumes */
+# define MAX_NW_VOLS     20 /* maximum Number of volumes */
 #endif
 
 #ifndef MAX_FILE_HANDLES_CONN

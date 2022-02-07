@@ -51,7 +51,7 @@ int    act_ncpsequence=0; /* for debugging */
 int    act_connection=0;  /* which connection (nwconn, nwbind) */
 time_t act_time=0L;       /* actual time */
 
-static FILE *logfile=NULL;
+FILE *logfile=NULL;
 static int   use_syslog=0; /* 1 = use syslog for all loggings
                             * 2 = only for errors
                             */
@@ -160,6 +160,7 @@ void xdprintf(int dlevel, int mode, char *p, ...)
   va_list ap;
 static char *buffered=NULL;
   int errnum      = errno;
+  if (!logfile) logfile = stderr;
   if (nw_debug >= dlevel) {
     if (use_syslog==1) {
       char *buf;
@@ -227,6 +228,10 @@ void errorp(int mode, char *what, char *p, ...)
   FILE *lologfile = logfile;
   char errbuf[200];
   const char *errstr = errbuf;
+  if (!logfile) {
+    lologfile = stderr;
+    logfile = stderr;
+  }
   if (mode > 9) {
     errnum = -1;
     mode  -= 10;
@@ -277,6 +282,7 @@ FILE *open_nw_ini(void)
   char *fname=FILENAME_NW_INI;
   FILE *f=fopen(fname, "r");
   int uid=geteuid();
+  if (!logfile) logfile = stderr;
   if (f == (FILE*)NULL && uid > 0) {
     seteuid(0);
     f=fopen(fname, "r");

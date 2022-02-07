@@ -35,19 +35,13 @@
 #else
 # include <linux/types.h>
 # include <netinet/in.h>
-# ifdef _GNU_SOURCE_
-#  include <netipx/ipx.h>
-# else
-#  include <linux/ipx.h>
-# endif
+# include <netipx/ipx.h>
 #endif
 
 typedef unsigned char       uint8;
 typedef unsigned short int uint16;
-/* amd64 not working
-typedef unsigned int uint32;
-*/
-typedef unsigned long  int uint32; 
+typedef unsigned long  int uint32;
+/* typedef unsigned int uint32; */
 
 #define IPX_NET_SIZE    4
 #define IPX_NODE_SIZE   6

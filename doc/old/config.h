@@ -11,10 +11,10 @@
 # define PATHNAME_PROGS   "."        /* where to find the executables      */
 # define PATHNAME_BINDERY "."        /* directory for bindery-files        */
 #else
-# define FILENAME_NW_INI  "/etc/nwserv.conf"
+# define FILENAME_NW_INI  "/etc/nwserv/nwserv.conf"
                                      /* full name of ini (conf) file       */
 # define PATHNAME_PROGS   "/usr/sbin" /* where to find the executables     */
-# define PATHNAME_BINDERY "/var/nwserv/db"  /* directory for bindery-files        */
+# define PATHNAME_BINDERY "/var/lib/nwserv/bindery"  /* directory for bindery-files        */
 #endif
 
 #define PATHNAME_PIDFILES "/var/run" /* directory for 'pidfiles'           */
@@ -82,7 +82,7 @@
 /* <---------------  next is for linux only ---------------------------->  */
 #define INTERNAL_RIP_SAP    1        /* use internal/own rip/sap routines  */
 
-#define SHADOW_PWD          0        /* change to '1' for shadow passwds   */
+#define SHADOW_PWD          1        /* change to '1' for shadow passwds   */
 #define QUOTA_SUPPORT       0        /* change to '1' for quota support    */
 
 /* for sending 'Request being serviced' replys, /lenz */

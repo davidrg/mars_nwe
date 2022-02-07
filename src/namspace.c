@@ -1867,6 +1867,15 @@ static int nw_open_creat_file_or_dir(
 #endif
           creatmode = 1;
         }
+        
+        /*
+         * 18/10/2007 - pascalek (pascalek@pld-linux.org):
+         * 	If file is opened just in truncate mode (at least windows XP Client is
+         *	affected) its opencreatemode equals 0x2. Opening it with creatmode == 0
+         *	corrupt files.
+         */
+        if (opencreatmode == 0x2)
+        	creatmode = 1;
 
         if ((result = file_creat_open(dbe->nwpath.volume,
               nwpath_2_unix(&dbe->nwpath, 2), &(dbe->nwpath.statb),
@@ -2040,9 +2049,18 @@ static int nw_delete_file_dir(int namespace, int searchattrib,
     DIR_BASE_ENTRY *dbe=dir_base[result];
     if (get_volume_options(dbe->nwpath.volume) &
        VOL_OPTION_READONLY) result = -0x8a;
-    else result=func_search_entry(dbe, namespace,
+    else {
+       result=func_search_entry(dbe, namespace,
           search_entry, strlen(search_entry), searchattrib,
           delete_file_dir, NULL);
+       /* ncpfs deletes file with file handle and NAME_DOS so we have 
+          to try NAME_OS2 too while deleting files */
+       if ((result == -255) && (namespace == NAME_DOS)) {
+          result=func_search_entry(dbe, NAME_OS2,
+             search_entry, strlen(search_entry), searchattrib,
+             delete_file_dir, NULL);
+       }
+    }
   }
   return(result);
 }

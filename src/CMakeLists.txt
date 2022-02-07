@@ -8,18 +8,11 @@
 # Dependencies
 ##############
 
-
 if (CMAKE_SYSTEM_NAME MATCHES Linux)
     add_definitions(
         -pipe -Wall -DLINUX -D_GNU_SOURCE
     )
 endif (CMAKE_SYSTEM_NAME MATCHES Linux)
-
-IF(UNIX)
- IF(CMAKE_COMPILER_IS_GNUCC)
-    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
- ENDIF(CMAKE_COMPILER_IS_GNUCC)
-ENDIF(UNIX)
 
 add_definitions(
         -D_VERS_H_=${VERSION_MAJOR}

@@ -27,6 +27,7 @@
 #define NWBIND    5
 #define NWROUTED  6
 
+/* extern  FILE *logfile; */
 extern  void x_x_xfree(char **p);
 extern  int x_x_xnewstr(uint8 **p,  uint8 *s);
 

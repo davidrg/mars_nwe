@@ -339,7 +339,7 @@ int init_ipx(uint32 network, uint32 node, int ipx_debug, int flags)
     errorp(10, "Problem", "probably kernel-IPX is not setup correctly");
     exit(1);
   } else {
-    struct ipx_config_data cfgdata;
+    ipx_config_data cfgdata;
     struct sockaddr_ipx ipxs;
     ioctl(sock, SIOCIPXCFGDATA, &cfgdata);
     org_auto_interfaces =
