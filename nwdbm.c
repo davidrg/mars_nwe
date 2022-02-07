@@ -1,4 +1,4 @@
-/* nwdbm.c  12-Jul-96  data base for mars_nwe */
+/* nwdbm.c  07-Sep-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -506,9 +506,9 @@ L1:
   return(result);
 }
 
-int prop_delete_member(uint32 obj_id, int prop_id, uint32 member_id)
+static int prop_delete_member(uint32 obj_id, int prop_id, uint32 member_id)
 {
-  int result = -0xea; /* no such member */
+  int result = 0; /* we lie */ /* -0xea; /* no such member */
   NETVAL  val;
   if (!dbminit(FNVAL)){
     key.dsize   = NETVAL_KEY_SIZE;
@@ -517,7 +517,7 @@ int prop_delete_member(uint32 obj_id, int prop_id, uint32 member_id)
     val.prop_id = (uint8)prop_id;
     val.segment = (uint8)0;
     data        = fetch(key);
-    while (result) {
+    while (1) {
       val.segment++;
       data        = fetch(key);
       if (data.dptr != NULL) {
@@ -961,7 +961,7 @@ uint32 nw_new_obj_prop(uint32 wanted_id,
  * and the property,
  * if propname == NULL only object will be created.
  * if valuesize == 0, then only obj or property
- * will be created, returns obj-id
+ * will be created, returns obj->id
  */
 {
   NETOBJ  obj;
@@ -993,6 +993,7 @@ typedef struct {
   uint8  pw_dir[257];
   uint8  pw_name[20];
 } MYPASSWD;
+
 
 static MYPASSWD *nw_getpwnam(uint32 obj_id)
 {
@@ -1309,19 +1310,9 @@ static void add_pr_queue(uint32 q_id,
 
 static void add_user_to_group(uint32 u_id,  uint32 g_id)
 {
-  uint8  buff[4];
-  U32_TO_BE32(g_id, buff);
-                                      /*   Typ    Flags  Security */
-  nw_new_obj_prop(u_id,  NULL,               0x1  , 0x0,   0x33,
-	             "GROUPS_I'M_IN",          P_FL_SET,   0x31,
-	              (char*)buff,  4);
-
-  nw_new_add_prop_member(g_id, "GROUP_MEMBERS", u_id);
-
-  nw_new_obj_prop(u_id, NULL,                  0  ,   0  ,   0   ,
- 	             "SECURITY_EQUALS",        P_FL_SET,   0x32,
-                      (char*)buff,  4);
-
+  nw_new_add_prop_member(u_id, "GROUPS_I'M_IN",   g_id);
+  nw_new_add_prop_member(u_id, "SECURITY_EQUALS", g_id);
+  nw_new_add_prop_member(g_id, "GROUP_MEMBERS",   u_id);
 }
 
 static void add_user_2_unx(uint32 u_id,  char  *unname)
@@ -1337,7 +1328,7 @@ static void add_user_g(uint32 u_id,   uint32 g_id,
                   char *password, int dont_ch)
 {
                                       /*   Typ    Flags  Security */
-  if (nw_new_obj(&u_id,  name,           0x1  , 0x0, (u_id == 1) ? 0x33 : 0x31)
+  if (nw_new_obj(&u_id,  name,              0x1  , 0x0,  0x31)
        && dont_ch) return;
   XDPRINTF((1, 0, "Add/Change User='%s', UnixUser='%s'",
      	       	  name, unname));
@@ -1557,8 +1548,30 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
     upstr(auto_ins_passwd);
     while (NULL != (pw=getpwent())) {
       if (pw->pw_uid) {
-        if ( (pw->pw_passwd[0] != '*' && pw->pw_passwd[0] != 'x')
-             || pw->pw_passwd[1] != '\0') {
+        int do_add = ( (pw->pw_passwd[0]!= '*' && pw->pw_passwd[0]!='x')
+                      || pw->pw_passwd[1] != '\0');
+#if SHADOW_PWD
+        /*
+        tip from: Herbert Rosmanith <herp@wildsau.idv.uni-linz.ac.at>
+        */
+        if (!do_add) {
+          struct spwd *sp=getspnam(pw->pw_name);
+          if (sp) {
+            if  (  ((sp->sp_pwdp[0] != '*' && sp->sp_pwdp[0] != 'x')
+                      || sp->sp_pwdp[1] !='\0')
+                      &&
+                   ((sp->sp_pwdp[0] != 'N' && sp->sp_pwdp[1] != 'P')
+                      || sp->sp_pwdp[2] != '\0') )
+               do_add++;
+#if 0
+            XDPRINTF((1,0, "Shadow pw of %s = `%s`", pw->pw_name, sp->sp_pwdp));
+#endif
+          } else {
+            XDPRINTF((1,0, "cannot read shadow password"));
+          }
+        }
+#endif
+        if ( do_add) {
           char nname[100];
           xstrcpy(nname, pw->pw_name);
           upstr(nname);
@@ -1650,7 +1663,7 @@ int nw_init_dbm(char *servername, ipxAddr_t *adr)
 	  /* dynamic or without name */
 	  objs[anz++] = obj->id;
 	  if (anz == 10000) break;
-        } else if (obj->type == 1 && obj->id != 1 && obj->security != 0x31) {
+        } else if (obj->type == 1 /* && obj->id != 1 */ && obj->security != 0x31) {
           /* this is for correcting wrong obj security */
           obj->security=0x31;
 	  (void)store(key, data);
@@ -1681,6 +1694,268 @@ int nw_init_dbm(char *servername, ipxAddr_t *adr)
   anz = nw_fill_standard(servername, adr);
   sync_dbm();
   return(anz);
+}
+
+
+#if 0
+#define MAX_OBJ_IDS 100000 /* should be enough */
+typedef struct {
+  int     anz;
+  uint32  obj_ids[MAX_OBJ_IDS];
+}
+#endif
+
+
+static FILE *open_exp_file(char *path, int what_dbm, int mode)
+/* mode 1 = export, 0 = import */
+{
+  char buf[300];
+  char *err_str="open_exp_file";
+  FILE *f;
+  char *opmode=mode ? "w+" : "r";
+  sprintf(buf, "%s/%s.exp", (path && *path) ? path : ".",
+               dbm_fn[what_dbm] );
+  if (NULL == (f=fopen(buf, opmode))) {
+    errorp(0, err_str, "Open error `%s` mode=%s", buf, opmode);
+  } else {
+    if (!mode) {
+      sync_dbm();
+      create_nw_db(dbm_fn[what_dbm],  1);
+    }
+    if (!dbminit(what_dbm))
+      return(f);
+    else {
+      errorp(0, err_str, "dbminit error `%s`", buf);
+      fclose(f);
+      dbmclose();
+    }
+  }
+  return(NULL);
+}
+
+
+static int export_obj(char *path)
+{
+  char *err_str="export_obj";
+  int result = 1;
+  FILE *f    = open_exp_file(path, FNOBJ, 1);
+  if (f != NULL) {
+    result=0;
+    for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+      data = fetch(key);
+      if (data.dptr) {
+        NETOBJ *o=(NETOBJ*)data.dptr;
+        fprintf(f, "0x%08x %-47s 0x%04x 0x%02x 0x%02x\n",
+            o->id,  o->name, (int) o->type,
+            (int) o->flags, (int)o->security);
+      }
+    }
+    fclose(f);
+    dbmclose();
+  }
+  return(result);
+}
+
+static int export_prop(char *path)
+{
+  char *err_str="export_prop";
+  int result = 1;
+  FILE *f    = open_exp_file(path, FNPROP, 1);
+  if (f != NULL) {
+    result=0;
+    for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+      data = fetch(key);
+      if (data.dptr) {
+        NETPROP *p=(NETPROP*)data.dptr;
+        fprintf(f, "0x%08x 0x%02x %-15s 0x%02x 0x%02x\n",
+            p->obj_id, (int)p->id, p->name,
+            (int) p->flags, (int)p->security);
+      }
+    }
+    fclose(f);
+    dbmclose();
+  }
+  return(result);
+}
+
+static int export_val(char *path)
+{
+  char *err_str="export_val";
+  int result = 1;
+  FILE *f    = open_exp_file(path, FNVAL, 1);
+  if (f != NULL) {
+    result=0;
+    for  (key = firstkey(); key.dptr != NULL; key = nextkey(key)) {
+      data = fetch(key);
+      if (data.dptr) {
+        NETVAL *v=(NETVAL*)data.dptr;
+        int k=128;
+        uint8 *p=v->value;
+        fprintf(f, "0x%08x 0x%02x 0x%02x ",
+            v->obj_id, (int)v->prop_id, (int) v->segment);
+        while (k--) {
+          fprintf(f, "%02x", (int)*p++);
+        }
+        fprintf(f, "\n");
+      }
+    }
+    fclose(f);
+    dbmclose();
+  }
+  return(result);
+}
+
+int do_export_dbm(char *path)
+/* Builds ASCII export files */
+{
+  int result=export_obj(path);
+  if (!result) result=export_prop(path);
+  if (!result) result=export_val(path);
+  sync_dbm();
+  return(result);
+}
+
+static int import_obj(char *path)
+{
+  char *err_str="import_obj";
+  int result=1;
+  FILE *f = open_exp_file(path, FNOBJ, 0);
+  if (f != NULL) {
+    char   buff[300];
+    int    line=0;
+    result=0;
+    while (fgets(buff, sizeof(buff), f) != NULL){
+      NETOBJ obj;
+      char   name[300];
+      int    type;
+      int    flags;
+      int    security;
+      line++;
+      if (sscanf(buff, "%x %s %x %x %x",
+            &(obj.id),  name, &type,
+            &flags, &security) == 5) {
+        strmaxcpy(obj.name, name, 47);
+        obj.type     = (uint16)type;
+        obj.flags    = (uint8) flags;
+        obj.security = (uint8) security;
+        key.dsize  = NETOBJ_KEY_SIZE;
+        key.dptr   = (char*)&obj;
+        data.dsize = sizeof(NETOBJ);
+        data.dptr  = (char*)&obj;
+        if (store(key, data)) {
+          errorp(0, err_str, "Cannot store `%s` type=0x%x",
+             obj.name, (int)obj.type);
+        }
+      } else {
+        errorp(0, err_str, "Wrong line=%d: `%s`",line, buff);
+      }
+    } /* while */
+    XDPRINTF((0, 0, "%s:got %d lines", err_str, line));
+    fclose(f);
+    dbmclose();
+  }
+  return(result);
+}
+
+static int import_prop(char *path)
+{
+  char *err_str="import_prop";
+  int result=1;
+  FILE *f = open_exp_file(path, FNPROP, 0);
+  if (f != NULL) {
+    char   buff[300];
+    int    line=0;
+    result=0;
+    while (fgets(buff, sizeof(buff), f) != NULL){
+      NETPROP prop;
+      int    id;
+      char   name[300];
+      int    type;
+      int    flags;
+      int    security;
+      line++;
+      if (sscanf(buff, "%x %x %s %x %x",
+            &(prop.obj_id), &id,  name, &flags, &security) == 5) {
+        prop.id       = (uint8)id;
+        strmaxcpy(prop.name, name, 15);
+        prop.flags    = (uint8) flags;
+        prop.security = (uint8) security;
+        key.dsize  = NETPROP_KEY_SIZE;
+        key.dptr   = (char*)&prop;
+        data.dsize = sizeof(NETPROP);
+        data.dptr  = (char*)&prop;
+        if (store(key, data)) {
+          errorp(0, err_str, "Cannot store `%s` obj_id=0x%x, prop_id=0x%x",
+             prop.name, prop.obj_id, (int)prop.id);
+        }
+      } else {
+        errorp(0, err_str, "Wrong line=%d: `%s`",line, buff);
+      }
+    } /* while */
+    XDPRINTF((0, 0, "%s:got %d lines", err_str, line));
+    fclose(f);
+    dbmclose();
+  }
+  return(result);
+}
+
+static int import_val(char *path)
+{
+  char *err_str="import_val";
+  int result=1;
+  FILE *f = open_exp_file(path, FNVAL, 0);
+  if (f != NULL) {
+    char   buff[300];
+    int    line=0;
+    result=0;
+    while (fgets(buff, sizeof(buff), f) != NULL){
+      NETVAL val;
+      int    prop_id;
+      int    segment;
+      char   value[300];
+      line++;
+      if (sscanf(buff, "%x %x %x %s",
+            &(val.obj_id), &prop_id, &segment, value) == 4) {
+        uint8 *p=val.value;
+        uint8 *pp=value;
+        char  smallbuf[3];
+        int  k=128;
+        smallbuf[2] = '\0';
+        while (k--) {
+          int i;
+          memcpy(smallbuf, pp, 2);
+          pp+=2;
+          sscanf(smallbuf, "%x", &i);
+          *p++ = (uint8) i;
+        }
+        val.prop_id   = (uint8) prop_id;
+        val.segment   = (uint8) segment;
+        key.dsize     = NETVAL_KEY_SIZE;
+        key.dptr      = (char*)&val;
+        data.dsize    = sizeof(NETVAL);
+        data.dptr     = (char*)&val;
+        if (store(key, data)) {
+          errorp(0, err_str, "Cannot store obj_id=0x%8x, prop_id=0x%x",
+             val.obj_id, (int)val.prop_id);
+        }
+      } else {
+        errorp(0, err_str, "Wrong line=%d: `%s`",line, buff);
+      }
+    } /* while */
+    XDPRINTF((0, 0, "%s:got %d lines", err_str, line));
+    fclose(f);
+    dbmclose();
+  }
+  return(result);
+}
+
+int do_import_dbm(char *path)
+/* Imports ASCII export files */
+{
+  int result=import_obj(path);
+  if (!result) result=import_prop(path);
+  if (!result) result=import_val(path);
+  return(result);
 }
 
 /* ============> this should becomes queue.c or similar < ============== */

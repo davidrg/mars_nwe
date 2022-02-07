@@ -183,10 +183,12 @@ extern int nw_scan_dir_info(int dir_handle, uint8 *data, int len,
 
 extern void get_dos_file_attrib(NW_DOS_FILE_INFO *f,
                                struct stat *stb,
+                               int          volume,
                                uint8        *path);
 
 void get_dos_dir_attrib(NW_DOS_DIR_INFO *f,
                                 struct stat *stb,
+                                int   volume,
                                 uint8 *path);
 
 

@@ -1,5 +1,5 @@
 /* nwbind.c */
-#define REVISION_DATE "14-Aug-96"
+#define REVISION_DATE "29-Aug-96"
 /* NCP Bindery SUB-SERVER */
 /* authentification and some message handling */
 
@@ -996,7 +996,14 @@ static void handle_fxx(int gelen, int func)
                     obj.id =  GET_BE32(rdata);
                     result =  nw_get_obj(&obj);
                     if (!result) {
-                      xdata->acces_level = obj.security;
+                      /* don't know whether this is ok ?? */
+                      if (act_c->object_id == 1) {
+                        xdata->acces_level = 0x33;
+                      } else if (act_c->object_id == obj.id) {
+                        xdata->acces_level = 0x22;
+                      } else {
+                        xdata->acces_level = 0x11;
+                      }
                       data_len = sizeof(struct XDATA);
                     } else completition = (uint8)-result;
                   }

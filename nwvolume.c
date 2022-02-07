@@ -281,6 +281,14 @@ fsd.f_bavail = 1338518;
 fsd.f_files  = 966656;
 fsd.f_ffree  = 916066;
 fsd.f_bsize  = 1024;
+#elif 0
+/* test for other 'big' volume */
+fsd.f_blocks = 1783108;
+fsd.f_bfree  = 892839;
+fsd.f_bavail = 800680;
+fsd.f_files  = 460800;
+fsd.f_ffree  = 415474;
+fsd.f_bsize  = 1024;
 #endif
   XDPRINTF((3, 0,
     "blocks=%d, bfree=%d, bavail=%d, files=%d, ffree=%d, bsize=%d",

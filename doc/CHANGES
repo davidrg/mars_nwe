@@ -1,6 +1,6 @@
 Sorry, this is in German only.
 User important notes are in the NEWS file.
-Aenderungen in mars_nwe bis zum : 22-Jul-96
+Aenderungen in mars_nwe bis zum : 09-Sep-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -166,5 +166,22 @@ Erste 'oeffentliche' Version
 - bessere OS2 Nameunterstuetzung.
 - 0x17 0x81 als Dummy implementiert fuer Windows Client.
 <----- ^^^^^^^^^^ pl1 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
+- mvdir call korrigiert.
+- PIPE Filesystem erweitert. Nun wird Prog erst beim
+  ersten read oder write aufgerufen. Arbeitet nun
+  auch mit 'gleichzeitigen' lesen und schreiben.
+- In Routinen 0x16,2c u. 0x16,2d  sec per block auf 8 gesetzt.
+- Access von Bindery Object 1 (Supervisor) auf 0x31 abgeaendert.
+- Loeschung eines nicht vorhandenen property members erzeugt
+  keinen Fehlerkode mehr.
+<----- ^^^^^^^^^^ pl2 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- LOGIN Verzeichnis auf '-k' volume kann nun wieder in
+  downshift sein. Fehler war durch Implementation von Schalter 'i'
+  hineingerutscht.
+- SHADOW_PWD Zusatz beim automatischen Umwandeln der
+  Unix User > mars_nwe User eingebaut.
+  Hinweis von: Herbert Rosmanith <herp@wildsau.idv.uni-linz.ac.at>
+- einfache dbm export/import Routinen eingebaut.
+- Bug in dos_mangling routine beseitigt.
+<----- ^^^^^^^^^^ pl3 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

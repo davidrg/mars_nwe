@@ -188,7 +188,7 @@ static int connection=0;
 #define RDATA(xdata, xfunc, xcomment)  \
 memcpy(requestdata, (xdata), sizeof(xdata)); \
 ncp_request(0x2222, sequence, connection, 1, 0, \
-                (xfunc), sizeof(data), (xcomment))
+                (xfunc), sizeof(xdata), (xcomment))
 
 #define ODATA(xfunc, xcomment)  \
 ncp_request(0x2222, sequence, connection, 1, 0, \
@@ -662,6 +662,15 @@ static void test3(void)
 }
 
 
+static void test4(void)
+{
+  uint8 data[] = {0x0,0x2, 0x2c, 0x0,0x0};
+  RDATA(data, 0x16, "test_0x16, 0x2c");
+  if (!handle_event()) {
+    ;
+  }
+}
+
 static int do_5f(void)
 {
   uint8  data[] = {0x10, 0, 0, 0};
@@ -786,10 +795,12 @@ int main(int argc, char **argv)
     while (!scan_bindery_property(1, "NOBODY", "*", &lastid));;
   }
   get_volume_restriction_for_obj(1, 0);
-
+#if 0
   test1();
+#endif
   test2();
   test3();
+  test4();
 
   get_connection_info(0);
   get_connection_info(1);

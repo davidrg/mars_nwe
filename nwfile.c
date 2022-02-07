@@ -56,7 +56,10 @@ static int new_file_handle(uint8 *unixname)
     if (anz_fhandles < MAX_FILE_HANDLES_CONN) {
       fh=&(file_handles[anz_fhandles]);
       rethandle = ++anz_fhandles;
-    } else return(0); /* no free handle anymore */
+    } else {
+      XDPRINTF((1, 0, "No more free file handles"));
+      return(0); /* no free handle anymore */
+    }
   }
   /* init handle  */
   fh->fd      = -2;
@@ -115,7 +118,7 @@ static int free_file_handle(int fhandle)
 
 void init_file_module(void)
 {
-  int k = -1;
+  int k = 0;
   while (k++ < anz_fhandles) free_file_handle(k);
   anz_fhandles = 0;
 }
@@ -145,8 +148,8 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
  *
  */
 {
-   int fhandle=new_file_handle(unixname);
-   int dowrite      = (access & 2) || creatmode ;
+   int fhandle  = new_file_handle(unixname);
+   int dowrite  = (access & 2) || creatmode;
    if (fhandle > 0){
      FILE_HANDLE *fh=&(file_handles[fhandle-1]);
      int completition = -0xff;  /* no File  Found */
@@ -157,19 +160,40 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
        /* this is a PIPE Volume */
        int statr = stat(fh->fname, stbuff);
        if (!statr && (stbuff->st_mode & S_IFMT) != S_IFDIR) {
-         char pipecommand[300];
-         char *topipe             = "READ";
-         if (creatmode) topipe    = "CREAT";
-         else if (dowrite) topipe = "WRITE";
-         sprintf(pipecommand, "%s %s %d %d",
-                               fh->fname, topipe,
-                               act_connection, act_pid);
-         fh->f  = ext_popen(pipecommand, geteuid(), getegid());
-         fh->fd = (fh->f) ? fileno(fh->f->fildes[1]) : -1;
-         if (fh->fd > -1) {
-           fh->fh_flags |= FH_IS_PIPE;
-           fh->fh_flags |= FH_IS_PIPE_COMMAND;
-           if (!dowrite) stbuff->st_size = 0x7fffffff;
+         fh->fh_flags |= FH_IS_PIPE;
+         if (S_ISFIFO(stbuff->st_mode)){
+           fh->fd = open(fh->fname,
+               O_NONBLOCK | dowrite ? O_RDWR : O_RDONLY);
+         } else {
+           int is_ok=0;
+           if (act_uid == stbuff->st_uid) {
+             if (stbuff->st_mode & S_IXUSR) {
+               stbuff->st_mode  |= S_IWUSR;
+               is_ok++;
+             }
+           } else if (act_gid == stbuff->st_gid) {
+             if (stbuff->st_mode & S_IXGRP) {
+               stbuff->st_mode  |= S_IWGRP;
+               is_ok++;
+             }
+           } else {
+             if (stbuff->st_mode & S_IXOTH) {
+               stbuff->st_mode  |= S_IWOTH;
+               is_ok++;
+             }
+           }
+           if (is_ok) {
+             fh->fh_flags |= FH_IS_PIPE_COMMAND;
+             fh->fd=-3;
+           } else {
+             fh->fd=-1;
+             XDPRINTF((5, 0, "No PIPE command rights st_mode=0x%x uid=%d, gid=%d",
+                     stbuff->st_uid, stbuff->st_gid));
+           }
+         }
+         if (fh->fd != -1) {
+           if (!dowrite) stbuff->st_size = 0x7fff0000 | (rand() & 0xffff);
+           (void)time(&(stbuff->st_mtime));
            if (creatmode & 4) fh->fh_flags |= FH_DO_NOT_REUSE;
            return(fhandle);
          }
@@ -210,12 +234,14 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
          }
        } else {
          int statr = stat(fh->fname, stbuff);
-         int acm  = (access & 2) ? (int) O_RDWR : (int)O_RDONLY;
+         int acm  = (dowrite) ? (int) O_RDWR : (int)O_RDONLY;
          if ( (!statr && !S_ISDIR(stbuff->st_mode))
               || (statr && (acm & O_CREAT))){
             if ((!statr) && S_ISFIFO(stbuff->st_mode)){
               acm |= O_NONBLOCK;
               fh->fh_flags |= FH_IS_PIPE;
+              if (!dowrite) stbuff->st_size = 0x7fffffff;
+              (void)time(&(stbuff->st_mtime));
             }
             fh->fd = open(fh->fname, acm, 0777);
             XDPRINTF((5,0,"OPEN FILE with attrib:0x%x, access:0x%x, fh->fname:%s: fhandle=%d",attrib,access, fh->fname, fhandle));
@@ -273,6 +299,7 @@ int file_creat_open(int volume, uint8 *unixname, struct stat *stbuff,
    } else return(-0x81); /* no more File Handles */
 }
 
+
 int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
 {
   if (fhandle > 0 && (--fhandle < anz_fhandles) ) {
@@ -282,7 +309,7 @@ int nw_set_fdate_time(uint32 fhandle, uint8 *datum, uint8 *zeit)
         fh->tmodi = nw_2_un_time(datum, zeit);
         return(0);
       } else return(-0x8c);
-    }
+    } else if (fh->fd == -3) return(0);
   }
   return(-0x88); /* wrong filehandle */
 }
@@ -294,7 +321,7 @@ int nw_close_datei(int fhandle, int reset_reuse)
   if (fhandle > 0 && (fhandle <= anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle-1]);
     if (reset_reuse) fh->fh_flags &= (~FH_DO_NOT_REUSE);
-    if (fh->fd > -1) {
+    if (fh->fd > -1 || (fh->fd == -3 && fh->fh_flags & FH_IS_PIPE_COMMAND)) {
       int result = 0;
       int result2;
       if (fh->fh_flags & FH_IS_PIPE_COMMAND) {
@@ -342,17 +369,38 @@ uint8 *file_get_unix_name(int fhandle)
   return(NULL);
 }
 
+static void open_pipe_command(FILE_HANDLE *fh, int dowrite)
+{
+  if (NULL == fh->f) {
+    char pipecommand[512];
+    sprintf(pipecommand, "%s %s %d %d",
+                        fh->fname,
+                        dowrite ? "WRITE" : "READ",
+                        act_connection, act_pid);
+    fh->f  = ext_popen(pipecommand, geteuid(), getegid());
+  }
+  fh->fd = (fh->f) ? fileno(fh->f->fildes[dowrite ? 0 : 1]) : -3;
+}
+
 int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
 {
   if (fhandle > 0 && (--fhandle < anz_fhandles)) {
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
+    if (fh->fh_flags & FH_IS_PIPE_COMMAND)
+        open_pipe_command(fh, 0);
     if (fh->fd > -1) {
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
-        size = read(fh->fd, data, size);
-        if (size < 0) {
-          int k=5;
-          while (size < 0 && --k /* && errno == EAGAIN */)
-             size = read(fh->fd, data, size);
+        int readsize=size;
+        if (-1 == (size = read(fh->fd, data, readsize)) )  {
+          int k=2;
+          do {
+            sleep(1);
+          } while(k-- &&  -1 == (size = read(fh->fd, data, readsize)));
+          if (size == -1) size=0;
+        }
+        if (!size) {
+          if (fh->f->flags & 1) return(-0x57);
+          fh->f->flags |= 1;
         }
       } else {
 #if USE_MMAP
@@ -393,9 +441,9 @@ int nw_read_datei(int fhandle, uint8 *data, int size, uint32 offset)
       }
       if (size == -1) size=0;
       return(size);
-    }
+    } else if (fh->fd == -3) return(0);
   }
-  return(- 0x88); /* wrong filehandle */
+  return(-0x88); /* wrong filehandle */
 }
 
 int nw_seek_datei(int fhandle, int modus)
@@ -404,7 +452,7 @@ int nw_seek_datei(int fhandle, int modus)
     FILE_HANDLE  *fh=&(file_handles[fhandle]);
     if (fh->fd > -1) {
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
-        return(0x7fffffff);
+        return(0x7fff0000 | (rand() & 0xffff) );
       } else {
         int size=-0xfb;
         if (!modus) {
@@ -413,7 +461,8 @@ int nw_seek_datei(int fhandle, int modus)
         }
         return(size);
       }
-    }
+    } else if (fh->fd == -3) return(0x7fff0000 | (rand() & 0xffff) );
+          /* PIPE COMMAND */
   }
   return(-0x88); /* wrong filehandle */
 }
@@ -423,6 +472,8 @@ int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
 {
   if (fhandle > 0 && (--fhandle < anz_fhandles)) {
     FILE_HANDLE *fh=&(file_handles[fhandle]);
+    if (fh->fh_flags & FH_IS_PIPE_COMMAND)
+        open_pipe_command(fh, 1);
     if (fh->fd > -1) {
       if (fh->fh_flags & FH_IS_READONLY) return(-0x94);
       if (fh->fh_flags & FH_IS_PIPE) { /* PIPE */
@@ -453,7 +504,7 @@ int nw_write_datei(int fhandle, uint8 *data, int size, uint32 offset)
           return(result);
         }
       }
-    }
+    } else if (fh->fd == -3) return(0);
   }
   return(- 0x88); /* wrong filehandle */
 }
@@ -523,7 +574,7 @@ int nw_lock_datei(int fhandle, int offset, int size, int do_lock)
 
       if (!result) return(0);
       else return(-0x21); /* LOCK Violation */
-    }
+    } else if (fh->fd == -3) return(0);
   }
   return(-0x88); /* wrong filehandle */
 }

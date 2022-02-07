@@ -6,6 +6,7 @@
 typedef struct {
   FILE *fildes[3];          /* filedescriptor to  0,1,2 of new process */
   int  command_pid;         /* pid of piped command                    */
+  int  flags;               /* special flags                           */
 } FILE_PIPE;
 
 extern int        ext_pclose(FILE_PIPE *fp);

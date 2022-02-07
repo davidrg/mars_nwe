@@ -1226,6 +1226,9 @@ int main(int argc, char **argv)
     else
       return(usage(argv[0]));
   }
+#if !DO_TESTING
+  chdir("/");
+#endif
   setgroups(0, NULL);
   init_tools(IN_PROG, init_mode);
   get_ini(1);

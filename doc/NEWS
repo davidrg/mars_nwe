@@ -1,4 +1,12 @@
 # in this files are some notes for user of mars_nwe.
+------24-Aug-96--- 0.98.pl2 ----------
+- 'PIPE' filesystem scheme changed. Now the first read or write
+  calls the 'pipe program' and not the open or creat call.
+  Therefore the first parameter is READ or WRITE and never CREAT!
+  Also a pipe command may have two 'channels' (read and write).
+  There is a little programpair comm.c/unxcomm.c in the
+  examples directory  which explains the new scheme,
+  by reading the code ;).
 ------30-Jul-96--- 0.98.pl1 ----------
 - better OS2 name handling (upper/lowercase)
 ------22-Jul-96--- 0.98.pl0 ----------

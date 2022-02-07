@@ -232,12 +232,12 @@ static int handle_ncp_serv(void)
 	               /* uint8 len = *(requestdata+1); */
 	               uint8 *p  =  requestdata +2;
 	               if (0 == *p){
-	           /****** * SetDirektoryHandle *************/
+	           /******** SetDirektoryHandle *************/
 	                 struct INPUT {
-	                   uint8   header[7];     /* Requestheader */
-	                   uint8   div[3];           /* 0x0, dlen,  typ */
-	                   uint8   target_dir_handle; /* Verzeichnis Handle zu „ndern */
-	                   uint8   source_dir_handle; /* Verzeichnis Handle */
+	                   uint8   header[7];         /* Requestheader    */
+	                   uint8   div[3];            /* 0x0, dlen, ufunc */
+	                   uint8   target_dir_handle; /* to change        */
+	                   uint8   source_dir_handle;
 	                   uint8   pathlen;
 	                   uint8   path[2];
 	                 } *input = (struct INPUT *) (ncprequest);
@@ -248,13 +248,12 @@ static int handle_ncp_serv(void)
 	                                             (int)input->pathlen,
 	                                             (int)(ncprequest->task));
 
-	               } else  if (1 == *p){  /* liefert Verzeichnis Namen */
-	                                      /* Dir_handles  */
+	               } else  if (1 == *p){
 	           /******** GetDirektoryPATH ***************/
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
-	                   uint8   div[3];         /* 0x0, dlen,  typ */
-	                   uint8   dir_handle;     /* Verzeichnis Handle */
+	                   uint8   div[3];         /* 0x0, dlen, ufunc */
+	                   uint8   dir_handle;
 	                 } *input = (struct INPUT *) (ncprequest);
 	                 struct XDATA {
 	                   uint8 len;
@@ -271,7 +270,7 @@ static int handle_ncp_serv(void)
 	           /******** Scan Dir Info   ****************/
 	                 struct INPUT {
 	                   uint8   header[7];       /* Requestheader */
-	                   uint8   div[3];          /* 0x0, dlen,  typ */
+	                   uint8   div[3];            /* 0x0, dlen, ufunc */
 	                   uint8   dir_handle;      /* Verzeichnis Handle */
 	                   uint8   sub_dir_nmbr[2]; /* HI LOW */
                                                     /* firsttime 1 */
@@ -363,7 +362,7 @@ static int handle_ncp_serv(void)
 #if 0
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
-	                   uint8   div[3];         /* 0x0, dlen,  typ */
+	                   uint8   div[3];            /* 0x0, dlen, ufunc */
 	                   uint8   dir_handle;     /* Verzeichnis Handle */
 	                   uint8   trustee_id[4];  /* Trustee Object ID  */
 	                   uint8   trustee_right_mask;
@@ -457,7 +456,7 @@ static int handle_ncp_serv(void)
 #if 0
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
-	                   uint8   div[3];         /* 0x0, dlen,  typ */
+	                   uint8   div[3];            /* 0x0, dlen, ufunc */
 	                   uint8   dir_handle;     /* Verzeichnis Handle */
 	                   uint8   trustee_id[4];  /* Trustee Object ID  */
 	                   uint8   trustee_right_mask;
@@ -471,7 +470,7 @@ static int handle_ncp_serv(void)
 #if 0
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
-	                   uint8   div[3];         /* 0x0, dlen,  typ */
+	                   uint8   div[3];            /* 0x0, dlen, ufunc */
 	                   uint8   volume;
 	                   uint8   dir_entry[2];
 	                 } *input = (struct INPUT *) (ncprequest);
@@ -485,7 +484,7 @@ static int handle_ncp_serv(void)
                          /* SCAN a Directory */
 	                 struct INPUT {
 	                   uint8   header[7];        /* Requestheader */
-	                   uint8   div[3];           /* 0x0, dlen,  typ */
+	                   uint8   div[3];            /* 0x0, dlen, ufunc */
 	                   uint8   dir_handle;       /* Verzeichnis Handle */
 	                   uint8   attrib;           /* Search Attrib z.B. 0x6 */
 	                   uint8   searchsequence[4]; /* 32 bit */
@@ -506,7 +505,7 @@ static int handle_ncp_serv(void)
                          /* SCAN a root dir ????  */
 	                 struct INPUT {
 	                   uint8   header[7];        /* Requestheader      */
-	                   uint8   div[3];           /* 0x0, dlen,  typ    */
+	                   uint8   div[3];           /* 0x0, dlen, ufunc */
 	                   uint8   dir_handle;       /* Verzeichnis Handle */
 	                   uint8   dont_know1;       /* ????  0xc0  */
 	                   uint8   dont_know2;       /* ????  0xfa  */
@@ -576,7 +575,7 @@ static int handle_ncp_serv(void)
 #if 0
 	                 struct INPUT {
 	                   uint8   header[7];      /* Requestheader */
-	                   uint8   div[3];         /* 0x0, dlen,  typ */
+	                   uint8   div[3];            /* 0x0, dlen, ufunc */
 	                   uint8   dir_handle;     /* Verzeichnis Handle */
 	                   uint8   trustee_id[4];  /* Trustee Object ID  */
 	                   uint8   trustee_right_mask;
@@ -638,9 +637,9 @@ static int handle_ncp_serv(void)
                            struct fs_usage fsp;
                            memset(xdata, 0, sizeof(struct XDATA));
                            if (!nw_get_fs_usage(name, &fsp)) {
-	                     xdata->sec_per_block = 1; /* hard coded */
-	                     U32_TO_32(fsp.fsu_blocks, xdata->total_blocks);
-	                     U32_TO_32(fsp.fsu_bavail, xdata->avail_blocks);
+	                     xdata->sec_per_block = 8; /* hard coded */
+	                     U32_TO_32(fsp.fsu_blocks/8, xdata->total_blocks);
+	                     U32_TO_32(fsp.fsu_bavail/8, xdata->avail_blocks);
 	                     U32_TO_32(fsp.fsu_files,  xdata->total_dirs);
 	                     U32_TO_32(fsp.fsu_ffree,  xdata->avail_dirs);
                            }
@@ -669,9 +668,9 @@ static int handle_ncp_serv(void)
                            struct fs_usage fsp;
                            memset(xdata, 0, sizeof(struct XDATA));
                            if (!nw_get_fs_usage(name, &fsp)) {
-	                     xdata->sec_per_block = 1; /* hard coded */
-	                     U32_TO_32(fsp.fsu_blocks, xdata->total_blocks);
-	                     U32_TO_32(fsp.fsu_bavail, xdata->avail_blocks);
+	                     xdata->sec_per_block = 8; /* hard coded */
+	                     U32_TO_32(fsp.fsu_blocks/8, xdata->total_blocks);
+	                     U32_TO_32(fsp.fsu_bavail/8, xdata->avail_blocks);
 	                     U32_TO_32(fsp.fsu_files,  xdata->total_dirs);
 	                     U32_TO_32(fsp.fsu_ffree,  xdata->avail_dirs);
                            }
@@ -1171,8 +1170,8 @@ static int handle_ncp_serv(void)
 	                 uint8   max_size[2];    /* byte to readd */
 	               } *input = (struct INPUT *)ncprequest;
 	               struct XDATA {
-	                 uint8   size[2];        /* read byzes  */
-	                 uint8   data[1072];     /* max data    */
+	                 uint8   size[2]; /* read bytes  */
+	                 uint8   data[2]; /* read data   */
 	               } *xdata=(struct XDATA*)responsedata;
 	               int    fhandle  = GET_BE32(input->fhandle);
 	               int    max_size = GET_BE16(input->max_size);
@@ -1182,8 +1181,6 @@ static int handle_ncp_serv(void)
 	                                         xdata->data+zusatz,
 	                                         max_size,
 	                                         offset);
-
-	               if (fhandle == test_handle) do_druck++;
 	               if (size > -1) {
 	                 U16_TO_BE16(size, xdata->size);
 	                 data_len=size+zusatz+2;
@@ -1194,7 +1191,6 @@ static int handle_ncp_serv(void)
 	 case 0x49 : {  /* write file */
 	               struct INPUT {
 	                 uint8   header[7];     /* Requestheader */
-
 	                 uint8   filler;         /* 0 Filler ?? */
 	                 uint8   ext_handle[2];
 	                 uint8   fhandle[4];     /* Dateihandle   */
@@ -1209,7 +1205,6 @@ static int handle_ncp_serv(void)
 	                                         input->data,
 	                                         input_size,
 	                                         offset);
-	               if (fhandle == test_handle) do_druck++;
 	               if (size < 0)
 	                  completition = (uint8) -size;
 	             }

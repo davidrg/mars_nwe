@@ -217,7 +217,7 @@ static void sig_alarm(int rsig)
   signal(rsig, SIG_IGN);
   XDPRINTF((0, 0,"GOT ALARM try=%d, sendto=%s",
         anz_tries+1, visable_ipx_adr((ipxAddr_t *) test_ud->addr.buf) ));
-  if (anz_tries++ < 3) new_try++;
+  if (anz_tries++ < 10) new_try++;
 }
 #endif
 
@@ -230,12 +230,12 @@ int t_sndudata(int fd, struct t_unitdata *ud)
 
 #if DO_IPX_SEND_TEST
     {
-    anz_tries=0;
+    anz_tries=1;
     test_ud  =ud;
     do {
       void (*old_sig)(int rsig) = signal(SIGALRM, sig_alarm);
       new_try  = 0;
-      alarm(2);
+      alarm(1+anz_tries);
 #endif
    memset(&ipxs, 0, sizeof(struct sockaddr_ipx));
    ipxs.sipx_family=AF_IPX;
