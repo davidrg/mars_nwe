@@ -1,4 +1,4 @@
-/* net.h 01-Mar-96 */
+/* net.h 20-Mar-96 */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
@@ -97,19 +97,18 @@
 # undef CALL_NWCONN_OVER_SOCKET
 #endif
 
-#ifdef CALL_NCPSERV_OVER_SOCKET
-# undef CALL_NCPSERV_OVER_SOCKET
-#endif
-
-
 #include "config.h"
 
 #ifndef CALL_NWCONN_OVER_SOCKET
-# define CALL_NWCONN_OVER_SOCKET   0
-#endif
-
-#ifndef CALL_NCPSERV_OVER_SOCKET
-# define CALL_NCPSERV_OVER_SOCKET  1
+# ifdef LINUX
+#   ifdef SIOCIPXNCPCONN
+#     define CALL_NWCONN_OVER_SOCKET 1
+#   else
+#     define CALL_NWCONN_OVER_SOCKET 0
+#   endif
+# else
+#   define CALL_NWCONN_OVER_SOCKET   0
+# endif
 #endif
 
 #ifndef DO_DEBUG
@@ -298,9 +297,10 @@ typedef union {
   } ncprequest;
   struct S_OWN_DATA {
     uint8   type[2];         /* 0xeeee  */
-    uint8   type1[2];        /* 0xeeee  */
+    uint8   sequence;
+    uint8   connection;
     struct {
-      int     size;            /* size of next two entries */
+      int     size;          /* size of next two entries */
       int     function;
       uint8   data[1];
     } d;
@@ -309,10 +309,10 @@ typedef union {
 } IPX_DATA;
 
 typedef struct S_SIP           SIP;
-typedef struct S_SQP  	       SQP;
-typedef struct S_SAP  	       SAP;
-typedef struct S_SAPS 	       SAPS;
-typedef struct S_RIP  	       RIP;
+typedef struct S_SQP           SQP;
+typedef struct S_SAP           SAP;
+typedef struct S_SAPS          SAPS;
+typedef struct S_RIP           RIP;
 
 typedef struct S_CONFREQ       CONFREQ;
 typedef struct S_DIAGRESP      DIAGRESP;
@@ -320,25 +320,27 @@ typedef struct S_NCPRESPONSE   NCPRESPONSE;
 typedef struct S_NCPREQUEST    NCPREQUEST;
 typedef struct S_OWN_DATA      OWN_DATA;
 
+#define OWN_DATA_IPX_BASE_SIZE 8
+
 /*  SOCKETS  */
 #define SOCK_AUTO        0x0000  /* Autobound Socket               */
-#define SOCK_ROUTE       0x0001  /* Routing Information 	   */
-#define SOCK_ECHO        0x0002  /* Echo Protokoll Packet 	   */
-#define SOCK_ERROR       0x0003  /* Error Handler Packet 	   */
-#define SOCK_NCP         0x0451  /* File Service CORE  		   */
+#define SOCK_ROUTE       0x0001  /* Routing Information            */
+#define SOCK_ECHO        0x0002  /* Echo Protokoll Packet          */
+#define SOCK_ERROR       0x0003  /* Error Handler Packet           */
+#define SOCK_NCP         0x0451  /* File Service CORE              */
 #define SOCK_SAP         0x0452  /* SAP Service Advertising Packet */
-#define SOCK_RIP         0x0453  /* Routing Information Packet 	   */
-#define SOCK_NETBIOS     0x0455  /* NET BIOS Packet 		   */
-#define SOCK_DIAGNOSE    0x0456  /* Diagnostic Packet 		   */
+#define SOCK_RIP         0x0453  /* Routing Information Packet     */
+#define SOCK_NETBIOS     0x0455  /* NET BIOS Packet                */
+#define SOCK_DIAGNOSE    0x0456  /* Diagnostic Packet              */
 #define SOCK_NVT         0x8063  /* NVT (Network Virtual Terminal) */
-/* PACKET TYPES */
 
-#define PACKT_0       0 /* unknown  		  */
-#define PACKT_ROUTE   1 /* Routing Information 	  */
-#define PACKT_ECHO    2 /* Echo Packet 		  */
-#define PACKT_ERROR   3 /* Error Packet 	  */
+/* PACKET TYPES */
+#define PACKT_0       0 /* unknown                */
+#define PACKT_ROUTE   1 /* Routing Information    */
+#define PACKT_ECHO    2 /* Echo Packet            */
+#define PACKT_ERROR   3 /* Error Packet           */
 #define PACKT_EXCH    4 /* Packet Exchange Packet */
-#define PACKT_SPX     5 /* SPX Packet  	   	  */
+#define PACKT_SPX     5 /* SPX Packet             */
                         /* 16 - 31 Experimental   */
 #define PACKT_CORE   17 /*  Core Protokoll (NCP)  */
 

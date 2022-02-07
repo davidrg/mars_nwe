@@ -61,6 +61,9 @@ extern int nw_creat_open_file(int dir_handle, uint8 *data, int len,
                 NW_FILE_INFO *info, int attrib, int access, int mode);
 
 extern int nw_delete_datei(int dir_handle,  uint8 *data, int len);
+extern int nw_set_file_information(int dir_handle, uint8 *data, int len,
+                             int searchattrib, NW_FILE_INFO *f);
+
 extern int nw_chmod_datei(int dir_handle, uint8 *data, int len, int modus);
 
 extern int mv_file(int qdirhandle, uint8 *q, int qlen,

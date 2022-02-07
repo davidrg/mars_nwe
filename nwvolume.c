@@ -1,4 +1,4 @@
-/* nwvolume.c  07-Feb-96 */
+/* nwvolume.c  20-Mar-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -53,8 +53,8 @@ void nw_init_volumes(FILE *f)
   }
   rewind(f);
   used_nw_volumes = 0;
-  while (0 != (what = get_ini_entry(f, 0, (char*)buff, sizeof(buff)))) {
-    if ( what == 1 && used_nw_volumes < MAX_NW_VOLS && strlen(buff) > 3){
+  while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))) {
+    if ( what == 1 && used_nw_volumes < MAX_NW_VOLS && strlen((char*)buff) > 3){
       uint8 sysname[256];
       uint8 unixname[256];
       char  optionstr[256];
@@ -63,7 +63,7 @@ void nw_init_volumes(FILE *f)
       int   founds = sscanf((char*)buff, "%s %s %s",sysname, unixname, optionstr);
       if (founds > 1) {
         new_str(nw_volumes[used_nw_volumes].sysname, sysname);
-        len = strlen(unixname);
+        len = strlen((char*)unixname);
         if (unixname[len-1] != '/') {
           unixname[len++] = '/';
           unixname[len]   = '\0';
@@ -164,10 +164,10 @@ int nw_get_volume_number(uint8 *volname, int namelen)
   int result = -0x98; /* Volume not exist */
   uint8   vname[255];
   int j = used_nw_volumes;
-  strmaxcpy((char*)vname, (char*)volname, namelen);
+  strmaxcpy(vname, volname, namelen);
   upstr(vname);
   while (j--) {
-    if (!strcmp(nw_volumes[j].sysname, vname)) {
+    if (!strcmp((char*)nw_volumes[j].sysname, (char*)vname)) {
       result = j;
       break;
     }
@@ -182,9 +182,9 @@ int nw_get_volume_name(int volnr, uint8 *volname)
   int  result = -0x98; /* Volume not exist */;
   if (volnr > -1 && volnr < used_nw_volumes) {
     if (volname != NULL) {
-      strcpy(volname, nw_volumes[volnr].sysname);
-      result = strlen(volname);
-    } else result= strlen(nw_volumes[volnr].sysname);
+      strcpy((char*)volname, (char*)nw_volumes[volnr].sysname);
+      result = strlen((char*)volname);
+    } else result= strlen((char*)nw_volumes[volnr].sysname);
   } else {
     if (NULL != volname) *volname = '\0';
     if (volnr < MAX_NW_VOLS) result=0;
@@ -233,7 +233,7 @@ int nw_get_fs_usage(uint8 *volname, struct fs_usage *fsu)
 /* returns 0 if OK, else errocode < 0 */
 {
   int volnr = nw_get_volume_number(volname, strlen((char*)volname));
-  return((volnr>-1 && !get_fs_usage(nw_volumes[volnr].unixname, fsu)) ? 0 : -1);
+  return((volnr>-1 && !get_fs_usage((char*)nw_volumes[volnr].unixname, fsu)) ? 0 : -1);
 }
 
 int get_volume_options(int volnr, int mode)

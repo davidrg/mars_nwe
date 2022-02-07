@@ -63,9 +63,11 @@ typedef struct {
 extern int tells_server_version;
 extern int password_scheme;
 
-#define PW_SCHEME_CHANGE_PW     1
-#define PW_SCHEME_LOGIN		2
-#define PW_SCHEME_GET_KEY_FAIL  4
+#define PW_SCHEME_CHANGE_PW       1
+#define PW_SCHEME_LOGIN		  2
+#define PW_SCHEME_GET_KEY_FAIL    4
+#define PW_SCHEME_ALLOW_EMPTY_PW  8
+
 
 extern void sync_dbm(void);
 

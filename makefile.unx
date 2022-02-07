@@ -1,5 +1,5 @@
 #if 0
-#makefile.unx 10-Mar-96
+#makefile.unx 15-Mar-96
 #endif
 
 VPATH=$(V_VPATH)
@@ -9,7 +9,7 @@ C=.c
 
 V_H=0
 V_L=97
-P_L=1
+P_L=2
 
 #define D_P_L 1
 DISTRIB=mars_nwe
@@ -62,6 +62,7 @@ PROG2=nwserv
 PROG3=nwconn
 PROG4=ncpserv
 PROG5=nwclient
+PROG6=nwbind
 
 #include "config.h"
 #ifdef FILENAME_NW_INI
@@ -91,17 +92,18 @@ NWROUTE_O=nwroute1$(O)
 NWROUTE_O=nwroute1$(O)
 #endif
 
-PROGS=$(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5)
+PROGS=$(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5) $(PROG6)
 
 OBJ1= $(EMUTLIOBJ) net1$(O) tools$(O)
 OBJ2= $(OBJ1) $(NWROUTE_O)
 OBJ3= $(OBJ1) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O)
-OBJ4= $(OBJ1) nwdbm$(O) nwcrypt$(O)
+OBJ4= $(OBJ1)
 OBJ5= $(OBJ1)
+OBJ6= $(OBJ1) nwdbm$(O) nwcrypt$(O)
 
 OBJS= net1$(O) tools$(O) connect$(O) nwdbm$(O) $(NWROUTE_O) \
       namspace$(O) nwvolume$(O) \
-      $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O)
+      $(PROG2)$(O) $(PROG3)$(O) $(PROG4)$(O) $(PROG5)$(O) $(PROG6)$(O)
 
 HOBJ3= $(PROG3)$(O) connect$(O) namspace$(O) nwvolume$(O) nwfile$(O)
 
@@ -120,10 +122,14 @@ $(PROG3):  $(PROG3)$(O) $(OBJ3)
 	   $(CC) -o $(VPATH)/$(PROG3) $(PROG3)$(O) $(OBJ3)  $(NSLLIB)
 
 $(PROG4):  $(PROG4)$(O) $(OBJ4)
-	   $(CC) -o $(VPATH)/$(PROG4) $(PROG4)$(O) $(OBJ4) $(NDBMLIB) $(CRYPTLIB) $(NSLLIB)
+	   $(CC) -o $(VPATH)/$(PROG4) $(PROG4)$(O) $(OBJ4) $(NSLLIB)
 
 $(PROG5):  $(PROG5)$(O) $(OBJ5)
 	   $(CC) -o $(VPATH)/$(PROG5) $(PROG5)$(O) $(OBJ5) $(NSLLIB)
+
+$(PROG6):  $(PROG6)$(O) $(OBJ6)
+	   $(CC) -o $(VPATH)/$(PROG6) $(PROG6)$(O) $(OBJ6) $(NDBMLIB) $(CRYPTLIB) $(NSLLIB)
+
 
 $(HOBJ3):  namspace.h connect.h nwvolume.h nwfile.h
 $(OBJS):   net.h config.h

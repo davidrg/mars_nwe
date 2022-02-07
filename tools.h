@@ -1,4 +1,4 @@
-/*  tools.h : 10-Mar-96    */
+/*  tools.h : 20-Mar-96    */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -20,10 +20,11 @@
 #define _TOOLS_H_
 
 /* processes which need tools */
-#define NWSERV   1
-#define NCPSERV  2
-#define NWCONN   3
-#define NWCLIENT 4
+#define NWSERV    1
+#define NCPSERV   2
+#define NWCONN    3
+#define NWCLIENT  4
+#define NWBIND    5
 
 extern  FILE *logfile;
 extern  void x_x_xfree(char **p);
@@ -42,7 +43,7 @@ extern void  dprintf(char *p, ...);
 extern void  xdprintf(int dlevel, int mode, char *p, ...);
 extern void  errorp(int mode, char *what, char *p, ...);
 extern FILE  *open_nw_ini(void);
-extern int   get_ini_entry(FILE *f, int entry, char *str, int strsize);
+extern int   get_ini_entry(FILE *f, int entry, uint8 *str, int strsize);
 extern char  *get_exec_path(char *buff, char *progname);
 extern int   get_ini_int(int what);
 extern void  get_ini_debug(int what);

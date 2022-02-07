@@ -1,4 +1,4 @@
-/* nwdbm.c  22-Feb-96  data base for mars_nwe */
+/* nwdbm.c  20-Mar-96  data base for mars_nwe */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1033,9 +1033,11 @@ int nw_test_passwd(uint32 obj_id, uint8 *vgl_key, uint8 *akt_key)
     return (memcmp(akt_key, keybuff, sizeof(keybuff)) ? -0xff : 0);
   } else {
     if (password_scheme & PW_SCHEME_LOGIN) {
-      MYPASSWD *pw = nw_getpwnam(obj_id);
-      if (pw && *(pw->pw_passwd) && !crypt_pw_ok(NULL, pw->pw_passwd))
-        return(-0xff);
+      if (!(password_scheme & PW_SCHEME_ALLOW_EMPTY_PW)) {
+        MYPASSWD *pw = nw_getpwnam(obj_id);
+        if (pw && *(pw->pw_passwd) && !crypt_pw_ok(NULL, pw->pw_passwd))
+          return(-0xff);
+      }
       if (obj_id == 1) return(-0xff);
     }
     return(0); /* no password */
@@ -1242,7 +1244,7 @@ static void add_group(char *name,  char  *unname, char *password)
 static int get_sys_unixname(uint8 *unixname, uint8 *sysentry)
 {
   uint8 sysname[256];
-  char  optionstr[256];
+  uint8 optionstr[256];
   int   founds = sscanf((char*)sysentry, "%s %s %s",sysname, unixname, optionstr);
   if (founds > 1 && *unixname) {
     struct stat statb;
@@ -1324,14 +1326,15 @@ int nw_fill_standard(char *servername, ipxAddr_t *adr)
     while (0 != (what =get_ini_entry(f, 0, (char*)buff, sizeof(buff)))) {
       if (1 == what && !*sysentry) {
         xstrcpy(sysentry, buff);
-      } if (6 == what) {  /* Server Version */
+      } else if (6 == what) {  /* Server Version */
         tells_server_version = atoi(buff);
       } else if (7 == what) {  /* password_scheme */
         int pwscheme     = atoi(buff);
         password_scheme  = 0;
         switch (pwscheme) {
           case  9 : password_scheme |= PW_SCHEME_GET_KEY_FAIL;
-          case  8 : password_scheme |= PW_SCHEME_LOGIN;
+          case  8 : password_scheme |= PW_SCHEME_ALLOW_EMPTY_PW;
+          case  7 : password_scheme |= PW_SCHEME_LOGIN;
           case  1 : password_scheme |= PW_SCHEME_CHANGE_PW;
                     break;
           default : password_scheme = 0;

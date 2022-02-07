@@ -1,5 +1,5 @@
 Sorry, this is in German only.  :-(
-Aenderungen in mars_nwe bis zum : 10-Feb-96
+Aenderungen in mars_nwe bis zum : 21-Mar-96
 --------------------------------
 Erste 'oeffentliche' Version
 ^^^^^^^^^^ VERSION 0.94 ^^^^^^^^
@@ -95,3 +95,12 @@ Erste 'oeffentliche' Version
 - Moeglichkeit der stationsabhaengigen Steuerung von
   Nearest Server Response eingebaut.
 ^^^^^^^^^^ VERSION 0.97 ^^^^^^^^
+- Bug in connect.c (nw_scan_dir_info) korrigiert.
+- neuses Modul nwbind erzeugt. Dadurch Designaenderungen an
+  allen Modulen.
+- Alle NCP-Responses erhalten nun als Dest Addresse den NCP-Socket.
+  OS/2 Client u. evtl. auch andere (Win95 ?)  erwarten es. !
+- Password Schema leicht veraendert/erweitert.
+  modus '8' -> modus '7',  neuer modus '8'.
+- neue Routine 0x17, 0x10 (set file information) codiert.
+

@@ -1,4 +1,4 @@
-/* net1.h 14-Jan-96 */
+/* net1.h 20-Mar-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -16,7 +16,8 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
-
+#ifndef _M_NET1_H_
+#define _M_NET1_H_
 
 #ifndef LINUX
 extern void print_t_info(struct t_info *t);
@@ -37,3 +38,6 @@ extern int send_ipx_data(int fd, int pack_typ,
 	              int data_len, char *data,
 	              ipxAddr_t *to_addr, char *comment);
 
+extern int get_ipx_addr(ipxAddr_t *addr);
+
+#endif

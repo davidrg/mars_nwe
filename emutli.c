@@ -191,17 +191,31 @@ int init_ipx(uint32 network, uint32 node, int ipx_debug)
   int result=-1;
   int sock=sock = socket(AF_IPX, SOCK_DGRAM, AF_IPX);
   if (socket < 0) {
-    errorp(0, "EMUTLI:init_ipx", NULL);
+    errorp(1, "EMUTLI:init_ipx", NULL);
     exit(1);
   } else {
     set_sock_debug(sock);
-    close(sock);
     result=0;
     /* makes new internal net */
     if (network) {
+      struct sockaddr_ipx ipxs;
+      memset((char*)&ipxs, 0, sizeof(struct sockaddr_ipx));
+      ipxs.sipx_port   = htons(SOCK_NCP);
+      ipxs.sipx_family = AF_IPX;
+      if (bind(sock, (struct sockaddr*)&ipxs,
+            sizeof(struct sockaddr_ipx))==-1) {
+        if (errno == EEXIST || errno == EADDRINUSE) result = -1;
+      } else result =-1;
+      close(sock);
+      if (result) {
+        errorp(1, "EMUTLI:init_ipx socket 0x451", NULL);
+        exit(1);
+      }
       del_internal_net();
       add_internal_net(network, node);
       have_ipx_started++;
+    } else {
+      close(sock);
     }
   }
   return(result);

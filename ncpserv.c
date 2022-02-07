@@ -1,5 +1,4 @@
-/* ncpserv.c */
-#define REVISION_DATE "14-Mar-96"
+/* ncpserv.c 20-Mar-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,14 +17,9 @@
  */
 
 #include "net.h"
-#include "nwdbm.h"
-
-#if !CALL_NCPSERV_OVER_SOCKET
-static  struct     pollfd polls[2];
-#endif
 
 static  int        ncp_fd = -1;
-static  uint8      ipx_in_data[IPX_MAX_DATA+500]; /* space for additional data */
+static  uint8      ipx_in_data[IPX_MAX_DATA];
 static  NCPREQUEST *ncprequest = (NCPREQUEST*)&ipx_in_data;
 static  struct     t_unitdata ud;
 static  int        in_len=0;
@@ -38,6 +32,26 @@ static  time_t 	   akttime;
 static  int        server_goes_down=0;
 static  int 	   ipx_out_fd=-1;
 
+static  int        tells_server_version=0;
+static  int        sock_nwbind=-1;
+
+
+static int get_ini(void)
+{
+  FILE *f  = open_nw_ini();
+  if (f){
+    uint8 buff[256];
+    int   what;
+    while (0 != (what =get_ini_entry(f, 0, buff, sizeof(buff)))) {
+      if (6 == what) {  /* Server Version */
+        tells_server_version = atoi((char*)buff);
+      }
+    } /* while */
+    fclose(f);
+  }
+  return(0);
+}
+
 /* next should be '1', is for testing only */
 #define USE_PERMANENT_OUT_SOCKET  1
 
@@ -49,7 +63,7 @@ static void write_to_nwserv(int what, int connection, int mode,
                    write(FD_NWSERV, &what,       sizeof(int));
                    write(FD_NWSERV, &connection, sizeof(int));
                    write(FD_NWSERV, &size,       sizeof(int));
-                   write(FD_NWSERV, data,        size);  /* ipxAddr_t */
+                   write(FD_NWSERV, data,        size);  /* ipxAddr_t + socknr */
                    break;
 
     case 0x4444  : /* tell the wdog there's no need to look  0 */
@@ -61,6 +75,7 @@ static void write_to_nwserv(int what, int connection, int mode,
                    write(FD_NWSERV, &mode,       sizeof(int));
                    break;
 
+    case 0x5555  : /* close connection */
     case 0x6666  : /* send to client that server holds message */
                    write(FD_NWSERV, &what,       sizeof(int));
                    write(FD_NWSERV, &connection, sizeof(int));
@@ -75,8 +90,8 @@ static void write_to_nwserv(int what, int connection, int mode,
   }
 }
 
-#define nwserv_insert_wdog(connection, adr) \
-   write_to_nwserv(0x2222, (connection), 0, (adr), sizeof(ipxAddr_t))
+#define nwserv_insert_conn(connection, adr, size) \
+   write_to_nwserv(0x2222, (connection), 0, (adr), (size))
 
 #define nwserv_handle_wdog(connection, mode) \
    write_to_nwserv(0x4444, (connection), (mode), NULL, 0)
@@ -84,8 +99,8 @@ static void write_to_nwserv(int what, int connection, int mode,
 #define nwserv_reset_wdog(connection) \
    write_to_nwserv(0x4444, (connection), 0,  NULL, 0)
 
-#define nwserv_close_wdog(connection) \
-   write_to_nwserv(0x4444, (connection), 99, NULL, 0)
+#define nwserv_close_conn(connection) \
+   write_to_nwserv(0x5555, (connection), 0, NULL, 0)
 
 #define nwserv_handle_msg(connection) \
    write_to_nwserv(0x6666, (connection), 0, NULL, 0)
@@ -93,7 +108,7 @@ static void write_to_nwserv(int what, int connection, int mode,
 #define nwserv_down_server() \
    write_to_nwserv(0xffff, 0, 0, NULL, 0)
 
-static int open_ipx_sockets()
+static int open_ipx_sockets(void)
 {
   struct t_bind bind;
   ncp_fd=t_open("/dev/ipx", O_RDWR, NULL);
@@ -105,7 +120,7 @@ static int open_ipx_sockets()
   bind.addr.len    = sizeof(ipxAddr_t);
   bind.addr.maxlen = sizeof(ipxAddr_t);
   bind.addr.buf    = (char*)&my_addr;
-  bind.qlen        = 0; /* immer */
+  bind.qlen        = 0; /* ever 0 */
   if (t_bind(ncp_fd, &bind, &bind) < 0){
     t_error("t_bind in open_ipx_sockets !OK");
     close(ncp_fd);
@@ -130,64 +145,40 @@ static int open_ipx_sockets()
 typedef struct {
    int        fd;           /* writepipe                       */
                             /* or if CALL_NWCONN_OVER_SOCKET then sock_nr of nwconn */
-
    int        pid;          /* pid from son          */
    ipxAddr_t  client_adr;   /* address client        */
-   uint32     object_id;    /* logged object         */
-   	      		    /* 0 = not logged in     */
-   uint8      crypt_key[8]; /* password generation  */
-   uint8      message[60];  /* saved BCastmessage    */
    int        sequence;     /* previous sequence     */
    int        retry;	    /* one reply being serviced is sent */
    time_t     last_access;  /* time of last 0x2222 request */
-   time_t     t_login;      /* login time            */
 } CONNECTION;
 
 static CONNECTION connections[MAX_CONNECTIONS];
-static int 	  anz_connect=0;   /* actual anz connections */
+static int 	  anz_connect=0;   /* actual count connections */
 
 static int new_conn_nr(void)
 {
   int  j = -1;
-  int  one_found=0;
   if (!anz_connect){ /* init all */
     j = MAX_CONNECTIONS;
     while (j--) {
       connections[j].fd       	= -1;
       connections[j].pid       	= -1;
-      connections[j].message[0] = '\0';
     }
     anz_connect++;
     return(1);
   }
-
   j = -1;
   while (++j < MAX_CONNECTIONS) {
     CONNECTION *c=&(connections[j]);
     if (c->fd < 0 && c->pid < 0) {
-      c->message[0] = '\0';
       if (++j > anz_connect) anz_connect=j;
       return(j);
     }
   }
-
   /* nothing free */
-  j=MAX_CONNECTIONS;
-  while (j-- && one_found < 3)  {
-    CONNECTION *c=&(connections[j]);
-    if (!c->object_id) {  /* NOT LOGGED IN */
-      /* makes wdog test faster */
-      nwserv_handle_wdog(j+1, 1);
-      one_found++;
-    }
-  }
-
-  if (!one_found) {
-    j=0;
-    while (j++ < MAX_CONNECTIONS)
-      nwserv_handle_wdog(j, 2);  /* slow activate wdog */
-  }
-
+  j=0;
+  while (j++ < MAX_CONNECTIONS)
+    nwserv_handle_wdog(j, 2);  /* slow activate wdog */
   return(0); /* nothing free */
 }
 
@@ -214,7 +205,7 @@ static int find_conn_nr(ipxAddr_t *addr)
 
 static void clear_connection(int conn)
 {
-  nwserv_close_wdog(conn);
+  nwserv_close_conn(conn);
   if (conn > 0 && --conn < anz_connect) {
     CONNECTION *c = &connections[conn];
     if (c->fd > -1) {
@@ -224,7 +215,6 @@ static void clear_connection(int conn)
       c->fd = -1;
       if (c->pid > -1) kill(c->pid, SIGTERM); /* kill it */
     }
-    c->object_id = 0;
   }
 }
 
@@ -237,11 +227,10 @@ static void kill_connections(void)
   while ((pid=waitpid(-1, &stat_loc, WNOHANG)) > 0) {
     conn =  anz_connect;
     while (conn--) {
-      CONNECTION *c = &connections[conn];
-      if (c->pid == pid) clear_connection(conn+1);
+      if (connections[conn].pid == pid) clear_connection(conn+1);
     }
   }
-  conn =  anz_connect;
+  conn = anz_connect;
   while (conn--) {
     CONNECTION *c = &connections[conn];
     if (c->fd < 0 && c->pid > -1) {
@@ -249,7 +238,7 @@ static void kill_connections(void)
       c->pid = -1;
     }
   }
-  conn         = anz_connect;
+  conn  = anz_connect;
   while (conn--) {
     CONNECTION *c = &connections[conn];
     if (c->fd < 0 && c->pid < 0) anz_connect--;
@@ -260,15 +249,11 @@ static void kill_connections(void)
 static int find_get_conn_nr(ipxAddr_t *addr)
 {
   int connection=find_conn_nr(addr);
-#if 0
-  if (connection) {
-    clear_connection(connection);
-    connection=0;
-  }
-#endif
+
   if (!connection){
     if ((connection = new_conn_nr()) > 0){
       CONNECTION *c=&(connections[connection-1]);
+
 #if !CALL_NWCONN_OVER_SOCKET
       int fds[2];
       memcpy((char*) &(c->client_adr), (char *)addr, sizeof(ipxAddr_t));
@@ -283,7 +268,7 @@ static int find_get_conn_nr(ipxAddr_t *addr)
       memcpy((char*) &(c->client_adr), (char *)addr, sizeof(ipxAddr_t));
       ipx_fd=t_open("/dev/ipx", O_RDWR, NULL);
       if (ipx_fd > -1) {
-        U16_TO_BE16(0,  my_addr.sock); /* actual write socket */
+        U16_TO_BE16(SOCK_AUTO,  my_addr.sock); /* actual write socket */
         bind.addr.len    = sizeof(ipxAddr_t);
         bind.addr.maxlen = sizeof(ipxAddr_t);
         bind.addr.buf    = (char*)&my_addr;
@@ -292,17 +277,11 @@ static int find_get_conn_nr(ipxAddr_t *addr)
           if (nw_debug) t_error("t_bind !OK");
           t_close(ipx_fd);
           ipx_fd = -1;
-        } else {
-          ;
-#if 0
-          t_unbind(ipx_fd);
-          t_close(ipx_fd);
-          ipx_fd = (int) GET_BE16(my_addr.sock);
-#endif
         }
       } else {
         if (nw_debug) t_error("t_open !Ok");
       }
+
       if (ipx_fd < 0) {
 	errorp(0, "find_get_conn_nr, socket", NULL);
 	free_conn_nr(connection);
@@ -314,6 +293,7 @@ static int find_get_conn_nr(ipxAddr_t *addr)
 	if (pid < 0) {
 	  errorp(0, "find_get_conn_nr, fork", NULL);
 	  free_conn_nr(connection);
+
 #if !CALL_NWCONN_OVER_SOCKET
 	  close(fds[0]);
 	  close(fds[1]);
@@ -328,7 +308,9 @@ static int find_get_conn_nr(ipxAddr_t *addr)
 	  char pidstr[20];
 	  char connstr[20];
 	  char addrstr[100];
-	  int j = 2;
+	  char nwbindsock[20];
+
+	  int j = 3;
 #if !CALL_NWCONN_OVER_SOCKET
 	  close(fds[1]);   /* no writing    */
 	  dup2(fds[0], 0); /* becomes stdin */
@@ -337,17 +319,22 @@ static int find_get_conn_nr(ipxAddr_t *addr)
           dup2(ipx_fd, 0); /* becomes stdin */
           close(ipx_fd);
 #endif
-	  while (j++ < 100) close(j);  /* close all > stderr */
+
+          dup2(ncp_fd, 3); /* becomes 3 */
+	  while (j++ < 100) close(j);  /* close all > 3 */
 
 	  sprintf(pidstr, "%d", akt_pid);
 	  sprintf(connstr, "%d", connection);
 	  ipx_addr_to_adr(addrstr, addr);
+	  sprintf(nwbindsock, "%04x", sock_nwbind);
 
 	  execl(get_exec_path(pathname, progname), progname,
-	          pidstr, addrstr, connstr, NULL);
+	          pidstr, addrstr, connstr, nwbindsock, NULL);
+
 	  exit(1);  /* normaly not reached */
         }
 	c->pid = pid;
+
 #if CALL_NWCONN_OVER_SOCKET
         c->fd = (int) GET_BE16(my_addr.sock);
         close(ipx_fd);
@@ -359,35 +346,19 @@ static int find_get_conn_nr(ipxAddr_t *addr)
       }
     }
   }
-  if (connection) nwserv_insert_wdog(connection, (char*)addr);
+  if (connection) {
+    uint8 buff[sizeof(ipxAddr_t)+sizeof(uint16)];
+    memcpy(buff, addr, sizeof(ipxAddr_t));
+#if CALL_NWCONN_OVER_SOCKET
+    /* here i can use the nwconn socket */
+    U16_TO_BE16(connections[connection-1].fd, buff+sizeof(ipxAddr_t));
+#else
+    /* and in this mode all must be go over ncpserv */
+    U16_TO_BE16(SOCK_NCP, buff+sizeof(ipxAddr_t));
+#endif
+    nwserv_insert_conn(connection, (char*)buff, sizeof(buff));
+  }
   return(connection);
-}
-
-static void sent_down_message(void)
-{
-  int k = -1;
-  server_goes_down++;
-  while (++k < anz_connect) {
-    CONNECTION *cn=&connections[k];
-    if (cn->fd > -1) {
-      strmaxcpy(cn->message, "SERVER IS GOING DOWN", 58);
-      nwserv_handle_msg(k+1);
-    }
-  } /* while */
-}
-
-static void get_login_time(uint8 login_time[], CONNECTION *cx)
-{
-  struct tm *s_tm = localtime(&(cx->t_login));
-
-  login_time[0] = s_tm->tm_year;
-  login_time[1] = s_tm->tm_mon+1;
-  login_time[2] = s_tm->tm_mday;
-
-  login_time[3] = s_tm->tm_hour;
-  login_time[4] = s_tm->tm_min;
-  login_time[5] = s_tm->tm_sec;
-  login_time[6] = s_tm->tm_wday;
 }
 
 #if CALL_NWCONN_OVER_SOCKET
@@ -400,982 +371,6 @@ static void send_to_nwconn(int nwconn_sock, char *data, int size)
 }
 #endif
 
-
-static int handle_fxx(CONNECTION *c, int gelen, int func)
-/* here are handled the global 0x15, 0x17, 0x57 functions */
-{
-  IPX_DATA     ipxoutdata;
-  NCPRESPONSE  *ncpresponse  = (NCPRESPONSE*)&ipxoutdata;
-  uint8        *responsedata = ((uint8*)&ipxoutdata)+sizeof(NCPRESPONSE);
-  uint8        *requestdata  = ((uint8*)ncprequest)+sizeof(NCPREQUEST);
-#if 0
-  uint8        len           = *(requestdata+1);
-#endif
-  uint8        ufunc         = *(requestdata+2);
-  uint8        *rdata        = requestdata+3;
-  uint8        completition  = 0;
-  uint8        connect_status= 0;
-  int          data_len      = 0;
-
-  if (nw_debug > 1){
-    int j = gelen - sizeof(NCPREQUEST);
-    if (nw_debug){
-      XDPRINTF((1, 0, "NCP 0x%x REQUEST:ufunc:0x%x", func, ufunc));
-      if (j > 0){
-	uint8  *p=requestdata;
-	XDPRINTF((1, 2, "len %d, DATA:", j));
-	while (j--) {
-	  int c = *p++;
-	  if (c > 32 && c < 127)  XDPRINTF((1, 3, ",\'%c\'", (char) c));
-	  else XDPRINTF((1, 3, ",0x%x", c));
-	}
-	XDPRINTF((1, 1, NULL));
-      }
-    }
-  }
-
-  if (0x15 == func) {
-    switch (ufunc) {  /* Messages */
-      case 0x0 :  {   /* Send Broadcast Message (old) */
-        int anz_conns   = (int)*(rdata);        /* Number of connections */
-        uint8  *conns   = rdata+1;        	/* connectionslist */
-        int msglen      = *(conns+anz_conns);
-        uint8 *msg      = conns+anz_conns+1;
-        uint8 *p        = responsedata;
-        int   one_found = 0;
-        int   k         = -1;
-        *p++            = (uint8) anz_conns;
-        while (++k < anz_conns) {
-          int connr   =  (int) (*conns++);
-          int result  =  0xff; /* target not ok */
-          CONNECTION *cn;
-          if (connr > 0 && --connr < anz_connect
-            && ((cn = &connections[connr]))->fd > -1 ) {
-            if (!cn->message[0]) {
-              strmaxcpy(cn->message, msg, min(58, msglen));
-              result      = 0;    /* Ok */
-            } else result = 0xfc; /* server holds message */
-            nwserv_handle_msg(connr+1);
-            one_found++;
-          }
-          *p++ = (uint8)result;
-        }
-        if (one_found) data_len = anz_conns+1;
-        else completition=0xff;
-      }
-      break;
-
-      case 0x01:  { /* Get Broadcast Message (old) */
-        *responsedata = (uint8) strmaxcpy(responsedata+1, c->message, 58);
-        c->message[0] = '\0';
-        data_len = (int)(*responsedata) + 1;
-      }
-      break;
-
-      case 0x03:  { /* Enable Broadcasts */
-        ;;;
-        XDPRINTF((2, 0, "TODO: enable Broadcasts"));
-      }
-      break;
-
-      case 0x09:  { /* Broadcast to CONSOLE */
-        char message[60];
-        strmaxcpy(message, rdata+1, min(59, *rdata));
-        fprintf(stderr, "\n:%s\n", message);
-      }
-      break;
-
-      case 0xa:  /* Send Broadcast Message (new) */
-      case 0xb:  /* Get Broadcast Message (new) */
-      default : return(-1); /* not handled  */
-    } /* switch */
-  } else if (0x17 == func) { /* Fileserver Enviro */
-    switch (ufunc) {
-     case 0x01 :  { /* Change User Password OLD */
-                     completition=0xff;
-   	     	  }
-                  break;
-
-#if FUNC_17_02_IS_DEBUG
-     case 0x02 :  { /* I hope this is call isn't used    */
-     	            /* now missused as a debug switch :) */
-	             struct XDATA {
-                       uint8  nw_debug;   /* old level */
-	             } *xdata = (struct XDATA*) responsedata;
-                     errorp(2, "0x17, ufunc=2", "Got debugchange =%d for module=%d",
-                           (int)*(rdata+1), (int) *rdata);
-                     if (*rdata == NWCONN)
-                        return(-1); /* let nwconn do the call */
-
-                     if (*rdata == NCPSERV) {
-                       xdata->nw_debug = (uint8) nw_debug;
-                       nw_debug = (int) *(rdata+1);
-                       data_len = 1;
-                     } else completition=0xff;
-   	     	  }
-                  break;
-#endif
-
-     case 0x0c :  { /* Verify Serialization */
-                     completition=0xff;
-   	     	  }
-                  break;
-
-     case 0x0e :  { /* Get Disk Utilization */
-                     completition=0xff;
-   	     	  }
-                  break;
-
-     case 0x11 :  { /* Get FileServer Info */
-	             struct XDATA {
-	               uint8 servername[48];
-	               uint8 version;    /* 2  or   3 */
-	               uint8 subversion; /* 15 or  11 */
-	               uint8 maxconnections[2];
-	               uint8 connection_in_use[2];
-	               uint8 max_volumes[2];
-	               uint8 os_revision;
-	               uint8 sft_level;
-	               uint8 tts_level;
-	               uint8 peak_connection[2];
-	               uint8 accounting_version;
-	               uint8 vap_version;
-	               uint8 queuing_version;
-	               uint8 print_server_version;
-	               uint8 virtual_console_version;
-	               uint8 security_level;
-	               uint8 internet_bridge_version;
-	               uint8 reserved[60];
-	             } *xdata = (struct XDATA*) responsedata;
-                     int k, i;
-	             memset(xdata, 0, sizeof(struct XDATA));
-	             strcpy(xdata->servername, my_nwname);
-
-                     if (!tells_server_version) {
-	               xdata->version    =  2;
-	               xdata->subversion = 15;
-                     } else {
-	               xdata->version    =  3;
-	               xdata->subversion = (tells_server_version == 2)
-	                                      ? 12
-	                                      : 11;
-                     }
-
-                     i=0;
-                     for (k=0; k < anz_connect; k++) {
-                       if (connections[k].fd > -1) i++;
-                     }
-	             U16_TO_BE16(i, xdata->connection_in_use);
-	             U16_TO_BE16(MAX_CONNECTIONS, xdata->maxconnections);
-	             U16_TO_BE16(anz_connect,     xdata->peak_connection);
-	             U16_TO_BE16(MAX_NW_VOLS,     xdata->max_volumes);
-	             data_len = sizeof(struct XDATA);
-	           } break;
-
-     case 0x12 :  { /* Get Network Serial Number */
-	             struct XDATA {
-	               uint8 serial_number[4];
-                       uint8 appl_number[2];
-	             } *xdata = (struct XDATA*) responsedata;
-                     /* serial-number 4-Byte */
-	             U32_TO_BE32(NETWORK_SERIAL_NMBR, xdata->serial_number);
-                     /* applikation-number 2-Byte */
-	             U16_TO_BE16(NETWORK_APPL_NMBR,  xdata->appl_number);
-	             data_len = sizeof(struct XDATA);
-   	     	  }
-                  break;
-
-     case 0x13 :  { /* Get Connection Internet Address */
-	            int conn  = (int)*(rdata);  /* Connection Nr */
-	            if (conn && --conn < anz_connect
-	              && connections[conn].fd > -1 ) {
-	              CONNECTION *cx=&(connections[conn]);
-	              data_len = sizeof(ipxAddr_t);
-	              memcpy(responsedata, (char*)&(cx->client_adr), data_len);
-	            } else completition = 0xff;
-	          } break;
-
-     case 0x14 :  { /* Login Objekt, unencrypted passwords */
-	            uint8  *p    =  rdata;
-                    uint8  *p1   =  p+3 + *(p+2);  /* here is password */
-	            int    result;
-	            NETOBJ obj;
-                    char   password[80];
-	            obj.type     =  GET_BE16(p);
-	            xstrmaxcpy(obj.name, p+3, (int) *(p+2));
-                    upstr(obj.name);
-	            xstrmaxcpy(password, p1+1, (int) *p1);
-                    XDPRINTF((10, 0, "LOGIN unencrypted PW NAME='%s', PASSW='%s'",
-                             obj.name, password));
-	            if (0 == (result = find_obj_id(&obj, 0))) {
-                      if (password_scheme & PW_SCHEME_LOGIN) {
-#if 0
-                        if (obj.id == 1) {
-                          result=-0xff; /* SUPERVISOR ever encryted !! */
-                          XDPRINTF((1, 0, "Supervisor tried unencrypted LOGIN"));
-                        } else
-#endif
-                          result=nw_test_unenpasswd(obj.id, password);
-                      } else {
-                        XDPRINTF((1, 0, "unencryted logins are not enabled"));
-                        result=-0xff;
-                      }
-                    }
-	            if (!result) {
-	              c->object_id = obj.id;     /* actuell Object ID  */
-                      c->t_login   = akttime;    /* u. login Time      */
-                      get_guid((int*) (rdata+2), (int*) (rdata+2+sizeof(int)), obj.id);
-                      in_len=12 + 2*sizeof(int);
-                      return(-1); /* nwconn must do the rest */
-	            } else completition = (uint8) -result;
-	          } break;
-
-     case 0x15 :  { /* Get Object Connection List */
-	            uint8  *p           =  rdata;
-	            int    result;
-	            NETOBJ obj;
-	            obj.type            =  GET_BE16(p);
-                    p+=2;
-	            strmaxcpy((char*)obj.name,  (char*)(p+1), (int) *(p));
-                    upstr(obj.name);
-	            result = find_obj_id(&obj, 0);
-	            if (!result){
-                      int k=-1;
-                      int anz  = 0;
-                      p = responsedata+1;
-                      while (++k < anz_connect && anz < 255) {
-                        CONNECTION *cn= &connections[k];
-                        if (cn->fd > -1 && cn->object_id == obj.id) {
-                          *p++=(uint8)k+1;
-                          anz++;
-                        }
-                      } /* while */
-                      *responsedata = anz;
-                      data_len = 1 + anz;
-                    } else completition=(uint8)-result;
-                  }
-                  break;
-
-     case 0x16 :  { /* Get Connection Info, OLD */
-	            struct XDATA {
-	              uint8 object_id[4];
-	              uint8 object_type[2];
-	              uint8 object_name[48];
-	              uint8 login_time[7];
-                      uint8 reserved;
-	            } *xdata = (struct XDATA*) responsedata;
-	            int conn = (uint16)*(rdata);  /* Connection Nr */
-                    memset(xdata, 0, sizeof(struct XDATA));
-                    data_len = sizeof(struct XDATA);
-	            if (conn && conn <= anz_connect
-	                     && connections[conn-1].fd > -1 ) {
-	              CONNECTION *cx=&(connections[conn-1]);
-	              NETOBJ    obj;
-	              int       result;
-	              obj.id =  cx->object_id;
-	              result =  nw_get_obj(&obj);
-	              if (!result) {
-	                memset(xdata, 0, sizeof(struct XDATA));
-	                U32_TO_BE32(obj.id,   xdata->object_id);
-	                U16_TO_BE16(obj.type, xdata->object_type);
-	                strncpy(xdata->object_name, obj.name, 48);
-                        get_login_time(xdata->login_time, cx);
-	              } /*  else completition = (uint8)(-result); */
-	            } else if (!conn || conn > MAX_CONNECTIONS) {
-                      data_len     = 0;
-                      completition = 0xfd;
-                    }
-	          } break;
-
-     case 0x17 :  { /* get crypt key */
-                    int    k   = sizeof(c->crypt_key);
-                    uint8 *p   = c->crypt_key;
-                    uint8 *pp  = responsedata;
-                    data_len   = k;
-                    while (k--) *pp++ = *p++ =
-#ifndef _MAR_TESTS_
-                      (uint8) rand();
-#else
-                      (uint8) k;
-#endif
-                    /* if all here are same (1 or 2) then the resulting key is */
-                    /* 00000000  */
-                    if (password_scheme & PW_SCHEME_GET_KEY_FAIL)
-                       completition=0xfb;
-                  }
-                  break;
-
-     case 0x18 :  { /* crypt_keyed LOGIN */
-                    uint8 *p     =  rdata+sizeof(c->crypt_key);
-	            NETOBJ obj;
-                    int    result;
-	            obj.type     =  GET_BE16(p);
-                    obj.id       =  0;
-	            xstrmaxcpy(obj.name, (char*)(p+3), *(p+2));
-                    upstr(obj.name);
-                    XDPRINTF((2, 0, "LOGIN CRYPTED PW NAME='%s'",obj.name));
-	            if (0 == (result = find_obj_id(&obj, 0)))
-                      result=nw_test_passwd(obj.id, c->crypt_key, rdata);
-	            if (result > -1) {
-	              c->object_id = obj.id;        /* actuell Object */
-                      c->t_login   = akttime;       /* and login time */
-                      get_guid((int*)(rdata+2), (int*)(rdata+2+sizeof(int)), obj.id);
-                      in_len=12 + 2*sizeof(int);
-                      return(-1); /* nwconn must do the rest */
-	            } else {
-                      if ((password_scheme & PW_SCHEME_LOGIN) &&
-                         result == -0xff && obj.id != 1) /* not supervisor */
-                        completition = 0xfb; /* We lie here, to force LOGIN */
-                      else                   /* to use the old call         */
-                        completition = (uint8) -result;
-                    }
-     	       	  }
-                  break;
-
-     case 0x1c :  { /* Get Connection Info, new */
-	            struct XDATA {
-	              uint8 object_id[4];
-	              uint8 object_type[2];
-	              uint8 object_name[48];
-	              uint8 login_time[7];
-                      uint8 reserved;
-	            } *xdata = (struct XDATA*) responsedata;
-	            int conn   = (uint16)*(rdata);  /* Connection Nr */
-	            if (conn && --conn < anz_connect){
-	              CONNECTION *cx=&(connections[conn]);
-	              NETOBJ    obj;
-	              int       result;
-	              obj.id =  cx->object_id;
-	              result =  nw_get_obj(&obj);
-	              if (!result) {
-	                memset(xdata, 0, sizeof(struct XDATA));
-	                U32_TO_BE32(obj.id,   xdata->object_id);
-	                U16_TO_BE16(obj.type, xdata->object_type);
-	                strncpy(xdata->object_name, obj.name, 48);
-                        get_login_time(xdata->login_time, cx);
-	                data_len = sizeof(struct XDATA);
-	              } else completition = (uint8)(-result);
-	            } else completition = 0xff;
-	          } break;
-
-
-     case 0x32 :  {  /* Create Bindery Object */
-	            NETOBJ obj;
-	            int    result;
-	            uint8  *p           =  rdata;
-	            obj.flags           =  *p++;
-	            obj.security        =  *p++;
-	            obj.type            =  GET_BE16(p);
-	            strmaxcpy((char*)obj.name, (char*)p+3, (int) *(p+2));
-	            result = nw_create_obj(&obj, 0);
-	            if (result < 0) completition = (uint8) -result;
-	          } break;
-
-     case 0x33 :  {  /* delete OBJECT */
-	            uint8  *p           =  rdata;
-	            int    result;
-	            NETOBJ obj;
-	            obj.type            =  GET_BE16(p);
-	            strmaxcpy((char*)obj.name,  (char*)(p+3), (int) *(p+2));
-	            result = nw_delete_obj(&obj);
-	            if (result < 0) completition = (uint8) -result;
-	          } break;
-
-     case 0x34 :  {  /* rename OBJECT, only SU */
-	            int result=-0xff;
-                    if (1 == c->object_id) {
-	              uint8  *p           =  rdata;
-	              NETOBJ obj;
-                      uint8  newname[256];
-                      uint8  *p1  =  p+3 + *(p+2); /* new Name Length */
-	              obj.type    =  GET_BE16(p);
-	              strmaxcpy((char*)obj.name, (char*)(p+3),  (int) *(p+2));
-	              strmaxcpy((char*)newname,  (char*)(p1+1), (int) *(p1));
-	              result = nw_rename_obj(&obj, newname);
-                    }
-	            if (result) completition = (uint8) -result;
-	          } break;
-
-
-     case 0x35 :  {  /* get Bindery Object ID */
-	            struct XDATA {
-	              uint8 object_id[4];
-	              uint8 object_type[2];
-	              uint8 object_name[48];
-	            } *xdata = (struct XDATA*) responsedata;
-	            uint8  *p           =  rdata;
-	            int    result;
-	            NETOBJ obj;
-	            obj.type            =  GET_BE16(p);
-	            strmaxcpy((char*)obj.name,  (char*)(p+3), (int) *(p+2));
-                    upstr(obj.name);
-	            result = find_obj_id(&obj, 0);
-	            if (!result){
-	              U32_TO_BE32(obj.id,   xdata->object_id);
-	              U16_TO_BE16(obj.type, xdata->object_type);
-	              strncpy(xdata->object_name, obj.name, 48);
-	              data_len          = sizeof(struct XDATA);
-	            } else completition = (uint8) -result;
-	          } break;
-
-     case 0x36 :  {  /* get Bindery Object Name */
-	            struct XDATA {
-	              uint8 object_id[4];
-	              uint8 object_type[2];
-	              uint8 object_name[48];
-	            } *xdata = (struct XDATA*) responsedata;
-	            uint8 *p = rdata;
-	            int    result;
-	            NETOBJ obj;
-	            obj.id = GET_BE32(p);
-	            result = nw_get_obj(&obj);
-	            if (!result){
-	              U32_TO_BE32(obj.id,   xdata->object_id);
-	              U16_TO_BE16(obj.type, xdata->object_type);
-	              strncpy(xdata->object_name, obj.name, 48);
-	              data_len = sizeof(struct XDATA);
-	            } else completition = (uint8) -result;
-	          } break;
-
-     case 0x37 :  {  /* Scan Bindery Object */
-	            struct XDATA {
-	              uint8 object_id[4];
-	              uint8 object_type[2];
-	              uint8 object_name[48];
-	              uint8 object_flag;
-	              uint8 object_security;
-	              uint8 object_has_properties;
-	            } *xdata = (struct XDATA*) responsedata;
-	            uint32 last_obj_id  =  GET_BE32(rdata);
-	            uint8  *p           =  rdata+4;
-	            int    result;
-	            NETOBJ obj;
-	            obj.type            =  GET_BE16(p);
-	            strmaxcpy((char*)obj.name, (char*)(p+3),(int) *(p+2));
-                    upstr(obj.name);
-	            result = find_obj_id(&obj, last_obj_id);
-	            if (!result){
-	              U32_TO_BE32(obj.id,    xdata->object_id);
-	              U16_TO_BE16(obj.type,  xdata->object_type);
-	              strncpy(xdata->object_name, obj.name, 48);
-	              xdata->object_flag       = obj.flags;
-	              xdata->object_security   = obj.security;
-	              if (nw_obj_has_prop(&obj) > 0)
-	                 xdata->object_has_properties = 0xff;
-	              else xdata->object_has_properties = 0;
-	              data_len = sizeof(struct XDATA);
-	            } else completition = (uint8) -result;
-	          }
-	          break;
-
-     case 0x38 :  {  /* change Bindery Objekt Security */
-                     /* only SU ! */
-                    int result= -0xff;
-                    if (1 == c->object_id) {
-	              uint8  *p           =  rdata;
-	              NETOBJ obj;
-	              obj.type            =  GET_BE16(p+1);
-	              xstrmaxcpy(obj.name,  (char*)(p+4), (int) *(p+3));
-	              result = nw_change_obj_security(&obj, (int)*p);
-                    }
-                    if (result < 0) completition = (uint8) -result;
-	          } break;
-
-     case 0x39 :  {  /* create Property */
-	            uint8  *p             = rdata;
-	            int object_type       = GET_BE16(p);
-	            int object_namlen     = (int) *(p+=2);
-	            uint8 *object_name    = ++p;
-	            int prop_flags        = (int) *(p+=object_namlen);
-	            int prop_security     = (int) *(++p);
-	            int prop_namlen       = (int) *(++p);
-	            uint8 *prop_name      = ++p;
-	            int result = nw_create_prop( object_type,
-	                         object_name, object_namlen,
-	                         prop_name,   prop_namlen,
-	                         prop_flags,  prop_security);
-	            if (result) completition = (uint8) -result;
-	          } break;
-
-
-     case 0x3a :  {  /* delete property */
-	            uint8  *p         =  rdata;
-	            int object_type   =  GET_BE16(p);
-	            int object_namlen =  (int) *(p+2);
-	            uint8 *object_name=  p+3;
-	            int prop_namlen   =  (int) *(p+3+object_namlen);
-	            uint8 *prop_name  =  p+4+object_namlen;
-	            int result = nw_delete_property( object_type,
-	                         object_name, object_namlen,
-	                         prop_name, prop_namlen);
-	            if (result < 0) completition = (uint8) -result;
-	          } break;
-
-     case 0x3b :  {  /* Change Prop Security */
-	            uint8  *p         =  rdata;
-	            int object_type   =  GET_BE16(p);
-	            int object_namlen =  (int) *(p+=2);
-	            uint8 *object_name=  ++p;
-	            int prop_security =  (int) *(p+=object_namlen);
-	            int prop_namlen   =  (int) *(++p);
-	            uint8 *prop_name  =  ++p;
-	            int result = nw_change_prop_security(object_type,
-	                         object_name, object_namlen,
-	                         prop_name, prop_namlen, prop_security);
-	            if (result) completition = (uint8) -result;
-	          } break;
-
-     case 0x3c :  {  /* Scan Property */
-	            struct XDATA {
-	              uint8 prop_name[16];
-	              uint8 flags;       /* set=2, dynamic=1 */
-	              uint8 security;
-                      uint8 akt_scan[4];
-	              uint8 has_value;   /* ff, if there are Prop's Values */
-	              uint8 weisnicht;
-	            } *xdata = (struct XDATA*) responsedata;
-	            uint8  *p = rdata;
-	            int object_type    =  GET_BE16(p);
-	            int object_namlen  =  (int) *(p+2);
-	            uint8 *object_name =  (p+=3);
-	            uint32 last_scan   =  GET_BE32((p+object_namlen));
-	            uint8  prop_namlen =  (int)*   (p+=object_namlen+4);
-	            uint8 *prop_name   =  ++p;
-                    NETPROP prop;
-	            int result = nw_scan_property(&prop,
-	                         object_type, object_name, object_namlen,
-	                         prop_name, prop_namlen, &last_scan);
-	            if (result > -1) {
-                      strncpy(xdata->prop_name,
-                                     prop.name, sizeof(xdata->prop_name));
-                      U32_TO_BE32(last_scan, xdata->akt_scan);
-	              xdata->flags      = prop.flags;
-	              xdata->security   = prop.security;
-	              xdata->has_value  = (uint8) result;
-	              xdata->weisnicht  = 0x0;
-	              data_len 	        = sizeof(struct XDATA);
-	            } else completition = (uint8) -result;
-	          } break;
-
-     case 0x3d :  {  /* read Bindery Property Value */
-	            struct XDATA {
-	              uint8 property_value[128];
-	              uint8 more_segments;
-	              uint8 property_flags;
-	            } *xdata = (struct XDATA*) responsedata;
-	            uint8  *p         =  rdata;
-	            int object_type   =  GET_BE16(p);
-	            int object_namlen =  (int) *(p+2);
-	            uint8 *object_name=  p+3;
-	            int segment_nr    =  (int) *(p+3+object_namlen);
-	            int prop_namlen   =  (int) *(p+4+object_namlen);
-	            uint8 *prop_name  =  p+5+object_namlen;
-	            int result = nw_get_prop_val( object_type,
-	                         object_name, object_namlen,
-	                         segment_nr,
-	                         prop_name, prop_namlen,
-	                         xdata->property_value,
-	                         &(xdata->more_segments),
-	                         &(xdata->property_flags));
-	            if (!result){
-	              data_len = sizeof(struct XDATA);
-	            } else completition = (uint8) -result;
-	          } break;
-
-     case 0x3e :  {  /* write Bindery Property Value */
-	            uint8  *p         =  rdata;
-	            int object_type   =  GET_BE16(p);
-	            int object_namlen =  (int) *(p+2);
-	            uint8 *object_name=  p+3;
-	            int segment_nr    = (int) *(p+3+object_namlen);
-	            int erase_segment = (int) *(p+4+object_namlen);
-	            int prop_namlen   = (int) *(p+5+object_namlen);
-	            uint8 *prop_name  =  p+6+object_namlen;
-	            uint8 *valdata    =  p+6+object_namlen+prop_namlen;
-	            int result = nw_write_prop_value( object_type,
-	                         object_name, object_namlen,
-	                         segment_nr, erase_segment,
-	                         prop_name, prop_namlen,
-	                         valdata);
-	            if (result) completition = (uint8) -result;
-	          } break;
-
-     case 0x40:   {  /* change object password  */
-                    if (password_scheme & PW_SCHEME_CHANGE_PW) {
-                      uint8    *p    =  rdata;
-                      uint8    oldpassword[50];
-                      uint8    newpassword[50];
-	              NETOBJ   obj;
-                      int      result;
-	              obj.type        =  GET_BE16(p);
-                      p+=2;
-	              xstrmaxcpy(obj.name,     p+1, (int) *p);
-                      upstr(obj.name);
-                      p +=   ((*p)+1);
-	              xstrmaxcpy(oldpassword,  p+1, (int) *p);
-                      p +=   ((*p)+1);
-	              xstrmaxcpy(newpassword,  p+1, (int) *p);
-	              if (0 == (result = find_obj_id(&obj, 0))) {
-                        XDPRINTF((6, 0, "CHPW: OLD=`%s`, NEW=`%s`", oldpassword,
-                                         newpassword));
-	                if (c->object_id == 1 ||
-	                   0 == (result=nw_test_unenpasswd(obj.id, oldpassword)))
-	                  result=nw_set_passwd(obj.id, newpassword, 0);
-                      }
-	              if (result < 0) completition = (uint8) -result;
-                    } else {
-                      XDPRINTF((1, 0, "Change object password unencryted not enabled"));
-                      completition=0xff;
-                    }
-	          } break;
-
-     case 0x41 :  {  /* add Bindery Object to Set */
-	            uint8  *p         =  rdata;
-	            int object_type   =  GET_BE16(p);
-	            int object_namlen =  (int) *(p+=2);
-	            uint8 *object_name=  ++p;
-	            int prop_namlen   =  (int) *(p+=object_namlen);
-	            uint8 *prop_name  =  ++p;
-	            int member_type   =  GET_BE16(p+prop_namlen);
-	            int member_namlen =  (int) *(p+=(prop_namlen+2));
-	            uint8 *member_name=  ++p;
-	            int result = nw_add_obj_to_set( object_type,
-	                         object_name, object_namlen,
-	                         prop_name, prop_namlen,
-	                         member_type,
-	                         member_name, member_namlen);
-	            if (result) completition = (uint8) -result;
-	          } break;
-
-     case 0x42 :  {  /* delete Bindery Object from Set */
-	            uint8  *p         =  rdata;
-	            int object_type   =  GET_BE16(p);
-	            int object_namlen =  (int) *(p+=2);
-	            uint8 *object_name=  ++p;
-	            int prop_namlen   =  (int) *(p+=object_namlen);
-	            uint8 *prop_name  =  ++p;
-	            int member_type   =  GET_BE16(p+prop_namlen);
-	            int member_namlen =  (int) *(p+=(prop_namlen+2));
-	            uint8 *member_name=  ++p;
-	            int result = nw_delete_obj_from_set( object_type,
-	                         object_name, object_namlen,
-	                         prop_name, prop_namlen,
-	                         member_type,
-	                         member_name, member_namlen);
-	            if (result) completition = (uint8) -result;
-	          } break;
-
-     case 0x43 :  {  /* is Bindery Object in Set */
-	            uint8  *p         =  rdata;
-	            int object_type   =  GET_BE16(p);
-	            int object_namlen =  (int) *(p+=2);
-	            uint8 *object_name=  ++p;
-	            int prop_namlen   =  (int) *(p+=object_namlen);
-	            uint8 *prop_name  =  ++p;
-	            int member_type   =  GET_BE16(p+prop_namlen);
-	            int member_namlen =  (int) *(p+=(prop_namlen+2));
-	            uint8 *member_name=  ++p;
-	            int result = nw_is_obj_in_set( object_type,
-	                         object_name, object_namlen,
-	                         prop_name, prop_namlen,
-	                         member_type,
-	                         member_name, member_namlen);
-	            if (result) completition = (uint8) -result;
-	          } break;
-
-
-     case 0x44 :  { /* CLOSE BINDERY */
-	            ;
-	          } break;
-
-     case 0x45 :  { /* OPEN BINDERY */
-	            ;
-	          } break;
-
-
-     case 0x46 :  {   /* GET BINDERY ACCES LEVEL */
-#if 0
-	            struct XDATA {
-	              uint8 acces_level;
-	              uint8 object_id[4];
-	            } *xdata = (struct XDATA*) responsedata;
-#else
-	            uint8    *xdata = responsedata;
-#endif
-
-	            NETOBJ    obj;
-	            obj.id    = c->object_id;
-                    if (0 != obj.id) {
-	              int result = nw_get_obj(&obj);
-	              if (!result) {
-	                *xdata  = obj.security;
-	                U32_TO_BE32(obj.id, (xdata+1));
-                        XDPRINTF((2,0, "ACCESS LEVEL:=0x%x, obj=0x%lx",
-                                  (int) obj.security, obj.id));
-	                data_len = 5;
-	              } else completition = (uint8)-result;
-                    } else {
-                      *xdata = 0;
-                      memset(xdata+1, 0xff, 4);
-                      data_len = 5;
-                    }
-	          }
-	          break;
-
-
-     case 0x47 :  { /* SCAN BINDERY OBJECT TRUSTEE PATH */
-                    /* TODO !!! */
-                    completition = (uint8)0xff;
-   	          }
-                  break;
-
-     case 0x48 :  { /* GET BINDERY ACCES LEVEL from OBJECT ??? */
-	            struct XDATA {
-	              uint8 acces_level;
-	            } *xdata = (struct XDATA*) responsedata;
-	            NETOBJ    obj;
-	            int       result;
-	            obj.id =  GET_BE32(rdata);
-	            result =  nw_get_obj(&obj);
-	            if (!result) {
-	              xdata->acces_level = obj.security;
-	              data_len = sizeof(struct XDATA);
-	            } else completition = (uint8)-result;
-	          }
-	          break;
-
-     case 0x49 :  { /* IS CALLING STATION A MANAGER */
-	            NETOBJ    obj;
-	            obj.id =  GET_BE32(rdata);
-                    /* TODO !! */
-                    completition = 0;  /* here allways Manager  */
-                    /* not manager, then completition = 0xff */
-   	     	  }
-                  break;
-
-     case 0x4a :  { /* keyed verify password  */
-                    uint8    *p  =  rdata+sizeof(c->crypt_key);
-	            NETOBJ   obj;
-                    int      result;
-	            obj.type     =  GET_BE16(p);
-	            strmaxcpy((char*)obj.name, (char*)(p+3), *(p+2));
-                    upstr(obj.name);
-	            if (0 == (result = find_obj_id(&obj, 0)))
-                      result=nw_test_passwd(obj.id, c->crypt_key, rdata);
-	            if (result < 0) completition = (uint8) -result;
-                    XDPRINTF((2,0, "Keyed Verify PW from OBJECT='%s', result=%d",
-                       obj.name, result));
-                  }
-                  break;
-
-#ifdef _CHANGE_PASSWD_TESTING_
-     case 0x4b :  { /* keyed change pasword  */
-                    uint8  *p     =  rdata+sizeof(c->crypt_key);
-	            NETOBJ obj;
-                    int    result;
-	            obj.type =  GET_BE16(p);
-                    p+=2;
-	            strmaxcpy((char*)obj.name, (char*)(p+1), *p);
-                    upstr(obj.name);
-                    p += (*p+1);  /* here is now password-type ?? 0x60,0x66 */
-
-	            if (0 == (result = find_obj_id(&obj, 0)))
-	              result=nw_test_passwd(obj.id, c->crypt_key, rdata);
-#if 0
-                    if (result > -1)
-	              result=nw_set_enpasswd(obj.id, p+1);
-#endif
-	            if (result< 0) completition = (uint8) -result;
-                    XDPRINTF((1, 0, "Keyed Change PW from OBJECT='%s', result=0x%x",
-                      obj.name, result));
-                  }
-                  break;
-#endif
-
-     case 0x4c :  { /* List Relations of an Object  */
-                   XDPRINTF((1, 0, "TODO:List Relations of an Object"));
-                   completition=0xfb;
-                  } break;
-
-     case 0x64 :  {   /* Create Queue */
-                   XDPRINTF((1, 0, "TODO:Create QUEUE ??"));
-	          } break;
-
-     case 0x66 :   {   /* Read Queue Current Status */
-	           /*  !!!!!! TO DO */
-	           NETOBJ    obj;
-	           obj.id =  GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO:READ QUEUE STATUS of Q=0x%lx", obj.id));
-                   completition=0xd5; /* no Queue Job */
-	          }break;
-
-     case 0x6A :    /* Remove Job from Queue OLD */
-     case 0x80 :  { /* Remove Job from Queue NEW */
-	           NETOBJ      obj;
-                   uint32 jobnr  = (ufunc == 0x6A)
-                                      ? GET_BE16(rdata+4)
-                                      : GET_BE32(rdata+4);
-	           obj.id        = GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO:Remove Job=%ld from Queue Q=0x%lx", jobnr, obj.id));
-                   completition=0xd5; /* no Queue Job */
-	          }break;
-
-     case 0x6B :  {   /* Get Queue Job List, old */
-	           /*  !!!!!! TO DO */
-	           NETOBJ    obj;
-	           obj.id =  GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO:GET QUEUE JOB LIST von Q=0x%lx", obj.id));
-                   completition=0xd5; /* no Queue Job */
-	          }break;
-
-     case 0x6C :  {   /* Get Queue Job Entry */
-	           /*  !!!!!! TODO */
-	           NETOBJ    obj;
-	           obj.id =  GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO: GET QUEUE JOB ENTRY von Q=0x%lx", obj.id));
-                   completition=0xd5; /* no Queue Job */
-	          }break;
-
-     case 0x68:     /* creat queue job and file old */
-     case 0x79:   { /* creat queue job and file new */
-                    uint32 q_id      = GET_BE32(rdata);
-                    uint8  *dir_name = rdata+4+280+1;
-                    int result       = nw_get_q_dirname(q_id, dir_name);
-                    if (result > -1) {
-                      *(dir_name-1)  = result;
-                      in_len         = 295 + result;
-                      return(-1);   /* nwconn must do the rest !!!!! */
-                    } else completition = (uint8) -result;
-                  }
-                  break;
-
-
-     case 0x69:      /* close file and start queue old ?? */
-     case 0x7f:   {  /* close file and start queue */
-                    uint32 q_id      = GET_BE32(rdata);
-                    uint8  *prc      = rdata+4+4+1;
-                    int result       = nw_get_q_prcommand(q_id, prc);
-                    if (result > -1) {
-                      *(prc-1)       = result;
-                      in_len         = 19 + result;
-                      return(-1);   /* nwconn must do the rest !!!!! */
-                    } else completition = (uint8) -result;
-                  }
-                  break;
-
-
-     case 0x7d :  { /* Read Queue Current Status, new */
-	           NETOBJ    obj;
-	           obj.id =  GET_BE32(rdata);
-                   XDPRINTF((1, 0, "TODO:READ QUEUE STATUS NEW of Q=0x%lx", obj.id));
-                   completition=0xd5; /* no Queue Job */
-	          }break;
-
-     case 0xc8 :  { /* CHECK CONSOLE PRIVILEGES */
-                   XDPRINTF((1, 0, "TODO: CHECK CONSOLE PRIV"));
-	           /*  !!!!!! TODO completition=0xc6 (no rights) */
-	          } break;
-
-     case 0xc9 :  { /* GET FILE SERVER DESCRIPTION STRINGs */
-	           char *company       = "Mars :-)";
-	           char *revision      = "Version %d.%d";
-	           char *revision_date = REVISION_DATE;
-	           char *copyright     = "(C)opyright Martin Stover";
-	           int  k=strlen(company)+1;
-                   int  l;
-	           memset(responsedata, 0, 512);
-	           strcpy(responsedata,   company);
-
-                   l = 1 + sprintf(responsedata+k, revision,
-                                     _VERS_H_, _VERS_L_ );
-#if 0
-                   k+=l;
-#else
-                   /* BUG in LIB */
-                   k += (1 + strlen(responsedata+k));
-#endif
-	           strcpy(responsedata+k, revision_date);
-	           k += (strlen(revision_date)+1);
-	           strcpy(responsedata+k, copyright);
-	           k += (strlen(copyright)+1);
-	           data_len = k;
-	          } break;
-
-     case 0xcd :  { /* GET FILE SERVER LOGIN STATUS  */
-	            struct XDATA {
-                      uint8 login_allowed; /* 0 NO , 1 YES */
-	            } *xdata = (struct XDATA*) responsedata;
-                    xdata->login_allowed = 1;
-	            data_len 		 = 1;
-                  }
-                  break;
-
-     case 0xd1 :  /* Send Console Broadcast (old) */
-                  {
-                    uint8      *p = rdata;
-                    int anz_conns = (int) *p++;
-                    uint8    *co  = p;
-                    int msglen    = (int) *(p+anz_conns);
-                    char  *msg    = (char*) p+anz_conns+1;
-                    int k = -1;
-                    if (anz_conns) {
-                      while (++k < anz_conns) {
-                        int conn= (int) *co++;
-                        if (conn == ncprequest->connection) {
-                          strmaxcpy(c->message, msg, min(58, msglen));
-                          connect_status = 0x40;  /* don't know why */
-                        } else if (conn && --conn < anz_connect) {
-                          CONNECTION *cc= &(connections[conn]);
-                          if (cc->object_id) {  /* if logged */
-                            strmaxcpy(cc->message, msg, min(58, msglen));
-      			    nwserv_handle_msg(conn+1);
-                          }
-                        }
-                      }
-                    } else {
-                      strmaxcpy(c->message, msg, min(58, msglen));
-                      connect_status = 0x40;  /* don't know why */
-                    }
-                  }
-                  break;
-#if 0
-     case 0xfd :  /* Send Console Broadcast (new) */
-                  return(-1); /* nicht erkannt */
-                  break;
-#endif
-
-     case 0xd3 :  { /* down File Server */
-                    if (c->object_id == 1) { /* only SUPERVISOR */
-                       /* inform nwserv */
-                       nwserv_down_server();
-                    } else completition = 0xff;
-                  }
-                  break;
-
-       default : return(-1); /* not known here */
-    }  /* switch */
-  } else if (0x57 == func) { /* namespace functions not handled !!  */
-    completition = 0xfb;     /* 2.15 don't kwown namespace services */
-  } else return(-1); /* not kwown here */
-  U16_TO_BE16(0x3333,           ncpresponse->type);
-  ncpresponse->sequence       = ncprequest->sequence;
-  ncpresponse->connection     = ncprequest->connection;
-  ncpresponse->reserved       = 0;
-  ncpresponse->completition   = completition;
-  if (c->message[0]) connect_status |= 0x40;
-  ncpresponse->connect_status = connect_status;
-#if CALL_NWCONN_OVER_SOCKET
-  data_len+=sizeof(NCPRESPONSE);
-  send_to_nwconn(c->fd, (char*)ncpresponse, data_len);
-#else
-  data_len=write(c->fd, (char*)ncpresponse,
-                         sizeof(NCPRESPONSE) + data_len);
-#endif
-  XDPRINTF((2, 0, "0x%x 0x%x compl:0x%x, write to %d, anz = %d",
-      func, (int)ufunc, (int) completition, c->fd, data_len));
-
-  return(0);  /* ok */
-}
 
 static void ncp_response(int type, int sequence,
 	          int connection,      int task,
@@ -1394,36 +389,15 @@ static void ncp_response(int type, int sequence,
   if (nw_debug){
     char comment[80];
     sprintf(comment, "NCP-RESP compl=0x%x ", completition);
-    send_ipx_data(ipx_out_fd, 17, sizeof(NCPRESPONSE) + data_len,
+    send_ipx_data(ncp_fd, 17, sizeof(NCPRESPONSE) + data_len,
 	                 (char *) ncpresponse,
 	                 &from_addr, comment);
   } else
-    send_ipx_data(ipx_out_fd, 17, sizeof(NCPRESPONSE) + data_len,
+    send_ipx_data(ncp_fd, 17, sizeof(NCPRESPONSE) + data_len,
 	               (char *) ncpresponse,
 	                &from_addr, NULL);
 }
 
-#if 0
-static void sig_child(int isig)
-{
-  int k=-1;
-  int status;
-  int pid;
-  signal(SIGCHLD, sig_child);
-  pid=wait(&status);
-  XDPRINTF((1,0, "GOT conn pid=%d", pid));
-  if (pid > -1) {
-    while (++k < anz_connect) {
-      CONNECTION *c = &connections[k];
-      if (c->pid == pid) {
-        clear_connection(k+1);
-        break;
-      }
-    }
-    kill(pid, SIGKILL); /* kill it */
-  }
-}
-#endif
 
 static void close_all(void)
 {
@@ -1440,7 +414,6 @@ static void close_all(void)
       ipx_out_fd = -1;
     }
   }
-  sync_dbm();
 }
 
 static int server_is_down=0;
@@ -1453,7 +426,6 @@ static int got_sig_child=0;
 static void sig_child(int isig)
 {
   got_sig_child++;
-  signal(SIGCHLD, sig_child);
 }
 
 static void set_sig(void)
@@ -1466,67 +438,13 @@ static void set_sig(void)
   signal(SIGHUP,   SIG_IGN);
 }
 
-static void handle_bind_calls(uint8 *p)
-{
-  int func = (int) *p;
-  p       += 2;
-  switch (func) {
-     case  0x01 :
-       {  /* insert NET_ADDRESS */
-         NETOBJ obj;
-         obj.type = GET_BE16(p);
-         p += 2;
-         strmaxcpy(obj.name, p+1, *p);
-         p += (*p+1);
-         nw_new_obj_prop(0, obj.name, obj.type, O_FL_DYNA, 0x40,
-                           "NET_ADDRESS", P_FL_DYNA|P_FL_ITEM,  0x40,
-                           (char *)p, sizeof(ipxAddr_t));
-       }
-       break;
-
-     case  0x02 :
-       {  /* delete complete Object */
-         NETOBJ obj;
-         obj.type = GET_BE16(p);
-         p += 2;
-         strmaxcpy(obj.name, p+1, *p);
-         nw_delete_obj(&obj); /* also deletes all properties */
-       }
-       break;
-
-    default : break;
-  }
-}
-
 static int xread(IPX_DATA *ipxd, int *offs, uint8 *data, int size)
 {
-  if (*offs == 0) {
-#if CALL_NCPSERV_OVER_SOCKET
-    memcpy(ipxd, &ipx_in_data, ud.udata.len);
-#else
-    if (read(0, (char*)&(ipxd->owndata.d), sizeof(int)) == sizeof(int)) {
-      if (ipxd->owndata.d.size >= size &&
-          ipxd->owndata.d.size < IPX_MAX_DATA - sizeof(ipxd->owndata)) {
-
-        if (ipxd->owndata.d.size >
-              read(0, (char*)&(ipxd->owndata.d.function),
-                                  ipxd->owndata.d.size) ) {
-          size=-1;
-        }
-
-      } else {
-        errorp(1, "xread:", "datasize = %d", ipxd->owndata.d.size);
-        size=-1;
-      }
-    } else size = -1;
-#endif
-  }
   if (size > -1 && *offs + size > ipxd->owndata.d.size) {
     errorp(1, "xread:", "prog error: *offs=%d + size=%d > d.size=%d",
                   *offs, size, ipxd->owndata.d.size);
     size = -1;
   }
-
   if (size > -1) {
     memcpy(data,  ((uint8 *)&(ipxd->owndata.d.function)) + *offs, size);
     *offs+=size;
@@ -1537,46 +455,33 @@ static int xread(IPX_DATA *ipxd, int *offs, uint8 *data, int size)
 }
 
 static int handle_ctrl(void)
-/* reads stdin pipe or packets from nwserv */
+/* packets from nwserv */
 {
-  IPX_DATA ipxd;
   int   what;
   int   conn;
   int   result   = 0;
   int   offs=0;
-  int   data_len =  xread(&ipxd, &offs, (uint8*)&(what), sizeof(int));
-  if   (data_len == sizeof(int)) {
-    XDPRINTF((2, 0, "GOT CTRL what=0x%x, len=%d", what, ipxd.owndata.d.size));
-    switch (what) {
-      case 0x5555 : /* clear_connection */
-        if (sizeof (int) ==
-            xread(&ipxd, &offs, (uint8*)&(conn), sizeof(int)))
-          clear_connection(conn);
-        break;
+  IPX_DATA *ipxd =  (IPX_DATA*)&ipx_in_data;
+  int   data_len =  xread(ipxd, &offs, (uint8*)&(what), sizeof(int));
 
-      case 0x3333 : /* 'bindery' calls */
+  if   (data_len == sizeof(int)) {
+    XDPRINTF((2, 0, "GOT CTRL what=0x%x, len=%d", what, ipxd->owndata.d.size));
+    switch (what) {
+      case 0x5555 : /* clear_connection, from wdog process */
         if (sizeof (int) ==
-            xread(&ipxd, &offs, (uint8*)&(conn), sizeof(int))) {
-          uint8 *buff = (uint8*)  xmalloc(conn+10);
-          XDPRINTF((2,0, "0x3333 len=%d", conn));
-          if (conn == xread(&ipxd, &offs, buff, conn))
-             handle_bind_calls(buff);
-          else
-            XDPRINTF((1, 1, "0x3333 protokoll error:len=%d", conn));
-          xfree(buff);
-        }
+            xread(ipxd, &offs, (uint8*)&(conn), sizeof(int)))
+          clear_connection(conn);
         break;
 
       case 0xeeee:
         get_ini_debug(NCPSERV);
-        (void)nw_fill_standard(NULL, NULL);
-        sync_dbm();
+        get_ini();
         break;
 
       case 0xffff : /* server down */
-        data_len = xread(&ipxd, &offs, (char*)&conn, sizeof(int));
+        data_len = xread(ipxd, &offs, (uint8*)&conn, sizeof(int));
         if (sizeof(int) == data_len && conn == what)
-           sent_down_message();
+          server_goes_down++;
         break;
 
       default : break;
@@ -1594,20 +499,20 @@ static void handle_ncp_request(void)
     int type;
     in_len = ud.udata.len;
     time(&akttime);
-    XDPRINTF((10, 0, "NCPSERV-LOOP von %s", visable_ipx_adr(&from_addr)));
-    if ((type = GET_BE16(ncprequest->type)) == 0x2222 || type == 0x5555) {
+    XDPRINTF((20, 0, "NCPSERV-LOOP von %s", visable_ipx_adr(&from_addr)));
+    if ((type = GET_BE16(ncprequest->type)) == 0x2222
+                                    || type == 0x5555) {
       int connection = (int)ncprequest->connection;
       XDPRINTF((10,0, "GOT 0x%x in NCPSERV connection=%d", type, connection));
+
       if ( connection > 0 && connection <= anz_connect) {
         CONNECTION *c = &(connections[connection-1]);
+
         if (!memcmp(&from_addr, &(c->client_adr), sizeof(ipxAddr_t))) {
           if (c->fd > -1){
             if (type == 0x2222) {
-              int sent_here  = 1;
-              int func       = ncprequest->function;
               int diff_time  = akttime - c->last_access;
               c->last_access = akttime;
-
               if (diff_time > 50) /* after max. 50 seconds */
                  nwserv_reset_wdog(connection);
                  /* tell the wdog there's no need to look */
@@ -1621,22 +526,7 @@ static void handle_ncp_request(void)
                 return;
               }
 #endif
-              switch (func) {
-                case 0x15 : /* Messages */
-                case 0x17 : /* File Server Environment */
-                            sent_here = handle_fxx(c, in_len, func);
-                            break;
-
-                case 0x57 : if (!tells_server_version) {
-                         /* 2.15 er don't have namespace_calls */
-                              sent_here = handle_fxx(c, in_len, func);
-                            }
-                            break;
-
-                default :   break;
-              } /* switch */
-
-              if (sent_here) {
+              if (1) {
                 int anz=
 #if CALL_NWCONN_OVER_SOCKET
                 in_len;
@@ -1645,9 +535,6 @@ static void handle_ncp_request(void)
                 write(c->fd, (char*)ncprequest, in_len);
 #endif
                 XDPRINTF((10,0, "write to %d, anz = %d", c->fd, anz));
-                if (func == 0x19) {  /* logout */
-                  c->object_id  = 0; /* not LOGIN  */
-                }
               }
               c->sequence    = ncprequest->sequence; /* save last sequence */
               c->retry       = 0;
@@ -1657,7 +544,7 @@ static void handle_ncp_request(void)
               if ( (uint8) (c->sequence+1) == (uint8) ncprequest->sequence)
 #endif
               {
-                clear_connection(ncprequest->connection);
+                clear_connection(connection);
                 ncp_response(0x3333,
                              ncprequest->sequence,
                              connection,
@@ -1683,16 +570,28 @@ static void handle_ncp_request(void)
     	               0xff, /* conn status  */
     	               0);
 
+#if !CALL_NWCONN_OVER_SOCKET
+    /* here comes a call from nwbind */
+    } else if (type == 0x3333
+       && IPXCMPNODE(from_addr.node, my_addr.node)
+       && IPXCMPNET (from_addr.net,  my_addr.net)) {
+      int connection = (int)ncprequest->connection;
+      XDPRINTF((6,0, "GOT 0x3333 in NCPSERV connection=%d", connection));
+      if ( connection > 0 && connection <= anz_connect) {
+        CONNECTION *c = &(connections[connection-1]);
+        if (c->fd > -1) write(c->fd, (char*)ncprequest, in_len);
+      }
+#endif
     } else if (type == 0x1111) {
       /* GIVE CONNECTION Nr connection */
-      int connection = (server_goes_down) ? 0 : find_get_conn_nr(&from_addr);
+      int connection = (server_goes_down) ? 0
+      	  	       			  : find_get_conn_nr(&from_addr);
       XDPRINTF((2, 0, "GIVE CONNECTION NR=%d", connection));
       if (connection) {
         CONNECTION *c = &(connections[connection-1]);
         int anz;
-        c->message[0] = '\0';
-        c->object_id  = 0; /* firsttime set 0 for NOT LOGIN */
         c->sequence   = 0;
+
 #if CALL_NWCONN_OVER_SOCKET
         anz = in_len;
         send_to_nwconn(c->fd, (char*)ncprequest, in_len);
@@ -1705,41 +604,33 @@ static void handle_ncp_request(void)
                      0xf9, /* completition */
                      0,    /* conn status  */
                      0);
-#if CALL_NCPSERV_OVER_SOCKET
+
     } else if (type == 0xeeee
-       && ((OWN_DATA*)(&ipx_in_data))->type1[0] == 0xee
-       && ((OWN_DATA*)(&ipx_in_data))->type1[1] == 0xee
        && IPXCMPNODE(from_addr.node, my_addr.node)
        && IPXCMPNET (from_addr.net,  my_addr.net)) {
       /* comes from nwserv  */
       handle_ctrl();
-#endif
     } else {
       int connection     = (int)ncprequest->connection;
       int sequence       = (int)ncprequest->sequence;
       XDPRINTF((1,0, "Got UNKNOWN TYPE: 0x%x", type));
-      ncp_response(0x3333, sequence, connection,
-                   1, 0xfb, 0, 0);
+      ncp_response(0x3333, sequence, connection, 1, 0xfb, 0, 0);
     }
   }
 }
 
 int main(int argc, char *argv[])
 {
-  if (argc != 3) {
-    fprintf(stderr, "usage ncpserv address nwname\n");
+  if (argc != 4) {
+    fprintf(stderr, "usage ncpserv nwname address nwbindsock\n");
     exit(1);
   }
   init_tools(NCPSERV, 0);
+  get_ini();
   strncpy(my_nwname, argv[1], 48);
   my_nwname[47] = '\0';
   adr_to_ipx_addr(&my_addr, argv[2]);
-
-  if (nw_init_dbm(my_nwname, &my_addr) <0) {
-    errorp(1, "nw_init_dbm", NULL);
-    exit(1);
-  }
-
+  sscanf(argv[3], "%x", &sock_nwbind);
 #ifdef LINUX
   set_emu_tli();
 #endif
@@ -1764,51 +655,15 @@ int main(int argc, char *argv[])
   ud.udata.buf     = (char*)&ipx_in_data;
   set_sig();
 
-#if CALL_NCPSERV_OVER_SOCKET
   while (!server_is_down) {
     handle_ncp_request();
     if (got_sig_child) {
+      XDPRINTF((2, 0, "Got SIGCHLD"));
       kill_connections();
       got_sig_child=0;
+      signal(SIGCHLD, sig_child);
     }
   }
-#else
-  polls[0].events  = polls[1].events = POLLIN|POLLPRI;
-  polls[0].revents = polls[1].revents= 0;
-  polls[0].fd      = ncp_fd;
-  polls[1].fd      = 0;        /* stdin */
-  while (!server_is_down) {
-    int anz_poll = poll(polls, 2, 60000);
-    if (anz_poll > 0) { /* i have to work */
-      struct pollfd *p = &polls[0];
-      int    j = -1;
-      while (++j < 2) {
-        if (p->revents){
-          if (!j) {  /* ncp-socket */
-            XDPRINTF((99,0, "POLL revents=%d", p->revents));
-            if (p->revents & ~POLLIN)
-              errorp(0, "STREAM error", "revents=0x%x", p->revents );
-            else
-              handle_ncp_request();
-          } else if (p->fd==0)  {  /* fd_ncpserv_in */
-            XDPRINTF((2,0,"POLL %d, fh=%d", p->revents, p->fd));
-            if (p->revents & ~POLLIN)
-              errorp(0, "STREAM error", "revents=0x%x", p->revents );
-            else handle_ctrl();
-          }
-          if (! --anz_poll) break;
-        } /* if */
-        p++;
-      } /* while */
-    } else {
-      XDPRINTF((3,0,"POLLING ..."));
-    }
-    if (got_sig_child) {
-      kill_connections();
-      got_sig_child=0;
-    }
-  }
-#endif
   close_all();
   return(0);
 }

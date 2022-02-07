@@ -201,7 +201,7 @@ ncp_request(0x2222, sequence, connection, 1, 0, \
 
 static int get_conn_nr(void)
 {
-  ncp_request(0x1111, sequence, 0xff, 0, 0xff, 0,
+  ncp_request(0x1111, sequence, 2, 2, 0xff, 0,
                       0, "Get Connection Nr.");
 
   if (!handle_event()) {
@@ -652,6 +652,16 @@ static void test2(void)
    }
 }
 
+static void test3(void)
+{
+  uint8 data[] = {0xfe,0x0,0x0,0x0,0x0,0x0,0x2};
+  RDATA(data, 0x3b, "test_3b ??");
+  if (!handle_event()) {
+    ;
+  }
+}
+
+
 static int do_5f(void)
 {
   uint8  data[] = {0x10, 0, 0, 0};
@@ -779,6 +789,7 @@ int main(int argc, char **argv)
 
   test1();
   test2();
+  test3();
 
   get_connection_info(0);
   get_connection_info(1);

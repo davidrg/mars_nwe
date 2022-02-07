@@ -1,4 +1,4 @@
-/* nwserv.c 10-Mar-96 */
+/* nwserv.c 20-Mar-96 */
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -58,9 +58,9 @@ uint16  ipx_sock_nummern[]={ SOCK_AUTO    /* WDOG */
 
 #define NEEDED_SOCKETS  (sizeof(ipx_sock_nummern) / sizeof(uint16))
 #if FILE_SERVER_INACTIV
-#  define NEEDED_POLLS    (NEEDED_SOCKETS)
-#else
 #  define NEEDED_POLLS    (NEEDED_SOCKETS+1)
+#else
+#  define NEEDED_POLLS    (NEEDED_SOCKETS+2)
 #endif
 
 static uint16        sock_nummern [NEEDED_SOCKETS];
@@ -75,10 +75,11 @@ static int           nw386_found    =  0;
 static int           client_mode    =  0;
 static int           ipxdebug       =  0;
 static int           pid_ncpserv    = -1;
-#if !CALL_NCPSERV_OVER_SOCKET
-static int           fd_ncpserv_out = -1;  /* ctrl-pipe out to  ncpserv  */
-#endif
-static int           fd_ncpserv_in  = -1;  /* ctrl-pipe in  from ncpserv */
+static int           fd_ncpserv_in  = -1;  /* ctrl-pipe in from ncpserv */
+
+static int           pid_nwbind     = -1;
+static int           sock_nwbind    = -1;
+static int           fd_nwbind_in   = -1;  /* ctrl-pipe in from nnwbind */
 
 static  time_t       akttime_stamp             =  0;
 static  int          broadmillisecs            =  2000; /* 2 sec */
@@ -90,50 +91,50 @@ static  int          save_ipx_routes           =  0;
 static  uint8        *station_fn=NULL;
 static  int          nearest_request_flag=0;
 
-#if !FILE_SERVER_INACTIV
 static void add_wdata(IPX_DATA *d, char *data, int size)
 {
   memcpy(d->owndata.d.data+d->owndata.d.size, data, size);
   d->owndata.d.size+=size;
 }
 
-static void write_wdata(IPX_DATA *d, int what)
+static void write_wdata(IPX_DATA *d, int what, int sock)
 {
-#if CALL_NCPSERV_OVER_SOCKET
   ipxAddr_t  toaddr;
-#endif
   d->owndata.d.function=what;
   d->owndata.d.size +=sizeof(int);
-#if CALL_NCPSERV_OVER_SOCKET
-  memset(d->owndata.type, 0xee, 4);
+  memset(d->owndata.type, 0xee, 2);
+  d->owndata.sequence    = 0;
+  d->owndata.connection  = 0;
   memcpy(&toaddr, &my_server_adr, sizeof(ipxAddr_t));
-  U16_TO_BE16(SOCK_NCP, toaddr.sock);
+  U16_TO_BE16(sock, toaddr.sock);
   send_ipx_data(-1, 17,
-                 4 +  sizeof(int)+d->owndata.d.size, (char*)d,
-                 &toaddr, "TO NCPSERV");
-#else
-  write(fd_ncpserv_out, (char*) &(d->owndata.d),
-                    sizeof(int)+d->owndata.d.size);
-#endif
+     OWN_DATA_IPX_BASE_SIZE + sizeof(int)+d->owndata.d.size, (char*)d,
+          &toaddr,  (sock == SOCK_NCP) ? "NCPSERV" : "NWBIND" );
   d->owndata.d.size=0;
 }
 
-static void write_to_ncpserv(int what, int connection,
-                           char *data, int data_size)
+static void write_to_sons(int what, int connection,
+                           char *data, int data_size, int sock)
 {
   IPX_DATA ipxd;
   ipxd.owndata.d.size = 0;
-  XDPRINTF((2, 0, "write_to_ncpserv what=0x%x, conn=%d, data_size=%d",
+  XDPRINTF((2, 0, "write_to_sons what=0x%x, conn=%d, data_size=%d",
            what, connection, data_size));
 
   switch (what) {
-    case 0x5555  : /* kill connection  */
+    case 0x2222  : /* insert connection */
             add_wdata(&ipxd, (char*) &connection,  sizeof(int));
+            add_wdata(&ipxd, (char*) &data_size,   sizeof(int));
+            add_wdata(&ipxd, data, data_size);
          break;
 
     case 0x3333  : /* 'bindery' calls  */
             add_wdata(&ipxd,  (char*)&data_size, sizeof(int));
             add_wdata(&ipxd, data, data_size);
+         break;
+
+    case 0x5555  : /* kill connection  */
+            add_wdata(&ipxd, (char*) &connection,  sizeof(int));
          break;
 
     case 0xeeee  : /* hup, read init */
@@ -143,17 +144,20 @@ static void write_to_ncpserv(int what, int connection,
            add_wdata(&ipxd, (char*) &what,  sizeof(int));
          break;
 
-    default :  return;
+    default : return;
   }
-  write_wdata(&ipxd, what);
+  write_wdata(&ipxd, what, sock);
 }
+
+#if !FILE_SERVER_INACTIV
+# define write_to_ncpserv(what, connection, data, data_size) \
+   write_to_sons((what), (connection), (data), (data_size), SOCK_NCP)
 #else
-static void write_to_ncpserv(int what, int connection,
-                           char *data, int data_size)
-{
-;; /* dummy */
-}
+# define write_to_ncpserv(what, connection, data, data_size) /* */
 #endif
+
+#define write_to_nwbind(what, connection, data, data_size) \
+   write_to_sons((what), (connection), (data), (data_size), sock_nwbind)
 
 void ins_del_bind_net_addr(uint8 *name, int styp, ipxAddr_t *adr)
 {
@@ -179,7 +183,7 @@ void ins_del_bind_net_addr(uint8 *name, int styp, ipxAddr_t *adr)
     strmaxcpy(p+1, name, *p);
     len += (*p+1); p+=(*p + 1);
   }
-  write_to_ncpserv(0x3333, 0, (char *)buf, len);
+  write_to_nwbind(0x3333, 0, (char *)buf, len);
 }
 
 static int open_ipx_socket(uint16 sock_nr, int nr, int open_mode)
@@ -212,14 +216,8 @@ static int open_ipx_socket(uint16 sock_nr, int nr, int open_mode)
 static int start_ncpserv(char *nwname, ipxAddr_t *addr)
 {
 #if !FILE_SERVER_INACTIV
-#if !CALL_NCPSERV_OVER_SOCKET
-  int fds_out[2];
-#endif
   int fds_in[2];
   int pid;
-#if !CALL_NCPSERV_OVER_SOCKET
-  if (pipe(fds_out) < 0) return(-1);
-#endif
   if (pipe(fds_in) < 0)  return(-1);
 
   switch (pid=fork()) {
@@ -227,42 +225,103 @@ static int start_ncpserv(char *nwname, ipxAddr_t *addr)
                char *progname="ncpserv";
                char addrstr[100];
                char pathname[300];
+               char nwbindsock[20];
                int j = FD_NWSERV;
-#if !CALL_NCPSERV_OVER_SOCKET
-               close(fds_out[1]);   /* no need to write      */
-               dup2(fds_out[0], 0); /* becommes stdin        */
-               close(fds_out[0]);   /* no  longer needed     */
-#endif
                close(fds_in[0]);            /* no need to read       */
                dup2(fds_in[1], FD_NWSERV);  /* becommes fd FD_NWSERV */
                close(fds_in[1]);            /* no  longer needed     */
                while (j++ < 100) close(j);  /* close all > 4         */
+               U16_TO_BE16(SOCK_NCP, addr->sock);
                ipx_addr_to_adr(addrstr, addr);
+               sprintf(nwbindsock, "%04x", sock_nwbind);
                execl(get_exec_path(pathname, progname), progname,
-                      nwname,  addrstr, NULL);
+                      nwname,  addrstr, nwbindsock, NULL);
                exit(1);
              }
              break;
 
     case -1:
-#if !CALL_NCPSERV_OVER_SOCKET
-             close(fds_out[0]);
-             close(fds_out[1]);
-#endif
              close(fds_in[0]);
              close(fds_in[1]);
              return(-1);  /* error */
   }
-#if !CALL_NCPSERV_OVER_SOCKET
-  fds_out[0]     = -1;
-  fd_ncpserv_out = fds_out[1];
-#endif
-  fds_in[1]      = -1;
+  close(fds_in[1]);
   fd_ncpserv_in  = fds_in[0];
   pid_ncpserv    = pid;
 #endif
+  U16_TO_BE16(SOCK_NCP, addr->sock);
   return(0); /*  OK */
 }
+
+static int start_nwbind(char *nwname, ipxAddr_t *addr)
+{
+#if !FILE_SERVER_INACTIV
+  int    fds_in[2];
+  int    pid;
+  struct t_bind bind;
+  int    ipx_fd=t_open("/dev/ipx", O_RDWR, NULL);
+  if (ipx_fd < 0) {
+    errorp(1, "start_nwbind", "t_open");
+    return(-1);
+  }
+  U16_TO_BE16(SOCK_AUTO, addr->sock);
+  bind.addr.len    = sizeof(ipxAddr_t);
+  bind.addr.maxlen = sizeof(ipxAddr_t);
+  bind.addr.buf    = (char*)addr;
+  bind.qlen        = 0; /* allways */
+  if (t_bind(ipx_fd, &bind, &bind) < 0){
+    errorp(1, "start_nwbind", "t_bind");
+    t_close(ipx_fd);
+    return(-1);
+  }
+  if (pipe(fds_in) < 0){
+    errorp(1, "start_nwbind", "pipe");
+    t_close(ipx_fd);
+    return(-1);
+  }
+  sock_nwbind  = (int) GET_BE16(addr->sock);
+
+  switch (pid=fork()) {
+    case 0 : {  /* new Process */
+               char    *progname="nwbind";
+               char    addrstr[100];
+               char    pathname[300];
+               char    nwbindsock[20];
+               int j = FD_NWSERV;
+
+               close(fds_in[0]);              /* no need to read       */
+               if (fds_in[1] != FD_NWSERV) {
+                 dup2(fds_in[1], FD_NWSERV);  /* becommes fd FD_NWSERV */
+                 close(fds_in[1]);            /* no  longer needed     */
+               }
+               dup2(ipx_fd, 0);               /* stdin                 */
+               close(ipx_fd);
+
+               while (j++ < 100) close(j);    /* close all > FD_NWSERV  */
+               U16_TO_BE16(SOCK_NCP, addr->sock);
+               ipx_addr_to_adr(addrstr, addr);
+               sprintf(nwbindsock, "%04x", sock_nwbind);
+
+               execl(get_exec_path(pathname, progname), progname,
+                      nwname,  addrstr,  nwbindsock, NULL);
+               exit(1);
+             }
+             break;
+
+    case -1: close(fds_in[0]);
+             close(fds_in[1]);
+             t_close(ipx_fd);
+             errorp(1, "start_nwbind", "t_bind");
+             return(-1);  /* error */
+  }
+  close(fds_in[1]);
+  close(ipx_fd);
+  fd_nwbind_in = fds_in[0];
+  pid_nwbind   = pid;
+#endif
+  return(0); /*  OK */
+}
+
 
 static int start_nwclient(void)
 {
@@ -459,16 +518,16 @@ static int find_station_match(int entry, ipxAddr_t *addr)
 {
   int matched = 0;
   if (station_fn && *station_fn) {
-    FILE *f=fopen(station_fn, "r");
+    FILE *f=fopen((char*)station_fn, "r");
     if (f) {
-      char  buff[200];
-      char  addrstring[100];
+      uint8  buff[200];
+      uint8  addrstring[100];
       int   what;
-      ipx_addr_to_adr(addrstring, addr);
+      ipx_addr_to_adr((char*)addrstring, addr);
       upstr(addrstring);
       while (0 != (what = get_ini_entry(f, 0, buff, sizeof(buff)))){
         if (what == entry) {
-          char  *p = buff + strlen(buff);
+          uint8  *p = buff + strlen((char*)buff);
           while (p-- > buff && *p==32) *p='\0';
           upstr(buff);
           if (name_match(addrstring, buff)) {
@@ -730,54 +789,6 @@ static void handle_event(int fd, uint16 socknr, int slot)
   }
 }
 
-#if 0
-static int get_ipx_addr(ipxAddr_t *addr)
-{
-  int fd=t_open("/dev/ipx", O_RDWR, NULL);
-  struct t_optmgmt optb;
-  int result = -1;
-  if (fd < 0) {
-    t_error("t_open !Ok");
-    return(-1);
-  }
-  optb.opt.maxlen = optb.opt.len = sizeof(ipxAddr_t);
-  optb.opt.buf    = (char*)addr;
-  optb.flags      = 0;
-  result = t_optmgmt(fd, &optb, &optb);
-  if (result < 0) t_error("t_optmgmt !Ok");
-  else result=0;
-  t_close(fd);
-  return(result);
-}
-#else
-
-static int get_ipx_addr(ipxAddr_t *addr)
-{
-  int fd=t_open("/dev/ipx", O_RDWR, NULL);
-  struct t_bind   bind;
-  int result = -1;
-  if (fd < 0) {
-    t_error("t_open !Ok");
-    return(-1);
-  }
-  bind.addr.len    = sizeof(ipxAddr_t);
-  bind.addr.maxlen = sizeof(ipxAddr_t);
-  bind.addr.buf    = (char*)addr;
-  bind.qlen        = 0; /* ever */
-  memset(addr, 0, sizeof(ipxAddr_t));
-
-  if (t_bind(fd, &bind, &bind) < 0)
-    t_error("tbind:get_ipx_addr");
-  else {
-    result=0;
-    t_unbind(fd);
-  }
-  t_close(fd);
-  return(result);
-}
-#endif
-
-
 static void get_ini(int full)
 {
   FILE   *f    = open_nw_ini();
@@ -788,9 +799,9 @@ static void get_ini(int full)
     upstr((uint8*)my_nwname);
   }
   if (f){
-    char buff[500];
+    uint8 buff[500];
     int  what;
-    while (0 != (what=get_ini_entry(f, 0, (char*)buff, sizeof(buff)))) {
+    while (0 != (what=get_ini_entry(f, 0, buff, sizeof(buff)))) {
       char inhalt[500];
       char inhalt2[500];
       char inhalt3[500];
@@ -956,12 +967,6 @@ static void close_all(void)
 
   if (pid_ncpserv > 0) {
     int status;
-#if !CALL_NCPSERV_OVER_SOCKET
-    if (fd_ncpserv_out > -1) {
-      close(fd_ncpserv_out);
-      fd_ncpserv_out =-1;
-    }
-#endif
     if (fd_ncpserv_in  > -1)  {
       close(fd_ncpserv_in);
       fd_ncpserv_in = -1;
@@ -969,6 +974,17 @@ static void close_all(void)
     kill(pid_ncpserv, SIGQUIT);  /* terminate ncpserv */
     waitpid(pid_ncpserv, &status, 0);
     kill(pid_ncpserv, SIGKILL);  /* kill ncpserv */
+  }
+
+  if (pid_nwbind > 0) {
+    int status;
+    if (fd_nwbind_in  > -1)  {
+      close(fd_nwbind_in);
+      fd_nwbind_in = -1;
+    }
+    kill(pid_nwbind, SIGQUIT);  /* terminate ncpserv */
+    waitpid(pid_nwbind, &status, 0);
+    kill(pid_nwbind, SIGKILL);  /* kill ncpserv */
   }
 
 #ifdef LINUX
@@ -990,6 +1006,7 @@ static void down_server(void)
 {
   if (!server_down_stamp) {
     write_to_ncpserv(0xffff, 0, NULL, 0);
+    write_to_nwbind( 0xffff, 0, NULL, 0);
     signal(SIGHUP,   SIG_IGN);
     signal(SIGPIPE,  SIG_IGN);
     fprintf(stderr, "\007");
@@ -1020,6 +1037,7 @@ static void handle_hup_reqest(void)
   XDPRINTF((2,0, "Got HUP, reading ini."));
   get_ini(0);
   write_to_ncpserv(0xeeee, 0, NULL, 0); /* inform ncpserv */
+  write_to_nwbind( 0xeeee, 0, NULL, 0); /* inform nwbind  */
   fl_get_int=0;
 }
 
@@ -1069,17 +1087,18 @@ int main(int argc, char **argv)
       polls[j].fd        = -1;
     }
   }
-  U16_TO_BE16(SOCK_NCP, my_server_adr.sock);
-  if (!start_ncpserv(my_nwname, &my_server_adr)) {
+  if ( !start_nwbind( my_nwname, &my_server_adr)
+   &&  !start_ncpserv(my_nwname, &my_server_adr) ) {
     /* now do polling */
     time_t broadtime;
     time(&broadtime);
     set_sigs();
+    polls[NEEDED_SOCKETS].fd = fd_nwbind_in;
 
 #if !FILE_SERVER_INACTIV
     {
       ipxAddr_t server_adr_sap;
-      polls[NEEDED_SOCKETS].fd = fd_ncpserv_in;
+      polls[NEEDED_SOCKETS+1].fd = fd_ncpserv_in;
       U16_TO_BE16(SOCK_NCP, my_server_adr.sock);
       memcpy(&server_adr_sap, &my_server_adr, sizeof(ipxAddr_t));
       U16_TO_BE16(SOCK_SAP, server_adr_sap.sock);
@@ -1110,45 +1129,56 @@ int main(int argc, char **argv)
               if (p->revents & ~POLLIN)
                  errorp(0, "STREAM error", "revents=0x%x", p->revents );
               else {
-                if (p->fd == fd_ncpserv_in) {
+                if (p->fd > -1) {
                   int       what;
                   int       conn;
                   int       size;
-                  ipxAddr_t adr;
-                  if (sizeof(int) == read(fd_ncpserv_in,
+                  uint8     buf[200];
+                  if (sizeof(int) == read(p->fd,
                             (char*)&what, sizeof(int))) {
-                    XDPRINTF((2, 0, "GOT ncpserv_in what=0x%x", what));
+                    XDPRINTF((2, 0, "GOT %s_in what=0x%x",
+                       (p->fd == fd_ncpserv_in) ? "ncpserv" : "nwbind" ,  what));
                     switch (what) {
                       case  0x2222 :  /* insert wdog connection */
-                            if (sizeof(int) == read(fd_ncpserv_in,
+                            if (sizeof(int) == read(p->fd,
                                  (char*)&conn, sizeof(int))
-                            &&   sizeof(int) == read(fd_ncpserv_in,
+                            &&   sizeof(int) == read(p->fd,
                                  (char*)&size, sizeof(int))
-                            &&   sizeof(ipxAddr_t) == read(fd_ncpserv_in,
-                                 (char*)&adr, size))
-                                 insert_wdog_conn(conn, &adr);
+                            &&   sizeof(ipxAddr_t) + sizeof(uint16)
+                                  == read(p->fd,
+                                 (char*)buf, size)) {
+                                insert_wdog_conn(conn, (ipxAddr_t*)buf);
+                                write_to_nwbind(what, conn, (char*)buf, size);
+                              }
                             break;
 
                       case  0x4444 :  /* reset wdog connection   =  0 */
                                       /* force test wdog conn 1  =  1 */
                                       /* force test wdog conn 2  =  2 */
                                       /* remove wdog             = 99 */
-                            if (sizeof(int) == read(fd_ncpserv_in,
+                            if (sizeof(int) == read(p->fd,
                                  (char*)&conn, sizeof(int))
-                            &&   sizeof(int) == read(fd_ncpserv_in,
+                            &&   sizeof(int) == read(p->fd,
                                  (char*)&what, sizeof(what)))
                                 modify_wdog_conn(conn, what);
                             if (what > 0 && what < 99) call_wdog++;
                             break;
 
+                      case  0x5555 :  /* close connection */
+                            if (sizeof(int) == read(p->fd,
+                                 (char*)&conn, sizeof(int)))
+                              modify_wdog_conn(conn, 99);
+                              write_to_nwbind(what, conn, NULL, 0);
+                            break;
+
                       case  0x6666 :  /* bcast message */
-                            if (sizeof(int) == read(fd_ncpserv_in,
+                            if (sizeof(int) == read(p->fd,
                                 (char*)&conn, sizeof(int)))
                               send_bcasts(conn);
                             break;
 
                       case  0xffff :  /* down file server */
-                            if (sizeof(int) == read(fd_ncpserv_in,
+                            if (sizeof(int) == read(p->fd,
                                 (char*)&conn, sizeof(int)) &&
                                 conn == what) {
                               down_server();

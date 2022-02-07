@@ -1,4 +1,4 @@
-/* nwconn.c 14-Mar-96       */
+/* nwconn.c 21-Mar-96       */
 /* one process / connection */
 
 /* (C)opyright (C) 1993,1996  Martin Stover, Marburg, Germany
@@ -25,11 +25,13 @@
 #include "connect.h"
 #include "namspace.h"
 
+
+#define  FD_NCP_OUT    3
+
 static int          father_pid    = -1;
 static ipxAddr_t    from_addr;
 static ipxAddr_t    my_addr;
 static struct 	    t_unitdata ud;
-static int          ipx_fd        = -1;
 static uint8        ipx_pack_typ  =  PACKT_CORE;
 static int          last_sequence = -9999;
 
@@ -38,66 +40,80 @@ static NCPRESPONSE  *ncpresponse=(NCPRESPONSE*)&ipxdata;
 static uint8        *responsedata=((uint8*)&ipxdata)+sizeof(NCPRESPONSE);
 
 static int          requestlen;
-static uint8        readbuff[IPX_MAX_DATA+500];
+static uint8        readbuff[IPX_MAX_DATA];
+
+static uint8        saved_readbuff[IPX_MAX_DATA];
+static int          saved_sequence=-1;
 
 static NCPREQUEST   *ncprequest  = (NCPREQUEST*)readbuff;
 static uint8        *requestdata = readbuff + sizeof(NCPREQUEST);
 static int          ncp_type;
-
-static int open_ipx_socket(int wanted_sock)
-{
-  struct t_bind bind;
-  ipx_fd=t_open("/dev/ipx", O_RDWR, NULL);
-  if (ipx_fd < 0) {
-    if (nw_debug) t_error("t_open !Ok");
-    return(-1);
-  }
-  U16_TO_BE16(wanted_sock, my_addr.sock); /* actual write socket */
-  bind.addr.len    = sizeof(ipxAddr_t);
-  bind.addr.maxlen = sizeof(ipxAddr_t);
-  bind.addr.buf    = (char*)&my_addr;
-  bind.qlen        = 0; /* allways */
-  if (t_bind(ipx_fd, &bind, &bind) < 0){
-    if (nw_debug) t_error("t_bind !OK");
-    close(ipx_fd);
-    return(-1);
-  }
-  XDPRINTF((5, 0, "NWCONN OpenSocket: %s",
-             visable_ipx_adr((ipxAddr_t *) bind.addr.buf)));
-  return(0);
-}
+static int          sock_nwbind=-1;
 
 static int req_printed=0;
+
 static int ncp_response(int sequence,
 	        int completition, int data_len)
-
 {
   ncpresponse->sequence       = (uint8) sequence;
   ncpresponse->completition   = (uint8) completition;
-  last_sequence = sequence;
-  if (req_printed) {
-    XDPRINTF((0,0, "NWCONN NCP_RESP seq:%d, conn:%d,  compl=0x%x TO %s",
-        (int)ncpresponse->sequence,  (int) ncpresponse->connection, (int)completition,
-             visable_ipx_adr((ipxAddr_t *) ud.addr.buf)));
-  }
+  ncpresponse->reserved       = (uint8) 0;
+  last_sequence 	      = sequence;
 
+  if (req_printed) {
+    XDPRINTF((0,0, "NWCONN NCP_RESP seq:%d, conn:%d,  compl=0x%x task=%d TO %s",
+        (int)ncpresponse->sequence,  (int) ncpresponse->connection, (int)completition,
+        (int)ncpresponse->task, visable_ipx_adr((ipxAddr_t *) ud.addr.buf)));
+  }
   ud.udata.len = ud.udata.maxlen = sizeof(NCPRESPONSE) + data_len;
-  if (t_sndudata(ipx_fd, &ud) < 0){
+  if (t_sndudata(FD_NCP_OUT, &ud) < 0){
     if (nw_debug) t_error("t_sndudata in NWCONN !OK");
     return(-1);
   }
   return(0);
 }
 
+static int call_nwbind(void)
+{
+  ipxAddr_t to_addr;
+  memcpy(&to_addr, &my_addr, sizeof(ipxAddr_t));
+  U16_TO_BE16(sock_nwbind, to_addr.sock);
+  ud.udata.len = ud.udata.maxlen = sizeof(NCPREQUEST) + requestlen;
+  ud.udata.buf = (char*)&readbuff;
+  ud.addr.buf  = (char*)&to_addr;
+  if (t_sndudata(FD_NCP_OUT, &ud) < 0){
+    if (nw_debug) t_error("t_sndudata in NWCONN !OK");
+    ud.addr.buf   = (char*)&from_addr;
+    ud.udata.buf  = (char*)&ipxdata;
+    return(-1);
+  }
+  ud.addr.buf     = (char*)&from_addr;
+  ud.udata.buf    = (char*)&ipxdata;
+  return(0);
+}
+
 static void pr_debug_request()
 {
   if (req_printed++) return;
-  XDPRINTF((0, 0, "NCP REQUEST:type:0x%x, seq:%d, task:%d, reserved:0x%x, func:0x%x",
+  if (ncp_type == 0x2222) {
+    int ufunc = 0;
+    switch (ncprequest->function) {
+      case 0x16 :
+      case 0x17 : ufunc = (int) *(requestdata+2); break;
+      default   : break;
+    } /* switch */
+    XDPRINTF((0, 0, "NCP REQUEST: func=0x%02x, ufunc=0x%02x, seq:%03d, task:%02d",
+                      (int)ncprequest->function, ufunc,
+                      (int)ncprequest->sequence,
+                      (int)ncprequest->task));
+  } else {
+     XDPRINTF((0, 0, "Got NCP:type:0x%x, seq:%d, task:%d, reserved:0x%x, func=0x%x",
                       ncp_type,
                       (int)ncprequest->sequence,
                       (int)ncprequest->task,
                       (int)ncprequest->reserved,
                       (int)ncprequest->function));
+  }
   if (requestlen > 0){
     int    j = requestlen;
     uint8  *p=requestdata;
@@ -112,7 +128,7 @@ static void pr_debug_request()
 }
 
 static int test_handle = -1;
-static void handle_ncp_serv()
+static int handle_ncp_serv(void)
 {
   int    function       = (int)ncprequest->function;
   int    completition   = 0;  /* first set      */
@@ -122,11 +138,11 @@ static void handle_ncp_serv()
 
   if (last_sequence == (int)ncprequest->sequence
        && ncp_type != 0x1111){ /* send the same again */
-    if (t_sndudata(ipx_fd, &ud) < 0){
+    if (t_sndudata(FD_NCP_OUT, &ud) < 0){
       if (nw_debug) t_error("t_sndudata !OK");
     }
     XDPRINTF((2,0, "Sequence %d is written twice", (int)ncprequest->sequence));
-    return;
+    return(0);
   }
   req_printed=0;
 
@@ -633,7 +649,6 @@ static void handle_ncp_serv()
 	             }
 	             break;
 
-#if 1
 	 case 0x17 : {  /* FILE SERVER ENVIRONMENT */
 	   /* uint8 len   = *(requestdata+1); */
 	   uint8 ufunc    = *(requestdata+2);
@@ -652,23 +667,15 @@ static void handle_ncp_serv()
                  xdata->nw_debug = (uint8)org_nw_debug;
                  nw_debug = org_nw_debug = (int) *(rdata+1);
                  data_len = 1;
-               } else completition=0xff;
+               } else return(-1);
        	     }
              break;
 #endif
 
              case 0x14:
-             case 0x18: { /* ncpserv have change the structure */
-               struct INPUT {
-                 uint8   header[7];      /* Requestheader     */
-                 uint8   div[3];         /* 0, len + ufunc    */
-                 uint8   align[2];       /* alignment ncpserv */
-                 int     gid;            /* ncpserv */
-                 int     uid;            /* ncpserv */
-               } *input = (struct INPUT *)ncprequest;
-               set_guid(input->gid, input->uid);
-             }
-             break;
+             case 0x18:
+             return(-2); /* nwbind must do prehandling */
+
 
              case 0x0f: { /* Scan File Information  */
                struct INPUT {
@@ -687,7 +694,8 @@ static void handle_ncp_serv()
 
                struct OUTPUT {
                  uint8          sequence[2];      /* next sequence */
-                 NW_FILE_INFO f;
+                 /* NW_FILE_INFO f; */
+                 uint8          f[sizeof(NW_FILE_INFO)];
                  uint8    	owner_id[4];
                  uint8    	archive_date[2];
                  uint8    	archive_time[2];
@@ -695,15 +703,15 @@ static void handle_ncp_serv()
                } *xdata = (struct OUTPUT*)responsedata;
                int len = input->len;
                int searchsequence;
+               NW_FILE_INFO f;
                memset(xdata, 0, sizeof(struct OUTPUT));
-
-               searchsequence = nw_search( (uint8*) &(xdata->f),
+               searchsequence = nw_search( (uint8*) &f,
                                 (int)input->dir_handle,
                                 (int) GET_BE16(input->sequence),
                                 (int) input->search_attrib,
                                 input->data, len);
-
                if (searchsequence > -1) {
+                 memcpy(xdata->f, &f, sizeof(NW_FILE_INFO));
                  U16_TO_BE16((uint16) searchsequence, xdata->sequence);
                  U32_TO_BE32(1L, xdata->owner_id);  /* Supervisor */
                  data_len = sizeof(struct OUTPUT);
@@ -712,56 +720,40 @@ static void handle_ncp_serv()
              break;
 
              case 0x10: { /* Set  File Information  */
-               completition = 0xfb;
+               struct INPUT {
+                 uint8   header[7];      /* Requestheader   */
+                 uint8   div[3];         /* 0, len + ufunc   */
+                 uint8   f[sizeof(NW_FILE_INFO) - 14]; /* no name */
+                 uint8   owner_id[4];
+                 uint8   archive_date[2];
+                 uint8   archive_time[2];
+                 uint8   reserved[56];
+                 uint8   dir_handle;
+                 uint8   search_attrib;  /*    0: NONE    */
+                 	 		 /*   02: HIDDEN  */
+                                         /*   04: SYSTEM  */
+                                         /*   06: BOTH    */
+                                         /* 0x10: DIR     */
+                 uint8   len;
+                 uint8   data[2];        /* Name        */
+               } *input = (struct INPUT *)ncprequest;
+               NW_FILE_INFO f;
+               int result;
+               memcpy(((uint8*)&f)+14, input->f, sizeof(NW_FILE_INFO)-14);
+               result = nw_set_file_information((int)input->dir_handle,
+                                               input->data,
+                                               (int)input->len,
+                                               (int)input->search_attrib, &f);
+               /* no reply packet */
+               if (result <0) completition = (uint8)-result;
              }
              break;
 
              case 0x68:   /* create queue job and file old */
-             case 0x79: { /* create queue job and file     */
-                          /* some of this call is handled in ncpserv !! */
-               struct INPUT {
-                 uint8   header[7];          /* Requestheader   */
-                 uint8   packetlen[2];       /* low high        */
-                 uint8   func;               /* 0x79 or 0x68    */
-                 uint8   queue_id[4];        /* Queue ID        */
-                 uint8   queue_job[280];     /* oldsize is 256  */
-                 /* this is added by ncpserv */
-                 uint8   dir_nam_len;        /* len of dirname */
-                 uint8   dir_name[1];
-               } *input = (struct INPUT *) (ncprequest);
-               int result = nw_creat_queue(ncpresponse->connection,
-                                      input->queue_id,
-                                      input->queue_job,
-                                      input->dir_name,
-                                 (int)input->dir_nam_len,
-                                       (ufunc == 0x68)  );
-               if (!result) {
-                 data_len = (ufunc == 0x68) ? 54 : 78;
-                 memcpy(responsedata, input->queue_job, data_len);
-               } else completition= (uint8)-result;
-             }
-             break;
-
-             case 0x69:    /* close file and start queue old ?? */
-             case 0x7f: {  /* close file and start queue */
-               struct INPUT {
-                 uint8   header[7];          /* Requestheader */
-                 uint8   packetlen[2];       /* low high      */
-                 uint8   func;               /* 0x7f or 0x6f  */
-                 uint8   queue_id[4];        /* Queue ID      */
-                 uint8   job_id[4];          /* result from creat queue    */
-                                             /* if 0x69 then only 2 byte ! */
-                 /* this is added by ncpserv */
-                 uint8   prc_len;           /* len of printcommand */
-                 uint8   prc[1];            /* printcommand */
-               } *input = (struct INPUT *) (ncprequest);
-               int result = nw_close_file_queue(input->queue_id,
-                                                input->job_id,
-                                                input->prc,
-                                                input->prc_len);
-               if (result < 0) completition = (uint8)-result;
-             }
-             break;
+             case 0x69:   /* close file and start queue old ?? */
+             case 0x79:   /* create queue job and file     */
+             case 0x7f:   /* close file and start queue */
+             return(-2);  /* nwbind must do prehandling    */
 
              case 0xf3: {  /* Map Direktory Number TO PATH */
                XDPRINTF((2,0, "TODO: Map Directory Number TO PATH"));
@@ -775,12 +767,11 @@ static void handle_ncp_serv()
              }
              break;
 
-             default : completition = 0xfb;
+             default : return(-1);
              break;
            } /* switch (ufunc) */
          } /* case 0x17 */
          break;
-#endif
 
 	 case 0x18 : /* End of Job */
                      nw_free_handles((ncprequest->task > 0) ?
@@ -790,6 +781,7 @@ static void handle_ncp_serv()
 	 case 0x19 : /* logout, some of this call is handled in ncpserv. */
                      nw_free_handles(0);
                      set_default_guid();
+                     return(-1); /* nwbind must do rest */
                      break;
 
 	 case 0x1a : /* lock file  */
@@ -1266,7 +1258,11 @@ static void handle_ncp_serv()
 
 #endif
 
-	   default : completition = 0xfb; /* unknown request */
+#if 0
+	 case 0x68 :  /* NDS NCP,  NDS Fragger Protokoll ??  */
+#endif
+
+	 default : completition = 0xfb; /* unknown request */
 	             break;
 
     } /* switch function */
@@ -1294,8 +1290,87 @@ static void handle_ncp_serv()
       XDPRINTF((0,1, NULL));
     }
   }
+#if 0
+  ncpresponse->task  = ncprequest->task;
+#endif
   ncp_response(ncprequest->sequence, completition, data_len);
   nw_debug = org_nw_debug;
+  return(0);
+}
+
+static void handle_after_bind()
+{
+  NCPREQUEST *ncprequest = (NCPREQUEST*) saved_readbuff;
+  uint8 *requestdata  = saved_readbuff + sizeof(NCPREQUEST);
+  uint8 *bindresponse = readbuff       + sizeof(NCPRESPONSE);
+  int   data_len      = 0;
+  int   completition  = 0;
+  switch (ncprequest->function) {
+    case 0x17 : {  /* FILE SERVER ENVIRONMENT */
+       uint8 ufunc    = *(requestdata+2);
+       uint8 *rdata   = requestdata+3;
+       switch (ufunc) {
+         case 0x14:
+         case 0x18: { /* ncpserv have change the structure */
+           set_guid(*((int*)bindresponse), *((int*)(bindresponse+sizeof(int))));
+         }
+         break;
+
+         case 0x68:   /* create queue job and file old */
+         case 0x79: { /* create queue job and file     */
+                      /* nwbind must do prehandling    */
+           struct INPUT {
+             uint8   header[7];          /* Requestheader   */
+             uint8   packetlen[2];       /* low high        */
+             uint8   func;               /* 0x79 or 0x68    */
+             uint8   queue_id[4];        /* Queue ID        */
+             uint8   queue_job[280];     /* oldsize is 256  */
+           } *input = (struct INPUT *) (ncprequest);
+           struct RINPUT {
+             uint8   dir_nam_len;        /* len of dirname */
+             uint8   dir_name[1];
+           } *rinput = (struct RINPUT *) (bindresponse);
+           int result = nw_creat_queue(ncpresponse->connection,
+                                  input->queue_id,
+                                  input->queue_job,
+                                   rinput->dir_name,
+                                   (int)rinput->dir_nam_len,
+                                   (ufunc == 0x68)  );
+           if (!result) {
+             data_len = (ufunc == 0x68) ? 54 : 78;
+             memcpy(responsedata, input->queue_job, data_len);
+           } else completition= (uint8)-result;
+         }
+         break;
+
+         case 0x69:    /* close file and start queue old ?? */
+         case 0x7f: {  /* close file and start queue */
+           struct INPUT {
+             uint8   header[7];          /* Requestheader */
+             uint8   packetlen[2];       /* low high      */
+             uint8   func;               /* 0x7f or 0x6f  */
+             uint8   queue_id[4];        /* Queue ID      */
+             uint8   job_id[4];          /* result from creat queue    */
+                                         /* if 0x69 then only 2 byte ! */
+           } *input = (struct INPUT *) (ncprequest);
+           struct RINPUT {
+             uint8   prc_len;           /* len of printcommand */
+             uint8   prc[1];            /* printcommand */
+           } *rinput = (struct RINPUT *) (bindresponse);
+           int result = nw_close_file_queue(input->queue_id,
+                                            input->job_id,
+                                            rinput->prc,
+                                            rinput->prc_len);
+           if (result < 0) completition = (uint8)-result;
+         }
+         break;
+         default : completition = 0xfb;
+       }
+    }
+    break;
+    default : completition = 0xfb;
+  } /* switch */
+  ncp_response(ncprequest->sequence, completition, data_len);
 }
 
 extern int t_errno;
@@ -1304,12 +1379,7 @@ static void close_all(void)
 {
   nw_exit_connect();
   close(0);
-  if (ipx_fd > -1){
-    while (t_unbind(ipx_fd) < 0) {
-      if (t_errno != TOUTSTATE) break;
-    }
-    t_close(ipx_fd);
-  }
+  close(FD_NCP_OUT);
 }
 
 static int  fl_get_int=0;
@@ -1349,39 +1419,39 @@ int main(int argc, char **argv)
   ipxAddr_t  client_addr;
   struct     t_unitdata iud;
 #endif
-  int        wanted_sock = (argc==5) ? atoi(*(argv+4)) : 0;
-  if (argc == 5) argc--;
-  if (argc != 4) {
-    fprintf(stderr, "usage nwconn PID FROM_ADDR Connection [sock]\n");
+  if (argc != 5) {
+    fprintf(stderr, "usage nwconn PID FROM_ADDR Connection nwbindsock\n");
     exit(1);
   } else father_pid = atoi(*(argv+1));
   setuid(0);
   setgid(0);
 
   init_tools(NWCONN, atoi(*(argv+3)));
+  memset(saved_readbuff, 0, sizeof(saved_readbuff));
 
   XDPRINTF((2, 0, "FATHER PID=%d, ADDR=%s CON:%s", father_pid, *(argv+2), *(argv+3)));
 
   adr_to_ipx_addr(&from_addr,   *(argv+2));
+
 #if CALL_NWCONN_OVER_SOCKET
   adr_to_ipx_addr(&client_addr, *(argv+2));
 #endif
 
   if (nw_init_connect()) exit(1);
 
+  sscanf(argv[4], "%x", &sock_nwbind);
+
 #ifdef LINUX
   set_emu_tli();
 #endif
   last_sequence = -9999;
-#if !CALL_NWCONN_OVER_SOCKET
-  if (open_ipx_socket(wanted_sock)) exit(1);
-#else
-  ipx_fd =0;
+  if (get_ipx_addr(&my_addr)) exit(1);
+#if CALL_NWCONN_OVER_SOCKET
 # if 1
 #  ifdef SIOCIPXNCPCONN
    {
      int conn   = atoi(*(argv+3));
-     int result = ioctl(ipx_fd, SIOCIPXNCPCONN, &conn);
+     int result = ioctl(0, SIOCIPXNCPCONN, &conn);
      XDPRINTF((2, 0, "ioctl:SIOCIPXNCPCONN result=%d", result));
    }
 #  endif
@@ -1422,7 +1492,7 @@ int main(int argc, char **argv)
   while (1) {
 #if CALL_NWCONN_OVER_SOCKET
     int rcv_flags = 0;
-    int data_len = (t_rcvudata(ipx_fd, &iud, &rcv_flags) > -1)
+    int data_len = (t_rcvudata(0, &iud, &rcv_flags) > -1)
                             ? iud.udata.len : -1;
 #else
     int data_len = read(0, readbuff, sizeof(readbuff));
@@ -1437,28 +1507,32 @@ int main(int argc, char **argv)
     if (data_len > 0) {
       XDPRINTF((99, 0,  "NWCONN GOT DATA len = %d",data_len));
       if ((ncp_type = (int)GET_BE16(ncprequest->type)) == 0x3333) {
-        /* OK for direct sending */
         data_len -= sizeof(NCPRESPONSE);
-        XDPRINTF((99,0, "NWCONN:direct sending:type 0x3333, completition=0x%x, len=%d",
+        if (saved_sequence > -1 && ((int)(ncprequest->sequence) == saved_sequence)
+            && !ncprequest->function) {
+          handle_after_bind();
+        } else {
+          /* OK for direct sending */
+          XDPRINTF((6,0, "NWCONN:direct sending:type 0x3333, completition=0x%x, len=%d",
 	         (int)(ncprequest->function), data_len));
-        if (data_len) memcpy(responsedata, readbuff+sizeof(NCPRESPONSE), data_len);
-        ncpresponse->connect_status = ((NCPRESPONSE*)readbuff)->connect_status;
-        ncp_response((int)(ncprequest->sequence), (int)(ncprequest->function), data_len);
+          if (data_len)
+            memcpy(responsedata, readbuff+sizeof(NCPRESPONSE), data_len);
+          ncpresponse->connect_status = ((NCPRESPONSE*)readbuff)->connect_status;
+          ncp_response((int)(ncprequest->sequence),
+                       (int)(ncprequest->function), data_len);
+        }
+        saved_sequence = -1;
       } else { /* this calls I must handle */
-        requestlen = data_len - sizeof(NCPREQUEST);
-#if 0 /* CALL_NWCONN_OVER_SOCKET */
-#ifdef SIOCIPXNCPCONN
-        if (ncp_type == 0x2222 &&
-           (0x17 == ncprequest->function || 0x15 == ncprequest->function)
-             && IPXCMPSOCK (from_addr.sock, client_addr.sock)
-             && IPXCMPNODE (from_addr.node, client_addr.node)
-             && IPXCMPNET  (from_addr.net,  client_addr.net)  {
-           /* this call must be prehandled by ncpserv */
-          XDPRINTF((2,0, "SEND TO NCPSERV"));
-        } else
-#endif
-#endif
-        handle_ncp_serv();
+        int result;
+        requestlen  = data_len - sizeof(NCPREQUEST);
+        if (0 != (result = handle_ncp_serv()) ) {
+          if (result == -2) {  /* here the actual call must be saved */
+            memcpy(saved_readbuff, readbuff, data_len);
+            saved_sequence = (int)(ncprequest->sequence);
+          } else saved_sequence = -1;
+          /* this call must go to nwbind */
+          call_nwbind();
+        }
       }
     }
   } /* while */

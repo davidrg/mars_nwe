@@ -1,4 +1,16 @@
 # in this files are important notes for user of mars_nwe.
+------21-Mar-96--- 0.97.pl2 ----------
+Entry '7' in ini/conf file modified.
+Old mode '8' is now mode '7' and mode '8'
+is now extended by allowing empty mars_nwe passwords
+although the linux password from this user is not empty.
+-
+Now mars_nwe works fine with OS/2 Client. :)
+-
+There is a new little kernelpatch 'kpatch1.3.72' in the
+examples directory.
+With this patch mars_nwe will speed up more than 30 %.
+
 ------10-Mar-96--- 0.97.pl0 ----------
 New Conf-file entry '211' for broadcast periods.
 Entries 400, 401 for special handling of the nearest server request.

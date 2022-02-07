@@ -1,4 +1,4 @@
-/* net1.c,  14-Jan-96 */
+/* net1.c,  20-Mar-96 */
 
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
@@ -192,3 +192,48 @@ int send_ipx_data(int fdx, int pack_typ,
   return(result);
 }
 
+#if 0
+int get_ipx_addr(ipxAddr_t *addr)
+{
+  int fd=t_open("/dev/ipx", O_RDWR, NULL);
+  struct t_optmgmt optb;
+  int result = -1;
+  if (fd < 0) {
+    t_error("t_open !Ok");
+    return(-1);
+  }
+  optb.opt.maxlen = optb.opt.len = sizeof(ipxAddr_t);
+  optb.opt.buf    = (char*)addr;
+  optb.flags      = 0;
+  result = t_optmgmt(fd, &optb, &optb);
+  if (result < 0) t_error("t_optmgmt !Ok");
+  else result=0;
+  t_close(fd);
+  return(result);
+}
+#else
+
+int get_ipx_addr(ipxAddr_t *addr)
+{
+  int fd=t_open("/dev/ipx", O_RDWR, NULL);
+  struct t_bind   bind;
+  int result = -1;
+  if (fd < 0) {
+    t_error("t_open !Ok");
+    return(-1);
+  }
+  bind.addr.len    = sizeof(ipxAddr_t);
+  bind.addr.maxlen = sizeof(ipxAddr_t);
+  bind.addr.buf    = (char*)addr;
+  bind.qlen        = 0; /* ever */
+  memset(addr, 0, sizeof(ipxAddr_t));
+  if (t_bind(fd, &bind, &bind) < 0)
+    t_error("tbind:get_ipx_addr");
+  else {
+    result=0;
+    t_unbind(fd);
+  }
+  t_close(fd);
+  return(result);
+}
+#endif

@@ -1,4 +1,4 @@
-/* tools.c  09-Mar-96 */
+/* tools.c  20-Mar-96 */
 /* (C)opyright (C) 1993,1995  Martin Stover, Marburg, Germany
  *
  * This program is free software; you can redistribute it and/or modify
@@ -38,7 +38,8 @@ static char *modnames[] =
   "NWSERV ",
   "NCPSERV",
   "NWCONN ",
-  "NWCLIEN" };
+  "NWCLIEN",
+  "NWBIND " };
 
 static char *get_modstr(void)
 {
@@ -148,7 +149,7 @@ FILE *open_nw_ini(void)
   return(f);
 }
 
-int get_ini_entry(FILE *f, int entry, char *str, int strsize)
+int get_ini_entry(FILE *f, int entry, uint8 *str, int strsize)
 /* returns ini_entry or 0 if nothing found */
 {
   char  buff[512];
@@ -200,10 +201,10 @@ char *get_exec_path(char *buff, char *progname)
 
 int get_ini_int(int what)
 {
-  char buff[30];
+  uint8 buff[30];
   int  i;
   if (get_ini_entry(NULL, what, buff, sizeof(buff))
-     && 1==sscanf(buff, "%d", &i) ) return(i);
+     && 1==sscanf((char*)buff, "%d", &i) ) return(i);
   return(-1);
 }
 
@@ -225,12 +226,14 @@ static void sig_segv(int isig)
   XDPRINTF((0, 0, s, my_pid));
   fprintf(stderr, "\n");
   fprintf(stderr, s, my_pid);
+#if 1
   (*sigsegv_func)(isig);
+#endif
 }
 
 void init_tools(int module, int conn)
 {
-  char buff[300];
+  uint8 buff[300];
   char logfilename[300];
   FILE *f=open_nw_ini();
   int  withlog=0;
@@ -241,13 +244,13 @@ void init_tools(int module, int conn)
   if (f) {
     int  what;
     while (0 != (what=get_ini_entry(f, 0, buff, sizeof(buff)))) { /* daemonize */
-      if (200 == what) dodaemon = atoi(buff);
+      if (200 == what) dodaemon = atoi((char*)buff);
       else if (201 == what) {
         strmaxcpy((uint8*)logfilename, (uint8*)buff, sizeof(logfilename)-1);
         withlog++;
       } else if (202 == what) {
-        new_log = atoi(buff);
-      } else if (100+module == what) nw_debug=atoi(buff);
+        new_log = atoi((char*)buff);
+      } else if (100+module == what) nw_debug=atoi((char*)buff);
     }
     fclose(f);
   }
@@ -268,7 +271,8 @@ void init_tools(int module, int conn)
     }
     if (NWSERV == module) setsid();
   }
-  if (NWSERV == module || NCPSERV == module) {
+  if (NWSERV == module || NCPSERV == module || NWBIND == module ||
+      nw_debug > 1) {
     XDPRINTF((1, 0, "Starting Version: %d.%02dpl%d",
          _VERS_H_, _VERS_L_, _VERS_P_ ));
   }
