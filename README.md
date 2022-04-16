@@ -98,21 +98,40 @@ Lastly you'll need a client. The best one for DOS and Windows 3.11 is probably
 [Client32 v2.71](https://ftp.zx.net.nz/pub/archive/novell/clients/client32_2.71_dos_win3x/dw271e.exe) 
 from February 1999 which uses at most 4K of conventional memory (386SX or better CPU 
 and a few MB of extended memory required). For other operating systems (or older DOS 
-machines) you can grab another client from [here](https://www.zx.net.nz/netware/client/)
+machines) you can grab another client from [here](https://www.zx.net.nz/netware/client/). Note
+that Mars_NWE won't work with the Mac client as that needs NDS (NetWare 4.0+) which Mars_NWE
+does not implement.
 
-## NetWare DOS Utilities
-mars_nwe only comes with the bare minimum required to login and map drives. You can get
+## NetWare DOS & OS/2 Utilities
+mars_nwe only comes with the bare minimum required to login and map drives on DOS. You can get
 some other utilities (such as flag and ncopy) from the NetWare DOS Client Kit v3.01 
 (released in 1990) which was made freely available by Novell. You can get it from 
 [this page](http://www.zx.net.nz/netware/client/dos-netx.shtml) (DSWIN3.ZIP and 
 DSWIN4.ZIP). These utilities would normally live in `/var/mars_nwe/SYS/public/`
 
+For OS/2, some of the client kits for OS/2 include updated 16bit OS/2 utilities
+(usually the OS2UTIL disks) which may fill some gaps. Four EXEs (attach, login, map, slist) 
+should go in `/var/mars_nwe/SYS/login/OS2/` while the rest go in `/var/mars_nwe/SYS/public/OS2/`.
+
 For other utilities such as SysCon you may need to obtain a proper copy of 
 NetWare 3.11 or 3.12.
+
+## Managing Users and Login Scripts
+For NetWare 3.x servers this is normally done with the SYSCON utility for DOS. Mars_NWE doesn't
+include any replacement for this utility and the original Novell one is probably out of bounds
+unless you've got a NetWare 3 license.
+
+One alternative is [WnSyscon](https://web.archive.org/web/20050828165409/http://www.amcsoft.demon.co.uk/wnsyscon.htm), 
+a 16bit windows SYSCON replacement. Novell actually bundled the registered version of 
+this with NetWare 3.2 as their [Graphical SYSCON Utility](https://support.novell.com/techcenter/articles/ana19980403.html).
+You can grab the ShareWare version from [here](https://ftp.zx.net.nz/pub/archive/novell/3rdparty/admin/wnsyscon/) - it
+seems to be fully functional aside from a few nag screens. Unfortunaltely buying a copy of NetWare 3.2 is probably
+the only way to get a proper registered version of this today unless the original author can be contacted somehow.
 
 ## Where To Get Help
 
 There is some very old documentation available [here](doc) which may be of interest. 
 The old [linware mailing list archives](https://marc.info/?l=linware&r=1&w=2) may still
-contain useful information as well. If you can't find a solution to a problem in either
-of those the only remaining place to turn to is probably the code.
+contain useful information as well. There is also a few additional notes [here](http://www.zx.net.nz/netware/server/mars.shtml).
+If you can't find a solution to a problem in any of those places the only remaining 
+option is probably reading the code.
