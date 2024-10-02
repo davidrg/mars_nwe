@@ -3,6 +3,9 @@
 This is Mars_nwe, a free NetWare emulator for Linux originally written by 
 Martin Stover of Marburg, Germany.
 
+Mario Fetka has a [MARS_NWE repository](https://gitea.disconnected-by-peer.at/mars_nwe/mars-nwe) which
+is likely to be more up-to-date than the code here.
+
 ## Current Development Status
 The last release by the original author was on 1 September 2000. 
 Marco Cavallini of Koan Software produced version 0.99.pl21 on or around 14 June 2003.
@@ -12,9 +15,6 @@ November 2013
 No significant work has been done on this in public since 2013. While it all builds and runs on
 modern linux systems (surprisingly) there are a lot of build warnings and many missing
 features to be dealt with as well as bugs to be found and squashed.
-
-Mario Fetka has a [MARS_NWE repository](https://gitea.disconnected-by-peer.at/mars_nwe/mars-nwe) which
-is likely to be more up-to-date than the code here.
 
 ## About This Repository
 This repository was initially produced to see what the differences were between the few
